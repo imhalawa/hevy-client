@@ -113,7 +113,7 @@ public readonly record struct WorkoutRpe
 {
     public WorkoutRpe(decimal value)
     {
-        if (value is not (6m or 7m or 7.5m or 8m or 8.5m or 9m or 9.5m or 10m))
+        if (!IsValid(value))
         {
             throw new ArgumentOutOfRangeException(nameof(value), value, "RPE must be one of Hevy's documented values.");
         }
@@ -122,6 +122,8 @@ public readonly record struct WorkoutRpe
     }
 
     public decimal Value { get; }
+
+    internal static bool IsValid(decimal value) => value is 6m or 7m or 7.5m or 8m or 8.5m or 9m or 9.5m or 10m;
 }
 
 public sealed class SetTypeJsonConverter : JsonConverter<SetType>
@@ -162,6 +164,11 @@ public sealed class WorkoutRpeJsonConverter : JsonConverter<WorkoutRpe>
 
     public override void Write(Utf8JsonWriter writer, WorkoutRpe value, JsonSerializerOptions options)
     {
+        if (!WorkoutRpe.IsValid(value.Value))
+        {
+            throw new JsonException("RPE must be one of Hevy's documented values.");
+        }
+
         writer.WriteNumberValue(value.Value);
     }
 }

@@ -103,3 +103,26 @@ all tests passed with zero warnings
 ```
 
 The prior minor review item about widening integer exercise-history values is intentionally unchanged and remains for final review.
+
+## Fix Round 2
+
+Closed the `default(WorkoutRpe)` struct-construction bypass.
+
+- Covering test: `RequestSerializationTests.Workout_rpe_default_value_fails_safely_during_serialization` in `tests/Hevy.Client.Tests/Serialization/RequestSerializationTests.cs`.
+- Production break caught: removing converter-side validation allows the representable-but-invalid default value to serialize as `rpe:0`.
+- RED command: `dotnet test tests/Hevy.Client.Tests --filter FullyQualifiedName~Workout_rpe_default_value_fails_safely_during_serialization`.
+- RED output: `Assert.Throws() Failure: No exception was thrown`; expected `System.Text.Json.JsonException` (0 passed, 1 failed, 0 warnings).
+- Expected-failure reasoning: the constructor enforced documented values, but default struct construction bypassed it and the converter wrote `Value` without validation.
+- Implementation: centralized the documented-value predicate in `WorkoutRpe.IsValid` and applied it in both construction and `WorkoutRpeJsonConverter.Write`.
+- GREEN command: same focused test command.
+- GREEN output: `1 tests passed, 0 warnings in 1 projects`.
+
+Final fix-round verification:
+
+```text
+dotnet test tests/Hevy.Client.Tests --filter FullyQualifiedName~Serialization
+all serialization tests passed with zero warnings
+
+dotnet test --no-restore -c Release
+all tests passed with zero warnings
+```

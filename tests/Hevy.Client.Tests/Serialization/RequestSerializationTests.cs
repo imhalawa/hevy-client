@@ -24,6 +24,15 @@ public sealed class RequestSerializationTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new WorkoutRpe(8.25m));
     }
 
+    // Break caught: default struct construction bypassing RPE validation and emitting rpe:0.
+    [Fact]
+    public void Workout_rpe_default_value_fails_safely_during_serialization()
+    {
+        var set = new WorkoutSetWrite(SetType.Normal, null, null, null, null, null, default(WorkoutRpe));
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWrite));
+    }
+
     // Break caught: serializing a create-workout payload in camelCase or including server timestamps.
     [Fact]
     public void Create_workout_serializes_only_writable_snake_case_fields()
