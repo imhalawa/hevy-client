@@ -1,7 +1,7 @@
 # Hevy Client Design
 
 **Date:** 2026-07-26  
-**Status:** Approved in design interview; awaiting written-spec review  
+**Status:** Approved for autonomous implementation  
 **Project:** `hevy-client`
 
 ## Purpose
