@@ -1,3 +1,15 @@
 .worktrees/
 .superpowers/
 
+# .NET build artifacts and local tooling
+[Bb]in/
+[Oo]bj/
+.vs/
+TestResults/
+*.user
+*.suo
+
+# Local environment files and diagnostics
+.env
+.env.*
+*.log

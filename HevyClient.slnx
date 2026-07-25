@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hevy.Client/Hevy.Client.csproj" />
+    <Project Path="src/Hevy.Mcp/Hevy.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Hevy.Client.Tests/Hevy.Client.Tests.csproj" />
+    <Project Path="tests/Hevy.Mcp.Tests/Hevy.Mcp.Tests.csproj" />
+    <Project Path="tests/Hevy.Transport.Tests/Hevy.Transport.Tests.csproj" />
+  </Folder>
+</Solution>
