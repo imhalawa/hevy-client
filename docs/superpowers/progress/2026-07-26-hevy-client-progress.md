@@ -26,7 +26,7 @@
 |---|---|---|---|---|
 | Design | Complete | `16fe62c` | Spec self-review and clean commit | Written spec approved through autonomous execution instruction. |
 | Plan | Complete | `06b5bc3` | Spec coverage, placeholder, scope, and type-consistency review passed | Stable MCP SDK pinned to 1.4.1; local .NET 10 installation is Task 1. |
-| Task 1 | Complete | `HEAD` (this commit) | .NET SDK 10.0.302 installed; OpenAPI jq check returned `true`; `dotnet restore --use-lock-file` and `dotnet build --no-restore -c Release` succeeded with zero warnings | The official snapshot has no `servers` array; later release code must enforce the approved `https://api.hevyapp.com` origin itself. |
+| Task 1 | Complete | `e6edc6a` | .NET SDK 10.0.302 installed; OpenAPI jq check returned `true`; `dotnet restore --use-lock-file` and `dotnet build --no-restore -c Release` succeeded with zero warnings | The official snapshot has no `servers` array; later release code must enforce the approved `https://api.hevyapp.com` origin itself. |
 
 ## Resume instructions
 
