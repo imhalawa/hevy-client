@@ -1,0 +1,15 @@
+{
+  "page": 1,
+  "page_count": 1,
+  "exercise_templates": [
+    {
+      "id": "D04AC939",
+      "title": "Bench Press (Barbell)",
+      "type": "weight_reps",
+      "primary_muscle_group": "chest",
+      "secondary_muscle_groups": ["triceps"],
+      "equipment_category": "barbell",
+      "is_custom": false
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "page": 1,
+  "page_count": 3,
+  "routines": [
+    {
+      "id": "routine-page-1",
+      "title": "Upper Body",
+      "folder_id": null,
+      "updated_at": "2024-08-14T12:31:00Z",
+      "created_at": "2024-08-14T12:00:00Z",
+      "exercises": []
+    }
+  ]
+}

@@ -13,4 +13,10 @@
       <IncludeAssets>runtime;build;native;contentfiles;analyzers;buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../TestSupport/Fixture.cs" Link="TestSupport/Fixture.cs" />
+    <Compile Include="../TestSupport/FixtureFactory.cs" Link="TestSupport/FixtureFactory.cs" />
+    <None Include="../TestSupport/Fixtures/*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
