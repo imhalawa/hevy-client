@@ -42,6 +42,21 @@ public sealed class HevyClientReadTests
     Assert.Equal("https://api.hevyapp.com/v1/user/info", Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
   }
 
+  // Break caught: changing the injected client's base address after construction sends the API key to another origin.
+  [Fact]
+  public async Task Get_user_info_rejects_a_post_construction_base_address_change_before_network_access()
+  {
+    var handler = RespondingWith(Fixture.Read("user-info.json"));
+    var httpClient = new HttpClient(handler);
+    var client = new HevyClient(httpClient, new HevyClientOptions("test-api-key"));
+    httpClient.BaseAddress = new Uri("https://untrusted.example/");
+
+    var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetUserInfoAsync(CancellationToken.None));
+
+    Assert.Empty(handler.Requests);
+    Assert.DoesNotContain("test-api-key", exception.ToString(), StringComparison.Ordinal);
+  }
+
   // Break caught: invalid pagination reaching the remote API instead of being rejected locally.
   [Theory]
   [InlineData(0, 5)]
@@ -108,6 +123,23 @@ public sealed class HevyClientReadTests
     handler.Requests.Select(request => request.RequestUri!.AbsoluteUri));
   }
 
+  // Break caught: exercise-history pagination reporting impossible metadata while returning the entire unpaginated payload.
+  [Fact]
+  public async Task Get_exercise_history_applies_local_pagination_without_undocumented_query_parameters()
+  {
+    var handler = RespondingWith(Fixture.Read("exercise-history-three.json"));
+    var client = CreateClient(handler);
+
+    var page = await client.GetExerciseHistoryAsync("D04AC939", 2, 2, null, null, CancellationToken.None);
+
+    Assert.Equal(2, page.Page);
+    Assert.Equal(2, page.PageCount);
+    Assert.Equal("workout-history-3", Assert.Single(page.Items).WorkoutId);
+    Assert.Equal(
+        "https://api.hevyapp.com/v1/exercise_history/D04AC939",
+        Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
+  }
+
   // Break caught: options or public diagnostics exposing the API credential.
   [Fact]
   public void Authentication_configuration_never_formats_the_api_key()
@@ -136,6 +168,37 @@ public sealed class HevyClientReadTests
     var headers = Assert.Single(recordingHandler.Requests).Headers;
     Assert.True(headers.TryGetValue("api-key", out var keys));
     Assert.Equal(["test-api-key"], keys);
+  }
+
+  // Break caught: standalone authentication middleware attaching the credential to a non-Hevy absolute request.
+  [Theory]
+  [InlineData("https://untrusted.example/v1/user/info")]
+  [InlineData("http://api.hevyapp.com/v1/user/info")]
+  [InlineData("https://api.hevyapp.com:444/v1/user/info")]
+  public async Task Authentication_handler_rejects_an_unsafe_target_before_adding_the_api_key(string target)
+  {
+    var recordingHandler = RespondingWith(Fixture.Read("user-info.json"));
+    var authenticationHandler = new HevyAuthenticationHandler(new HevyClientOptions("test-api-key"))
+    {
+      InnerHandler = recordingHandler,
+    };
+    using var httpClient = new HttpClient(authenticationHandler);
+
+    var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        httpClient.GetAsync(target, CancellationToken.None));
+
+    Assert.Empty(recordingHandler.Requests);
+    Assert.DoesNotContain("test-api-key", exception.ToString(), StringComparison.Ordinal);
+  }
+
+  // Break caught: the production HTTP stack following a redirect that could replay a custom credential cross-origin.
+  [Fact]
+  public void Production_pipeline_disables_automatic_redirects()
+  {
+    using var pipeline = HevyClient.CreateProductionPipeline(new HevyClientOptions("test-api-key"));
+
+    var primaryHandler = Assert.IsType<HttpClientHandler>(pipeline.InnerHandler);
+    Assert.False(primaryHandler.AllowAutoRedirect);
   }
 
   private static HevyClient CreateClient(RecordingHttpMessageHandler handler) =>

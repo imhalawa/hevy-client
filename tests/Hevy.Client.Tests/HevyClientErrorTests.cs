@@ -47,6 +47,35 @@ public sealed class HevyClientErrorTests
     Assert.DoesNotContain("api-key-secret", exception.ToString(), StringComparison.Ordinal);
   }
 
+  // Break caught: a transport exception's untrusted text being retained as an inner exception and exposed by ToString().
+  [Fact]
+  public async Task Transport_failure_does_not_retain_sensitive_inner_exception_text()
+  {
+    var handler = new RecordingHttpMessageHandler((_, _) => throw new HttpRequestException("transport-secret"));
+    var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+
+    Assert.DoesNotContain("transport-secret", exception.Message, StringComparison.Ordinal);
+    Assert.DoesNotContain("transport-secret", exception.ToString(), StringComparison.Ordinal);
+    Assert.Null(exception.InnerException);
+  }
+
+  // Break caught: malformed response content being retained through a JsonException at the public error boundary.
+  [Fact]
+  public async Task Malformed_response_does_not_retain_sensitive_payload_details()
+  {
+    const string sensitivePayload = "{\"name\":\"malformed-payload-secret\"";
+    var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, sensitivePayload));
+    var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+
+    Assert.DoesNotContain("malformed-payload-secret", exception.Message, StringComparison.Ordinal);
+    Assert.DoesNotContain("malformed-payload-secret", exception.ToString(), StringComparison.Ordinal);
+    Assert.Null(exception.InnerException);
+  }
+
   // Break caught: cancellation being translated to an API failure or ignored by the HTTP request.
   [Fact]
   public async Task Cancellation_is_propagated_without_normalization()

@@ -4,8 +4,8 @@ namespace Hevy.Client.Errors;
 
 public sealed class HevyException : Exception
 {
-  public HevyException(string code, string message, bool isRetryable, HttpStatusCode? statusCode, Exception? innerException = null)
-      : base(message, innerException)
+  public HevyException(string code, string message, bool isRetryable, HttpStatusCode? statusCode)
+      : base(message)
   {
     Code = code;
     IsRetryable = isRetryable;

@@ -20,14 +20,14 @@ internal static class HevyResponse
       var value = await JsonSerializer.DeserializeAsync(stream, jsonTypeInfo, cancellationToken);
       return value ?? throw UnexpectedResponse(response.StatusCode);
     }
-    catch (JsonException exception)
+    catch (JsonException)
     {
-      throw UnexpectedResponse(response.StatusCode, exception);
+      throw UnexpectedResponse(response.StatusCode);
     }
   }
 
-  public static HevyException UnexpectedResponse(HttpStatusCode statusCode, Exception? innerException = null) =>
-      new("unexpected_response", "The Hevy API returned an invalid response.", false, statusCode, innerException);
+  public static HevyException UnexpectedResponse(HttpStatusCode statusCode) =>
+      new("unexpected_response", "The Hevy API returned an invalid response.", false, statusCode);
 
   private static HevyException CreateException(HttpStatusCode statusCode) => statusCode switch
   {
