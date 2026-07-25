@@ -197,7 +197,8 @@ public sealed class HevyClientReadTests
   {
     using var pipeline = HevyClient.CreateProductionPipeline(new HevyClientOptions("test-api-key"));
 
-    var primaryHandler = Assert.IsType<HttpClientHandler>(pipeline.InnerHandler);
+    var authenticationHandler = Assert.IsType<HevyAuthenticationHandler>(pipeline.InnerHandler);
+    var primaryHandler = Assert.IsType<HttpClientHandler>(authenticationHandler.InnerHandler);
     Assert.False(primaryHandler.AllowAutoRedirect);
   }
 

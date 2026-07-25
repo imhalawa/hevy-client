@@ -7,12 +7,18 @@ namespace Hevy.Client.Http;
 
 internal static class HevyResponse
 {
-  public static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<T> jsonTypeInfo, CancellationToken cancellationToken)
+  public static void EnsureSuccess(HttpResponseMessage response)
   {
+    ArgumentNullException.ThrowIfNull(response);
     if (!response.IsSuccessStatusCode)
     {
       throw CreateException(response.StatusCode);
     }
+  }
+
+  public static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<T> jsonTypeInfo, CancellationToken cancellationToken)
+  {
+    EnsureSuccess(response);
 
     try
     {

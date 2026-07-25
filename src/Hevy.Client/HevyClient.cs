@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Hevy.Client.Errors;
 using Hevy.Client.Http;
@@ -29,14 +31,17 @@ public sealed class HevyClient : IHevyClient
     apiKey = options.ApiKey;
   }
 
-  internal static HevyAuthenticationHandler CreateProductionPipeline(HevyClientOptions options)
+  internal static HevyRetryHandler CreateProductionPipeline(HevyClientOptions options)
   {
     ArgumentNullException.ThrowIfNull(options);
-    return new HevyAuthenticationHandler(options)
+    return new HevyRetryHandler
     {
-      InnerHandler = new HttpClientHandler
+      InnerHandler = new HevyAuthenticationHandler(options)
       {
-        AllowAutoRedirect = false,
+        InnerHandler = new HttpClientHandler
+        {
+          AllowAutoRedirect = false,
+        },
       },
     };
   }
@@ -140,12 +145,75 @@ public sealed class HevyClient : IHevyClient
   public Task<BodyMeasurement> GetBodyMeasurementAsync(DateOnly date, CancellationToken cancellationToken) =>
       GetAsync($"v1/body_measurements/{date:yyyy-MM-dd}", HevyJsonContext.Default.BodyMeasurement, cancellationToken);
 
+  public Task<Workout> CreateWorkoutAsync(CreateWorkoutRequest request, CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(request);
+    ValidateWorkout(request.Workout);
+    return SendMutationAsync(HttpMethod.Post, "v1/workouts", request, HevyJsonContext.Default.CreateWorkoutRequest, HevyJsonContext.Default.Workout, retrySafe: false, cancellationToken);
+  }
+
+  public Task<Workout> UpdateWorkoutAsync(string workoutId, UpdateWorkoutRequest request, CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(request);
+    ValidateWorkout(request.Workout);
+    return SendMutationAsync(HttpMethod.Put, $"v1/workouts/{EscapeIdentifier(workoutId, nameof(workoutId))}", request, HevyJsonContext.Default.UpdateWorkoutRequest, HevyJsonContext.Default.Workout, retrySafe: false, cancellationToken);
+  }
+
+  public Task<Routine> CreateRoutineAsync(CreateRoutineRequest request, CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(request);
+    ValidateRoutine(request.Routine);
+    return SendMutationAsync(HttpMethod.Post, "v1/routines", request, HevyJsonContext.Default.CreateRoutineRequest, HevyJsonContext.Default.Routine, retrySafe: false, cancellationToken);
+  }
+
+  public async Task<Routine> UpdateRoutineAsync(string routineId, UpdateRoutineRequest request, CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(request);
+    ValidateRoutine(request.Routine);
+    return await SendMutationAsync(HttpMethod.Put, $"v1/routines/{EscapeIdentifier(routineId, nameof(routineId))}", request, HevyJsonContext.Default.UpdateRoutineRequest, HevyJsonContext.Default.Routine, retrySafe: false, cancellationToken);
+  }
+
+  public Task<RoutineFolder> CreateRoutineFolderAsync(CreateRoutineFolderRequest request, CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(request);
+    ArgumentNullException.ThrowIfNull(request.RoutineFolder);
+    ValidateRequiredText(request.RoutineFolder.Title, "routine folder title");
+    return SendMutationAsync(HttpMethod.Post, "v1/routine_folders", request, HevyJsonContext.Default.CreateRoutineFolderRequest, HevyJsonContext.Default.RoutineFolder, retrySafe: false, cancellationToken);
+  }
+
+  public async Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateRequest request, CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(request);
+    ValidateExerciseTemplate(request.Exercise);
+    var response = await SendMutationAsync(HttpMethod.Post, "v1/exercise_templates", request, HevyJsonContext.Default.CreateExerciseTemplateRequest, HevyJsonContext.Default.CreateExerciseTemplateResponse, retrySafe: false, cancellationToken);
+    return await GetExerciseTemplateAsync(response.Id.ToString(CultureInfo.InvariantCulture), cancellationToken);
+  }
+
+  public async Task<BodyMeasurement> CreateBodyMeasurementAsync(CreateBodyMeasurementRequest request, CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(request);
+    ValidateMeasurementDate(request.Date, nameof(request));
+    ValidateMeasurementValues(request.WeightKg, request.LeanMassKg, request.FatPercent, request.NeckCm, request.ShoulderCm, request.ChestCm, request.LeftBicepCm, request.RightBicepCm, request.LeftForearmCm, request.RightForearmCm, request.Abdomen, request.Waist, request.Hips, request.LeftThigh, request.RightThigh, request.LeftCalf, request.RightCalf);
+    await SendMutationWithoutResponseAsync(HttpMethod.Post, "v1/body_measurements", request, HevyJsonContext.Default.CreateBodyMeasurementRequest, retrySafe: false, cancellationToken);
+    return await GetBodyMeasurementAsync(request.Date, cancellationToken);
+  }
+
+  public async Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, UpdateBodyMeasurementRequest request, CancellationToken cancellationToken)
+  {
+    ArgumentNullException.ThrowIfNull(request);
+    ValidateMeasurementDate(date, nameof(date));
+    ValidateMeasurementValues(request.WeightKg, request.LeanMassKg, request.FatPercent, request.NeckCm, request.ShoulderCm, request.ChestCm, request.LeftBicepCm, request.RightBicepCm, request.LeftForearmCm, request.RightForearmCm, request.Abdomen, request.Waist, request.Hips, request.LeftThigh, request.RightThigh, request.LeftCalf, request.RightCalf);
+    await SendMutationWithoutResponseAsync(HttpMethod.Put, $"v1/body_measurements/{date:yyyy-MM-dd}", request, HevyJsonContext.Default.UpdateBodyMeasurementRequest, retrySafe: true, cancellationToken);
+    return await GetBodyMeasurementAsync(date, cancellationToken);
+  }
+
   private async Task<T> GetAsync<T>(string relativeUri, JsonTypeInfo<T> jsonTypeInfo, CancellationToken cancellationToken)
   {
     var finalUri = httpClient.BaseAddress is null ? null : new Uri(httpClient.BaseAddress, relativeUri);
     HevyAuthenticationHandler.EnsureSafeTarget(finalUri);
     using var request = new HttpRequestMessage(HttpMethod.Get, relativeUri);
     request.Headers.TryAddWithoutValidation("api-key", apiKey);
+    SetRetryDeadline(request);
 
     try
     {
@@ -159,6 +227,160 @@ public sealed class HevyClient : IHevyClient
     catch (HttpRequestException)
     {
       throw new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, null);
+    }
+  }
+
+  private async Task<TResponse> SendMutationAsync<TRequest, TResponse>(HttpMethod method, string relativeUri, TRequest requestBody, JsonTypeInfo<TRequest> requestTypeInfo, JsonTypeInfo<TResponse> responseTypeInfo, bool retrySafe, CancellationToken cancellationToken)
+  {
+    using var request = CreateMutationRequest(method, relativeUri, requestBody, requestTypeInfo, retrySafe);
+    try
+    {
+      using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+      return await HevyResponse.ReadAsync(response, responseTypeInfo, cancellationToken);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      throw;
+    }
+    catch (HttpRequestException)
+    {
+      throw new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, null);
+    }
+  }
+
+  private async Task SendMutationWithoutResponseAsync<TRequest>(HttpMethod method, string relativeUri, TRequest requestBody, JsonTypeInfo<TRequest> requestTypeInfo, bool retrySafe, CancellationToken cancellationToken)
+  {
+    using var request = CreateMutationRequest(method, relativeUri, requestBody, requestTypeInfo, retrySafe);
+    try
+    {
+      using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+      HevyResponse.EnsureSuccess(response);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      throw;
+    }
+    catch (HttpRequestException)
+    {
+      throw new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, null);
+    }
+  }
+
+  private HttpRequestMessage CreateMutationRequest<TRequest>(HttpMethod method, string relativeUri, TRequest requestBody, JsonTypeInfo<TRequest> requestTypeInfo, bool retrySafe)
+  {
+    var finalUri = httpClient.BaseAddress is null ? null : new Uri(httpClient.BaseAddress, relativeUri);
+    HevyAuthenticationHandler.EnsureSafeTarget(finalUri);
+    var payload = JsonSerializer.SerializeToUtf8Bytes(requestBody, requestTypeInfo);
+    var request = new HttpRequestMessage(method, relativeUri);
+    request.Headers.TryAddWithoutValidation("api-key", apiKey);
+    request.Content = new ByteArrayContent(payload);
+    request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+    if (retrySafe)
+    {
+      request.Options.Set(HevyRetryHandler.RetrySafeMutation, true);
+    }
+
+    SetRetryDeadline(request);
+
+    return request;
+  }
+
+  private void SetRetryDeadline(HttpRequestMessage request)
+  {
+    if (httpClient.Timeout != Timeout.InfiniteTimeSpan)
+    {
+      request.Options.Set(HevyRetryHandler.RetryDeadline, DateTimeOffset.UtcNow + httpClient.Timeout);
+    }
+  }
+
+  private static void ValidateWorkout(WorkoutWrite workout)
+  {
+    ArgumentNullException.ThrowIfNull(workout);
+    ValidateRequiredText(workout.Title, "workout title");
+    if (workout.EndTime < workout.StartTime)
+    {
+      throw new ArgumentException("Workout end time cannot be before its start time.", nameof(workout));
+    }
+
+    ArgumentNullException.ThrowIfNull(workout.Exercises);
+    foreach (var exercise in workout.Exercises)
+    {
+      ArgumentNullException.ThrowIfNull(exercise);
+      ValidateRequiredText(exercise.ExerciseTemplateId, "exercise template id");
+      ArgumentNullException.ThrowIfNull(exercise.Sets);
+      foreach (var set in exercise.Sets)
+      {
+        ArgumentNullException.ThrowIfNull(set);
+      }
+    }
+  }
+
+  private static void ValidateRoutine(CreateRoutineWrite routine)
+  {
+    ArgumentNullException.ThrowIfNull(routine);
+    ValidateRequiredText(routine.Title, "routine title");
+    ArgumentNullException.ThrowIfNull(routine.Exercises);
+    foreach (var exercise in routine.Exercises)
+    {
+      ArgumentNullException.ThrowIfNull(exercise);
+      ValidateRequiredText(exercise.ExerciseTemplateId, "exercise template id");
+      ArgumentNullException.ThrowIfNull(exercise.Sets);
+      foreach (var set in exercise.Sets)
+      {
+        ArgumentNullException.ThrowIfNull(set);
+      }
+    }
+  }
+
+  private static void ValidateRoutine(UpdateRoutineWrite routine)
+  {
+    ArgumentNullException.ThrowIfNull(routine);
+    ValidateRequiredText(routine.Title, "routine title");
+    ArgumentNullException.ThrowIfNull(routine.Exercises);
+    foreach (var exercise in routine.Exercises)
+    {
+      ArgumentNullException.ThrowIfNull(exercise);
+      ValidateRequiredText(exercise.ExerciseTemplateId, "exercise template id");
+      ArgumentNullException.ThrowIfNull(exercise.Sets);
+      foreach (var set in exercise.Sets)
+      {
+        ArgumentNullException.ThrowIfNull(set);
+      }
+    }
+  }
+
+  private static void ValidateExerciseTemplate(CustomExerciseWrite exercise)
+  {
+    ArgumentNullException.ThrowIfNull(exercise);
+    ValidateRequiredText(exercise.Title, "exercise title");
+    ArgumentNullException.ThrowIfNull(exercise.OtherMuscles);
+    if (!Enum.IsDefined(exercise.ExerciseType) || !Enum.IsDefined(exercise.EquipmentCategory) || !Enum.IsDefined(exercise.MuscleGroup) || exercise.OtherMuscles.Any(muscle => !Enum.IsDefined(muscle)))
+    {
+      throw new ArgumentOutOfRangeException(nameof(exercise), "Exercise fields must use documented enum values.");
+    }
+  }
+
+  private static void ValidateMeasurementDate(DateOnly date, string parameterName)
+  {
+    if (date == DateOnly.MinValue)
+    {
+      throw new ArgumentOutOfRangeException(parameterName, "A measurement date is required.");
+    }
+  }
+
+  private static void ValidateMeasurementValues(params decimal?[] values)
+  {
+    if (values.Any(value => value is < 0))
+    {
+      throw new ArgumentOutOfRangeException(nameof(values), "Measurement values cannot be negative.");
+    }
+  }
+
+  private static void ValidateRequiredText(string value, string fieldName)
+  {
+    if (string.IsNullOrWhiteSpace(value))
+    {
+      throw new ArgumentException($"A {fieldName} is required.", fieldName);
     }
   }
 
