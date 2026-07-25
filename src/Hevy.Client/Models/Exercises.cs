@@ -4,8 +4,8 @@ public sealed record ExerciseTemplate(
     string Id,
     string Title,
     string Type,
-    MuscleGroup PrimaryMuscleGroup,
-    IReadOnlyList<MuscleGroup> SecondaryMuscleGroups,
+    string PrimaryMuscleGroup,
+    IReadOnlyList<string> SecondaryMuscleGroups,
     EquipmentCategory EquipmentCategory,
     bool IsCustom);
 

@@ -63,3 +63,43 @@ dotnet test --no-restore -c Release
 
 - The official schema declares response `RoutineExercise.rest_seconds` as a string while the corresponding request field is an integer; the model intentionally preserves that wire distinction.
 - Shared response set metrics use decimal values so workouts/routines (`number`) and history (`integer`) retain a single reusable metric shape. No unresolved blocker remains.
+
+## Fix Round 1
+
+Addressed all three Important review findings.
+
+1. Strict outgoing set values and RPE
+   - RED command: `dotnet test tests/Hevy.Client.Tests --filter "FullyQualifiedName~Workout_set_write_rejects_unknown_set_type|FullyQualifiedName~Workout_rpe_rejects_undocumented_value"`
+   - Observed: compile errors `CS0246` because `SetType` and `WorkoutRpe` did not exist.
+   - Expected failure: mutation DTOs exposed unrestricted `string`/`decimal?` values, so the required closed wire-value API was absent.
+   - GREEN command: same focused command.
+   - Output: `2 tests passed, 0 warnings in 1 projects`.
+   - Coverage: `RequestSerializationTests.cs` proves an invalid cast `SetType` fails during serialization and `WorkoutRpe(8.25m)` rejects construction. The complete create-workout JSON-tree assertion proves a valid RPE serializes as the numeric `8.5` literal.
+
+2. Forward-compatible exercise-template muscles
+   - RED command: `dotnet test tests/Hevy.Client.Tests --filter FullyQualifiedName~Exercise_template_accepts_additive_muscle_names`
+   - Observed: `JsonException` at `$.primary_muscle_group` while parsing `serratus_anterior`.
+   - Expected failure: response models incorrectly used the closed `MuscleGroup` mutation enum.
+   - GREEN command: same focused command.
+   - Output: `1 tests passed, 0 warnings in 1 projects`.
+   - Coverage: `ResponseDeserializationTests.cs` injects unknown primary and secondary muscle names and asserts both raw strings survive parsing.
+
+3. Complete request-payload contract assertions
+   - Replaced selected substring assertions in `RequestSerializationTests.cs` with `JsonDocument`/`JsonElement.DeepEquals` comparisons against independently written JSON literals.
+   - Coverage: all eight create/update request roots now compare their complete nested property trees, making additions, omissions, wrong wire names, and server-owned fields observable.
+   - Focused verification: `dotnet test tests/Hevy.Client.Tests --filter FullyQualifiedName~RequestSerializationTests` returned `10 tests passed, 0 warnings in 1 projects`.
+
+Final fix-round verification:
+
+```text
+dotnet test tests/Hevy.Client.Tests --filter FullyQualifiedName~Serialization
+all serialization tests passed with zero warnings
+
+dotnet build --no-restore -c Release
+6 projects, 0 errors, 0 warnings
+
+dotnet test --no-restore -c Release
+all tests passed with zero warnings
+```
+
+The prior minor review item about widening integer exercise-history values is intentionally unchanged and remains for final review.

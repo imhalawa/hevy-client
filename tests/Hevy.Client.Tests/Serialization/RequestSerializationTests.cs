@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Hevy.Client.Models;
 using Hevy.Client.Serialization;
 using TestSupport;
 using Xunit;
@@ -7,16 +8,33 @@ namespace Hevy.Client.Tests.Serialization;
 
 public sealed class RequestSerializationTests
 {
+    // Break caught: accepting an arbitrary set-type string in an outgoing workout mutation.
+    [Fact]
+    public void Workout_set_write_rejects_unknown_set_type()
+    {
+        var set = new WorkoutSetWrite((SetType)999, null, null, null, null, null, new WorkoutRpe(8m));
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWrite));
+    }
+
+    // Break caught: accepting an RPE that is outside Hevy's documented discrete values.
+    [Fact]
+    public void Workout_rpe_rejects_undocumented_value()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new WorkoutRpe(8.25m));
+    }
+
     // Break caught: serializing a create-workout payload in camelCase or including server timestamps.
     [Fact]
     public void Create_workout_serializes_only_writable_snake_case_fields()
     {
         var json = JsonSerializer.Serialize(FixtureFactory.CreateWorkoutRequest(), HevyJsonContext.Default.CreateWorkoutRequest);
 
-        Assert.Contains("\"start_time\"", json, StringComparison.Ordinal);
-        Assert.Contains("\"superset_id\"", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("updated_at", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("created_at", json, StringComparison.Ordinal);
+        AssertJsonTreeEqual(
+            """
+            {"workout":{"title":"Friday Leg Day","description":"Sanitized workout","start_time":"2024-08-14T12:00:00+00:00","end_time":"2024-08-14T12:30:00+00:00","is_private":false,"exercises":[{"exercise_template_id":"D04AC939","superset_id":null,"notes":"Sanitized note","sets":[{"type":"normal","weight_kg":100,"reps":10,"distance_meters":null,"duration_seconds":null,"custom_metric":null,"rpe":8.5}]}]}}
+            """,
+            json);
     }
 
     // Break caught: using a distinct update-workout wrapper that changes the documented workout envelope.
@@ -25,9 +43,11 @@ public sealed class RequestSerializationTests
     {
         var json = JsonSerializer.Serialize(FixtureFactory.UpdateWorkoutRequest(), HevyJsonContext.Default.UpdateWorkoutRequest);
 
-        Assert.Contains("\"workout\":{", json, StringComparison.Ordinal);
-        Assert.Contains("\"end_time\"", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"id\"", json, StringComparison.Ordinal);
+        AssertJsonTreeEqual(
+            """
+            {"workout":{"title":"Friday Leg Day","description":"Sanitized workout","start_time":"2024-08-14T12:00:00+00:00","end_time":"2024-08-14T12:30:00+00:00","is_private":false,"exercises":[{"exercise_template_id":"D04AC939","superset_id":null,"notes":"Sanitized note","sets":[{"type":"normal","weight_kg":100,"reps":10,"distance_meters":null,"duration_seconds":null,"custom_metric":null,"rpe":8.5}]}]}}
+            """,
+            json);
     }
 
     // Break caught: emitting a create-routine folder identifier or set rep range under C# property names.
@@ -36,10 +56,11 @@ public sealed class RequestSerializationTests
     {
         var json = JsonSerializer.Serialize(FixtureFactory.CreateRoutineRequest(), HevyJsonContext.Default.CreateRoutineRequest);
 
-        Assert.Contains("\"routine\":{", json, StringComparison.Ordinal);
-        Assert.Contains("\"folder_id\":null", json, StringComparison.Ordinal);
-        Assert.Contains("\"rep_range\":{", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("updated_at", json, StringComparison.Ordinal);
+        AssertJsonTreeEqual(
+            """
+            {"routine":{"title":"April Leg Day","folder_id":null,"notes":"Sanitized routine","exercises":[{"exercise_template_id":"D04AC939","superset_id":null,"rest_seconds":90,"notes":"Controlled","sets":[{"type":"normal","weight_kg":100,"reps":10,"distance_meters":null,"duration_seconds":null,"custom_metric":null,"rep_range":{"start":8,"end":12}}]}]}}
+            """,
+            json);
     }
 
     // Break caught: adding unsupported folder_id to the update-routine contract.
@@ -48,10 +69,11 @@ public sealed class RequestSerializationTests
     {
         var json = JsonSerializer.Serialize(FixtureFactory.UpdateRoutineRequest(), HevyJsonContext.Default.UpdateRoutineRequest);
 
-        Assert.Contains("\"routine\":{", json, StringComparison.Ordinal);
-        Assert.Contains("\"rest_seconds\":90", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("folder_id", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"id\"", json, StringComparison.Ordinal);
+        AssertJsonTreeEqual(
+            """
+            {"routine":{"title":"April Leg Day","notes":"Sanitized routine","exercises":[{"exercise_template_id":"D04AC939","superset_id":null,"rest_seconds":90,"notes":"Controlled","sets":[{"type":"normal","weight_kg":100,"reps":10,"distance_meters":null,"duration_seconds":null,"custom_metric":null,"rep_range":{"start":8,"end":12}}]}]}}
+            """,
+            json);
     }
 
     // Break caught: flattening the routine-folder create payload or camel-casing its wire name.
@@ -60,8 +82,7 @@ public sealed class RequestSerializationTests
     {
         var json = JsonSerializer.Serialize(FixtureFactory.CreateRoutineFolderRequest(), HevyJsonContext.Default.CreateRoutineFolderRequest);
 
-        Assert.Contains("\"routine_folder\":{\"title\":\"Push Pull\"}", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("updated_at", json, StringComparison.Ordinal);
+        AssertJsonTreeEqual("""{"routine_folder":{"title":"Push Pull"}}""", json);
     }
 
     // Break caught: serializing custom-exercise enum values or nested wrapper names incorrectly.
@@ -70,10 +91,11 @@ public sealed class RequestSerializationTests
     {
         var json = JsonSerializer.Serialize(FixtureFactory.CreateExerciseTemplateRequest(), HevyJsonContext.Default.CreateExerciseTemplateRequest);
 
-        Assert.Contains("\"exercise_type\":\"weight_reps\"", json, StringComparison.Ordinal);
-        Assert.Contains("\"equipment_category\":\"barbell\"", json, StringComparison.Ordinal);
-        Assert.Contains("\"other_muscles\":[\"triceps\",\"shoulders\"]", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"id\"", json, StringComparison.Ordinal);
+        AssertJsonTreeEqual(
+            """
+            {"exercise":{"title":"Bench Press","exercise_type":"weight_reps","equipment_category":"barbell","muscle_group":"chest","other_muscles":["triceps","shoulders"]}}
+            """,
+            json);
     }
 
     // Break caught: serializing a create measurement without its required date or with a server identifier.
@@ -82,9 +104,11 @@ public sealed class RequestSerializationTests
     {
         var json = JsonSerializer.Serialize(FixtureFactory.CreateBodyMeasurementRequest(), HevyJsonContext.Default.CreateBodyMeasurementRequest);
 
-        Assert.Contains("\"date\":\"2024-08-14\"", json, StringComparison.Ordinal);
-        Assert.Contains("\"weight_kg\":80.5", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"id\"", json, StringComparison.Ordinal);
+        AssertJsonTreeEqual(
+            """
+            {"date":"2024-08-14","weight_kg":80.5,"lean_mass_kg":65,"fat_percent":18.5,"neck_cm":38,"shoulder_cm":115,"chest_cm":95,"left_bicep_cm":35,"right_bicep_cm":35.5,"left_forearm_cm":28,"right_forearm_cm":28.5,"abdomen":85,"waist":80,"hips":95,"left_thigh":55,"right_thigh":55.5,"left_calf":37,"right_calf":37.5}
+            """,
+            json);
     }
 
     // Break caught: accidentally including the path-owned measurement date in an update payload.
@@ -93,8 +117,20 @@ public sealed class RequestSerializationTests
     {
         var json = JsonSerializer.Serialize(FixtureFactory.UpdateBodyMeasurementRequest(), HevyJsonContext.Default.UpdateBodyMeasurementRequest);
 
-        Assert.Contains("\"weight_kg\":80.5", json, StringComparison.Ordinal);
-        Assert.Contains("\"right_calf\":37.5", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"date\"", json, StringComparison.Ordinal);
+        AssertJsonTreeEqual(
+            """
+            {"weight_kg":80.5,"lean_mass_kg":65,"fat_percent":18.5,"neck_cm":38,"shoulder_cm":115,"chest_cm":95,"left_bicep_cm":35,"right_bicep_cm":35.5,"left_forearm_cm":28,"right_forearm_cm":28.5,"abdomen":85,"waist":80,"hips":95,"left_thigh":55,"right_thigh":55.5,"left_calf":37,"right_calf":37.5}
+            """,
+            json);
+    }
+
+    private static void AssertJsonTreeEqual(string expectedJson, string actualJson)
+    {
+        using var expected = JsonDocument.Parse(expectedJson);
+        using var actual = JsonDocument.Parse(actualJson);
+
+        Assert.True(
+            JsonElement.DeepEquals(expected.RootElement, actual.RootElement),
+            $"Expected JSON: {expected.RootElement}\nActual JSON: {actual.RootElement}");
     }
 }

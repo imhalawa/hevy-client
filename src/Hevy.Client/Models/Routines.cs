@@ -74,7 +74,7 @@ public sealed record UpdateRoutineExerciseWrite(
     IReadOnlyList<UpdateRoutineSetWrite> Sets);
 
 public sealed record CreateRoutineSetWrite(
-    string Type,
+    [property: JsonConverter(typeof(SetTypeJsonConverter))] SetType Type,
     decimal? WeightKg,
     int? Reps,
     int? DistanceMeters,
@@ -83,7 +83,7 @@ public sealed record CreateRoutineSetWrite(
     CreateRoutineRepRange? RepRange);
 
 public sealed record UpdateRoutineSetWrite(
-    string Type,
+    [property: JsonConverter(typeof(SetTypeJsonConverter))] SetType Type,
     decimal? WeightKg,
     int? Reps,
     int? DistanceMeters,

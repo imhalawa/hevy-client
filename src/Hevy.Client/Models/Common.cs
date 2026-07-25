@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Hevy.Client.Models;
@@ -98,4 +99,69 @@ public enum CustomExerciseType
     DistanceDuration,
     [JsonStringEnumMemberName("short_distance_weight")]
     ShortDistanceWeight,
+}
+
+public enum SetType
+{
+    Warmup,
+    Normal,
+    Failure,
+    Dropset,
+}
+
+public readonly record struct WorkoutRpe
+{
+    public WorkoutRpe(decimal value)
+    {
+        if (value is not (6m or 7m or 7.5m or 8m or 8.5m or 9m or 9.5m or 10m))
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "RPE must be one of Hevy's documented values.");
+        }
+
+        Value = value;
+    }
+
+    public decimal Value { get; }
+}
+
+public sealed class SetTypeJsonConverter : JsonConverter<SetType>
+{
+    public override SetType Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.GetString() switch
+        {
+            "warmup" => SetType.Warmup,
+            "normal" => SetType.Normal,
+            "failure" => SetType.Failure,
+            "dropset" => SetType.Dropset,
+            _ => throw new JsonException("Set type must be one of Hevy's documented values."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, SetType value, JsonSerializerOptions options)
+    {
+        var wireValue = value switch
+        {
+            SetType.Warmup => "warmup",
+            SetType.Normal => "normal",
+            SetType.Failure => "failure",
+            SetType.Dropset => "dropset",
+            _ => throw new JsonException("Set type must be one of Hevy's documented values."),
+        };
+
+        writer.WriteStringValue(wireValue);
+    }
+}
+
+public sealed class WorkoutRpeJsonConverter : JsonConverter<WorkoutRpe>
+{
+    public override WorkoutRpe Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return new WorkoutRpe(reader.GetDecimal());
+    }
+
+    public override void Write(Utf8JsonWriter writer, WorkoutRpe value, JsonSerializerOptions options)
+    {
+        writer.WriteNumberValue(value.Value);
+    }
 }

@@ -66,10 +66,10 @@ public sealed record WorkoutExerciseWrite(
     IReadOnlyList<WorkoutSetWrite> Sets);
 
 public sealed record WorkoutSetWrite(
-    string Type,
+    [property: JsonConverter(typeof(SetTypeJsonConverter))] SetType Type,
     decimal? WeightKg,
     int? Reps,
     int? DistanceMeters,
     int? DurationSeconds,
     decimal? CustomMetric,
-    decimal? Rpe);
+    [property: JsonConverter(typeof(WorkoutRpeJsonConverter))] WorkoutRpe? Rpe);

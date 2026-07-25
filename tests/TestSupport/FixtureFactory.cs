@@ -11,7 +11,7 @@ public static class FixtureFactory
             new DateTimeOffset(2024, 8, 14, 12, 0, 0, TimeSpan.Zero),
             new DateTimeOffset(2024, 8, 14, 12, 30, 0, TimeSpan.Zero),
             false,
-            [new WorkoutExerciseWrite("D04AC939", null, "Sanitized note", [new WorkoutSetWrite("normal", 100, 10, null, null, null, 8.5m)])]));
+            [new WorkoutExerciseWrite("D04AC939", null, "Sanitized note", [new WorkoutSetWrite(SetType.Normal, 100, 10, null, null, null, new WorkoutRpe(8.5m))])]));
 
     public static UpdateWorkoutRequest UpdateWorkoutRequest() => new(CreateWorkoutRequest().Workout);
 
@@ -20,13 +20,13 @@ public static class FixtureFactory
             "April Leg Day",
             null,
             "Sanitized routine",
-            [new CreateRoutineExerciseWrite("D04AC939", null, 90, "Controlled", [new CreateRoutineSetWrite("normal", 100, 10, null, null, null, new CreateRoutineRepRange(8, 12))])]));
+            [new CreateRoutineExerciseWrite("D04AC939", null, 90, "Controlled", [new CreateRoutineSetWrite(SetType.Normal, 100, 10, null, null, null, new CreateRoutineRepRange(8, 12))])]));
 
     public static UpdateRoutineRequest UpdateRoutineRequest() => new(
         new UpdateRoutineWrite(
             "April Leg Day",
             "Sanitized routine",
-            [new UpdateRoutineExerciseWrite("D04AC939", null, 90, "Controlled", [new UpdateRoutineSetWrite("normal", 100, 10, null, null, null, new RepRange(8, 12))])]));
+            [new UpdateRoutineExerciseWrite("D04AC939", null, 90, "Controlled", [new UpdateRoutineSetWrite(SetType.Normal, 100, 10, null, null, null, new RepRange(8, 12))])]));
 
     public static CreateRoutineFolderRequest CreateRoutineFolderRequest() => new(new RoutineFolderWrite("Push Pull"));
 

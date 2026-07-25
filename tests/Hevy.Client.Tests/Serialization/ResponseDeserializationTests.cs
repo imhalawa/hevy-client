@@ -32,15 +32,18 @@ public sealed class ResponseDeserializationTests
         Assert.Equal(8, routine.Exercises[0].Sets[0].RepRange!.Start);
     }
 
-    // Break caught: changing exercise-template JSON names or collection typing.
+    // Break caught: rejecting additive template muscle names that are outside the mutation enum.
     [Fact]
-    public void Exercise_template_deserializes_catalog_fields()
+    public void Exercise_template_accepts_additive_muscle_names()
     {
-        var template = JsonSerializer.Deserialize(Fixture.Read("exercise-template.json"), HevyJsonContext.Default.ExerciseTemplate);
+        var json = Fixture.Read("exercise-template.json")
+            .Replace("\"chest\"", "\"serratus_anterior\"", StringComparison.Ordinal)
+            .Replace("\"triceps\"", "\"teres_major\"", StringComparison.Ordinal);
+        var template = JsonSerializer.Deserialize(json, HevyJsonContext.Default.ExerciseTemplate);
 
         Assert.Equal("D04AC939", template!.Id);
-        Assert.Equal(MuscleGroup.Chest, template.PrimaryMuscleGroup);
-        Assert.Equal(MuscleGroup.Shoulders, template.SecondaryMuscleGroups[1]);
+        Assert.Equal("serratus_anterior", template.PrimaryMuscleGroup);
+        Assert.Equal("teres_major", template.SecondaryMuscleGroups[0]);
     }
 
     // Break caught: mapping a nullable history metric or set_type to the wrong wire field.
