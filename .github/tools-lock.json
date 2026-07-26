@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-07-26",
+  "tools": {
+    "actionlint": {
+      "version": "1.7.12",
+      "commit": "914e7df21a07ef503a81201c76d2b11c789d3fca",
+      "archive": "actionlint_1.7.12_linux_amd64.tar.gz",
+      "sha256": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+      "source": "https://github.com/rhysd/actionlint/releases/tag/v1.7.12",
+      "checksums": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt"
+    }
+  }
+}

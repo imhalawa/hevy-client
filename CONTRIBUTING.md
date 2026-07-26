@@ -65,4 +65,6 @@ Release builds also pass non-secret `VERSION`, `REVISION`, and `SOURCE_URL` buil
 
 Keep changes focused and explain the user-visible behavior, security implications, RED evidence, and verification commands. Update durable documentation when configuration or a limitation changes. All compiler and analyzer warnings are errors.
 
+Dependency updates are reviewed changes, never automatic merges. Dependabot groups weekly minor and patch updates; major updates remain separate and require explicit maintainer approval. Changes to GitHub Actions must retain full-commit pins and update `.github/actions-lock.json` with the reviewed version and source. Do not select an MCP 2.x preview through routine dependency maintenance; that requires a dedicated migration plan, contract review, and central version-pin change.
+
 By contributing, you agree that your contribution is licensed under the repository's MIT license. Report suspected vulnerabilities through the private process in [SECURITY.md](SECURITY.md), not in a public pull request.

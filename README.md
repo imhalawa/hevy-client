@@ -287,6 +287,35 @@ Review Microsoft's [.NET container image documentation](https://learn.microsoft.
 
 Local builds label version, revision, and source as development values. Public distributors must set `VERSION`, `REVISION`, and `SOURCE_URL` build arguments to the immutable release version, full source commit, and canonical repository URL; these values are metadata and must never contain secrets.
 
+## Verified releases
+
+The release workflow accepts only an exact `vX.Y.Z` Git tag. Lightweight and annotated tags are both supported, but the checked-out commit, workflow source SHA, tag target, .NET assembly version, OCI revision, and OCI version must all agree. It publishes exactly one immutable `X.Y.Z` GHCR tag for `linux/amd64` and `linux/arm64`; it never publishes `latest`, major-only, or minor-only tags.
+
+Public distribution remains fail-closed until the canonical repository and private security intake have been verified. Before the first tag:
+
+1. Complete every blocking item in [the public distribution checklist](docs/release-checklist.md).
+2. Create a protected GitHub Actions environment named `release`.
+3. Set `HEVY_CANONICAL_REPOSITORY` to the exact `OWNER/REPOSITORY` name as a repository or `release`-environment variable.
+4. Set `HEVY_PRIVATE_ADVISORY_VERIFIED=true` only after private vulnerability reporting is enabled and its link has been tested.
+
+The workflow itself has only `contents:read`, `packages:write`, `id-token:write`, and `attestations:write`. It checks that the version tag does not already exist in GHCR, pushes the multi-architecture result under its digest only, verifies both platform manifests and exact OCI labels, exercises the staged amd64 assembly over MCP, emits platform SPDX JSON SBOMs, creates and verifies GitHub provenance and SBOM attestations, and keylessly signs and verifies the manifest digest with Cosign. Only after every check passes does the final workflow step promote that exact digest to the immutable `X.Y.Z` tag.
+
+The workflow deliberately cannot create or modify a GitHub Release because it has read-only repository-content permission. Its SBOMs remain workflow artifacts for 90 days. A maintainer downloads them, attaches them to a draft GitHub Release, repeats the documented digest verification, and only then publishes that GitHub Release immutably.
+
+After replacing the example owner, repository, version, and digest with the values from the successful release run, verify the image rather than trusting a tag alone:
+
+```sh
+cosign verify ghcr.io/OWNER/REPOSITORY@sha256:DIGEST \
+  --certificate-identity https://github.com/OWNER/REPOSITORY/.github/workflows/release.yml@refs/tags/vX.Y.Z \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+gh attestation verify oci://ghcr.io/OWNER/REPOSITORY@sha256:DIGEST \
+  --repo OWNER/REPOSITORY \
+  --signer-workflow OWNER/REPOSITORY/.github/workflows/release.yml
+```
+
+Every external GitHub Action is pinned by its complete commit SHA. Human-readable versions and reviewed source links live in [`.github/actions-lock.json`](.github/actions-lock.json); an action update must change the workflow pin and that lock document together. The ephemeral actionlint release and archive checksum are recorded separately in [`.github/tools-lock.json`](.github/tools-lock.json). Dependabot groups weekly minor and patch NuGet, Docker, and Actions updates. Major updates remain separate and require explicit maintainer review; MCP 2.x is ignored until a deliberate SDK migration updates the central stable `1.4.1` pin and contract tests.
+
 ## Development
 
 The repository targets .NET 10 and uses locked NuGet restores:

@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Hevy.Mcp/Hevy.Mcp.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="YamlDotNet" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>

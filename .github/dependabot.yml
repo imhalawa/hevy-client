@@ -1,0 +1,48 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      stable-updates:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: ModelContextProtocol
+        versions:
+          - "2.x"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: ModelContextProtocol.AspNetCore
+        versions:
+          - "2.x"
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      stable-updates:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      stable-updates:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

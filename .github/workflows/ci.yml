@@ -1,0 +1,60 @@
+name: CI
+
+"on":
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Validate workflow syntax
+        run: ./scripts/run-actionlint.sh
+
+      - name: Validate pinned OpenAPI snapshot
+        run: ./scripts/validate-openapi.sh
+
+      - name: Audit repository release content
+        run: ./scripts/audit-repository.sh
+
+      - name: Restore locked dependencies
+        run: dotnet restore HevyClient.slnx --locked-mode
+
+      - name: Verify repository formatting
+        run: dotnet format HevyClient.slnx --verify-no-changes --no-restore
+
+      - name: Build Release with warnings as errors
+        run: dotnet build HevyClient.slnx --configuration Release --no-restore -warnaserror
+
+      - name: Run all non-live tests
+        run: env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN dotnet test HevyClient.slnx --configuration Release --no-build
+
+      - name: Build local container image
+        run: docker build --pull --tag hevy-client:ci .
+
+      - name: Inspect local container image
+        run: docker image inspect hevy-client:ci
+
+      - name: Run real container smokes
+        run: env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN dotnet test tests/Hevy.Transport.Tests/Hevy.Transport.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~ContainerSmokeTests
