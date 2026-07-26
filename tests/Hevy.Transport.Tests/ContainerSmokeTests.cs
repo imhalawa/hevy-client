@@ -54,14 +54,56 @@ public static class DockerAvailabilityPolicy
         : DockerAvailabilityDecision.Fail;
   }
 
-  private static bool IsRecognizedStoppedLocalDaemon(string error) =>
-      (error.Contains("Cannot connect to the Docker daemon at ", StringComparison.Ordinal) &&
-       error.Contains("Is the docker daemon running?", StringComparison.Ordinal)) ||
-      (error.Contains("error during connect:", StringComparison.OrdinalIgnoreCase) &&
-       error.Contains("//./pipe/docker", StringComparison.OrdinalIgnoreCase) &&
-       error.Contains("The system cannot find the file specified", StringComparison.Ordinal)) ||
-      (error.Contains("failed to connect to the docker API at ", StringComparison.OrdinalIgnoreCase) &&
-       error.Contains("connection refused", StringComparison.OrdinalIgnoreCase));
+  private static bool IsRecognizedStoppedLocalDaemon(string error)
+  {
+    if (error.Contains("Is the docker daemon running?", StringComparison.Ordinal) &&
+        NamesLocalEndpoint(error, "Cannot connect to the Docker daemon at "))
+    {
+      return true;
+    }
+
+    if (error.Contains("error during connect:", StringComparison.OrdinalIgnoreCase) &&
+        error.Contains("//./pipe/docker", StringComparison.OrdinalIgnoreCase) &&
+        error.Contains("The system cannot find the file specified", StringComparison.Ordinal))
+    {
+      return true;
+    }
+
+    return error.Contains("connection refused", StringComparison.OrdinalIgnoreCase) &&
+        NamesLocalEndpoint(error, "failed to connect to the docker API at ");
+  }
+
+  private static bool NamesLocalEndpoint(string error, string marker)
+  {
+    var markerIndex = error.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+    if (markerIndex < 0)
+    {
+      return false;
+    }
+
+    var remainder = error[(markerIndex + marker.Length)..].TrimStart();
+    var separatorIndex = remainder.IndexOfAny([' ', '\t', '\r', '\n']);
+    var endpoint = (separatorIndex < 0 ? remainder : remainder[..separatorIndex]).TrimEnd('.', ',', ';', ':');
+    if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+    {
+      return false;
+    }
+
+    if (string.Equals(uri.Scheme, "unix", StringComparison.OrdinalIgnoreCase))
+    {
+      return string.IsNullOrEmpty(uri.Host) && uri.AbsolutePath.StartsWith("/", StringComparison.Ordinal);
+    }
+
+    if (!string.Equals(uri.Scheme, "tcp", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+    {
+      return false;
+    }
+
+    return string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+        (IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address));
+  }
 }
 
 public sealed class ContainerImageCoordinator : IAsyncDisposable
@@ -547,7 +589,6 @@ public sealed class ContainerSmokeTests
         UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
         UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
   }
-
 }
 
 public sealed class ContainerSmokeInfrastructureTests
@@ -563,17 +604,36 @@ public sealed class ContainerSmokeInfrastructureTests
   }
 
   [Theory]
-  [InlineData(false, DockerAvailabilityDecision.Skip)]
-  [InlineData(true, DockerAvailabilityDecision.Fail)]
-  public void RecognizedStoppedLocalDaemonSkipsOnlyOutsideCi(bool isCi, DockerAvailabilityDecision expected)
+  [InlineData("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")]
+  [InlineData("Cannot connect to the Docker daemon at unix:///home/user/.docker/desktop/docker.sock. Is the docker daemon running?")]
+  [InlineData("error during connect: Get http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/info: open //./pipe/docker_engine: The system cannot find the file specified")]
+  [InlineData("failed to connect to the docker API at tcp://localhost:2375: dial tcp [::1]:2375: connect: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://127.0.0.1:2375: dial tcp 127.0.0.1:2375: connect: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://[::1]:2375: dial tcp [::1]:2375: connect: connection refused")]
+  public void RecognizedStoppedLocalDaemonSkipsOnlyOutsideCi(string error)
   {
     var probe = new DockerProbeResult(
         1,
         string.Empty,
-        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        error,
         ExecutableMissing: false);
 
-    Assert.Equal(expected, DockerAvailabilityPolicy.Evaluate(probe, isCi));
+    Assert.Equal(DockerAvailabilityDecision.Skip, DockerAvailabilityPolicy.Evaluate(probe, isCi: false));
+    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: true));
+  }
+
+  [Theory]
+  [InlineData("failed to connect to the docker API at tcp://build-host:2375: dial tcp 10.40.0.12:2375: connect: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://192.0.2.40:2375: dial tcp 192.0.2.40:2375: connect: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://[2001:db8::40]:2375: dial tcp [2001:db8::40]:2375: connect: connection refused")]
+  [InlineData("Cannot connect to the Docker daemon at ssh://build-host. Is the docker daemon running?")]
+  [InlineData("failed to connect to the docker API at ssh://builder@build-host:22: connection refused")]
+  public void RemoteDockerEndpointsNeverSkip(string error)
+  {
+    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+
+    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: false));
+    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: true));
   }
 
   [Theory]
