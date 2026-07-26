@@ -54,6 +54,14 @@ internal static class ServiceRegistration
         }))
         .OrderBy(static tool => tool.ProtocolTool.Name, StringComparer.Ordinal)
         .ToArray();
+    foreach (var tool in tools)
+    {
+      tool.ProtocolTool.InputSchema = ToolSchemas.NormalizeInput(tool.ProtocolTool.InputSchema);
+      if (tool.ProtocolTool.OutputSchema is { } outputSchema)
+      {
+        tool.ProtocolTool.OutputSchema = ToolSchemas.NormalizeInput(outputSchema);
+      }
+    }
     builder.WithListToolsHandler((request, _) =>
     {
       var protocolTools = tools.Select(static tool => tool.ProtocolTool).ToList();

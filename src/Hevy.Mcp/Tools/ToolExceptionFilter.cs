@@ -50,8 +50,8 @@ internal static class ToolExceptionFilter
   internal static CallToolResult Validation(string message) => ToolResults.Error(new ToolError(
       "validation_error", message, false, NewCorrelationId()));
 
-  internal static CallToolResult Conflict(string message) => ToolResults.Error(new ToolError(
-      "conflict", message, false, NewCorrelationId()));
+  internal static CallToolResult Conflict(string message, object? meta = null) => ToolResults.Error(new ToolError(
+      "conflict", message, false, NewCorrelationId()), meta);
 
   private static string NewCorrelationId() => Guid.NewGuid().ToString("N");
 }

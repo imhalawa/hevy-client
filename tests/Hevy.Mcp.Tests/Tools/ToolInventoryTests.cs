@@ -67,6 +67,8 @@ public sealed class ToolInventoryTests
       var annotations = tool.GetProperty("annotations");
       Assert.Equal("object", input.GetProperty("type").GetString());
       Assert.Equal("object", tool.GetProperty("outputSchema").GetProperty("type").GetString());
+      var outputData = tool.GetProperty("outputSchema").GetProperty("properties").GetProperty("data");
+      Assert.True(outputData.TryGetProperty("properties", out var outputDataProperties) && outputDataProperties.EnumerateObject().Any(), $"{name} data schema is not operation-specific.");
       Assert.False(input.GetProperty("properties").TryGetProperty("services", out _));
       Assert.False(input.GetProperty("properties").TryGetProperty("cancellation_token", out _));
       Assert.True(Hint(annotations, "openWorldHint", defaultValue: true));
@@ -99,12 +101,38 @@ public sealed class ToolInventoryTests
     Assert.Equal(1, workoutsSchema.GetProperty("page_size").GetProperty("minimum").GetInt32());
     Assert.Equal(10, workoutsSchema.GetProperty("page_size").GetProperty("maximum").GetInt32());
     Assert.Equal("^(compact|full)$", workoutsSchema.GetProperty("detail").GetProperty("pattern").GetString());
+    AssertOutputShape(tools, "get_workouts", "items", "page", "continuation");
+    AssertOutputShape(tools, "get_workout_count", "workout_count");
+    AssertOutputShape(tools, "get_workout", "id");
+    AssertOutputShape(tools, "get_routines", "items", "page", "continuation");
+    AssertOutputShape(tools, "get_exercise_history", "items", "page", "continuation");
+    AssertOutputShape(tools, "get_body_measurement", "date");
+    if (!readOnly)
+    {
+      AssertOutputShape(tools, "create_workout", "payload", "result", "dry_run", "validation_warnings");
+      AssertOutputShape(tools, "update_body_measurement", "payload", "result", "forced", "expected_updated_at", "guard_available", "guard_limitation");
+      var measurementUpdateInput = tools.Single(tool => tool.GetProperty("name").GetString() == "update_body_measurement")
+          .GetProperty("inputSchema").GetProperty("properties");
+      Assert.Contains("required", measurementUpdateInput.GetProperty("force").GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
+      Assert.Contains("do not expose updated_at", measurementUpdateInput.GetProperty("expected_updated_at").GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
+    }
     Assert.Equal(0, process.ExitCode);
     Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
   }
 
   private static bool Hint(JsonElement annotations, string name, bool defaultValue) =>
       annotations.TryGetProperty(name, out var hint) ? hint.GetBoolean() : defaultValue;
+
+  private static void AssertOutputShape(JsonElement[] tools, string name, params string[] properties)
+  {
+    var output = tools.Single(tool => tool.GetProperty("name").GetString() == name).GetProperty("outputSchema").GetProperty("properties");
+    var data = output.GetProperty("data").GetProperty("properties");
+    var hasMetaProperties = output.GetProperty("meta").TryGetProperty("properties", out var meta);
+    foreach (var property in properties)
+    {
+      Assert.True(data.TryGetProperty(property, out _) || (hasMetaProperties && meta.TryGetProperty(property, out _)), $"{name} output schema omits {property}.");
+    }
+  }
 
   private static HashSet<(string Method, string Path)> ReadSnapshotOperations()
   {

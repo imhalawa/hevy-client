@@ -8,7 +8,7 @@ namespace Hevy.Mcp.Tools;
 
 internal static class ExerciseReadTools
 {
-  [McpServerTool(Name = "get_exercise_templates", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "get_exercise_templates", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ItemsData<ExerciseTemplate>, PageMeta<PageContinuation>>))]
   [Description("Get one page of exercise templates.")]
   internal static Task<CallToolResult> GetExerciseTemplates(IServiceProvider services, [Range(1, int.MaxValue)] int page = 1, [Range(1, 10)] int page_size = 10, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
@@ -18,7 +18,7 @@ internal static class ExerciseReadTools
     return ToolResults.Success(new { items = result.Items }, $"Returned {result.Items.Count} exercise templates.", ToolResults.PageMeta(result.Page, result.PageCount, page_size, detail));
   });
 
-  [McpServerTool(Name = "get_exercise_template", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "get_exercise_template", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ExerciseTemplate, NoMeta>))]
   [Description("Get one complete exercise template by identifier.")]
   internal static Task<CallToolResult> GetExerciseTemplate(IServiceProvider services, string exercise_template_id, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
@@ -27,7 +27,7 @@ internal static class ExerciseReadTools
     return ToolResults.Success(item, $"Returned exercise template {item.Id}.");
   });
 
-  [McpServerTool(Name = "get_exercise_history", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "get_exercise_history", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ItemsData<ExerciseHistoryListItem>, PageMeta<ExerciseHistoryContinuation>>))]
   [Description("Get one local page of exercise history between optional inclusive calendar dates; units are kilograms, meters, and seconds.")]
   internal static Task<CallToolResult> GetExerciseHistory(IServiceProvider services, string exercise_template_id, [Range(1, int.MaxValue)] int page = 1, [Range(1, 10)] int page_size = 10, DateOnly? start_date = null, DateOnly? end_date = null, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
@@ -37,20 +37,20 @@ internal static class ExerciseReadTools
     if (start_date > end_date) throw new ArgumentException("start_date cannot be after end_date.", nameof(start_date));
     var result = await ToolResults.Client(services).GetExerciseHistoryAsync(exercise_template_id, page, page_size, start_date, end_date, cancellationToken);
     object items = detail == "full" ? result.Items : result.Items.Select(static entry => new { entry.WorkoutId, entry.WorkoutTitle, entry.WorkoutStartTime, entry.ExerciseTemplateId, entry.SetType }).ToArray();
-    return ToolResults.Success(new { items }, $"Returned {result.Items.Count} exercise history entries.", ToolResults.PageMeta(result.Page, result.PageCount, page_size, detail));
+    return ToolResults.Success(new { items }, $"Returned {result.Items.Count} exercise history entries.", ToolResults.ExerciseHistoryPageMeta(exercise_template_id, result.Page, result.PageCount, page_size, start_date, end_date, detail));
   });
 }
 
 internal static class ExerciseWriteTools
 {
-  [McpServerTool(Name = "create_exercise_template", Destructive = false, Idempotent = false, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "create_exercise_template", Destructive = false, Idempotent = false, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<MutationData<CreateExerciseTemplateRequest, ExerciseTemplate>, MutationMeta>))]
   [Description("Create a custom exercise template.")]
   internal static Task<CallToolResult> CreateExerciseTemplate(IServiceProvider services, CreateExerciseTemplateRequest request, bool dry_run = false, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
     ArgumentNullException.ThrowIfNull(request);
     ToolValidation.Exercise(request.Exercise);
-    if (dry_run) return ToolResults.Success(request, "Exercise-template payload is valid; no request was sent.", ToolResults.DryRunMeta());
+    if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateExerciseTemplateRequest, ExerciseTemplate>(request), "Exercise-template payload is valid; no request was sent.", ToolResults.DryRunMeta());
     var result = await ToolResults.Client(services).CreateExerciseTemplateAsync(request, cancellationToken);
-    return ToolResults.Success(result, $"Created exercise template {result.Id}.", new { dry_run = false });
+    return ToolResults.Success(ToolResults.MutationResult<CreateExerciseTemplateRequest, ExerciseTemplate>(result), $"Created exercise template {result.Id}.", new MutationMeta(false));
   });
 }

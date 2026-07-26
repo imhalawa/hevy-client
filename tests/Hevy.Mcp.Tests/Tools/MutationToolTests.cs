@@ -21,12 +21,12 @@ public sealed class MutationToolTests
     var template = await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), true, CancellationToken.None);
     var measurement = await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.CreateBodyMeasurementRequest(), true, CancellationToken.None);
 
-    Assert.Equal("Friday Leg Day", workout.Structured().GetProperty("data").GetProperty("workout").GetProperty("title").GetString());
-    Assert.Equal("D04AC939", workout.Structured().GetProperty("data").GetProperty("workout").GetProperty("exercises")[0].GetProperty("exercise_template_id").GetString());
-    Assert.Equal("April Leg Day", routine.Structured().GetProperty("data").GetProperty("routine").GetProperty("title").GetString());
-    Assert.Equal("Push Pull", folder.Structured().GetProperty("data").GetProperty("routine_folder").GetProperty("title").GetString());
-    Assert.Equal("weight_reps", template.Structured().GetProperty("data").GetProperty("exercise").GetProperty("exercise_type").GetString());
-    Assert.Equal("2024-08-14", measurement.Structured().GetProperty("data").GetProperty("date").GetString());
+    Assert.Equal("Friday Leg Day", workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("title").GetString());
+    Assert.Equal("D04AC939", workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("exercises")[0].GetProperty("exercise_template_id").GetString());
+    Assert.Equal("April Leg Day", routine.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine").GetProperty("title").GetString());
+    Assert.Equal("Push Pull", folder.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine_folder").GetProperty("title").GetString());
+    Assert.Equal("weight_reps", template.Structured().GetProperty("data").GetProperty("payload").GetProperty("exercise").GetProperty("exercise_type").GetString());
+    Assert.Equal("2024-08-14", measurement.Structured().GetProperty("data").GetProperty("payload").GetProperty("date").GetString());
     Assert.All(new[] { workout, routine, folder, template, measurement }, result =>
     {
       Assert.True(result.Structured().GetProperty("meta").GetProperty("dry_run").GetBoolean());
@@ -41,7 +41,7 @@ public sealed class MutationToolTests
     var client = new FakeHevyClient();
     var services = Services(client);
 
-    await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.CreateWorkoutRequest(), false, CancellationToken.None);
+    var workout = await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.CreateWorkoutRequest(), false, CancellationToken.None);
     await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), false, CancellationToken.None);
     await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.CreateRoutineFolderRequest(), false, CancellationToken.None);
     await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, CancellationToken.None);
@@ -49,6 +49,7 @@ public sealed class MutationToolTests
 
     Assert.Equal(5, client.CallCount);
     Assert.Equal(nameof(IHevyClient.CreateBodyMeasurementAsync), client.LastOperation);
+    Assert.Equal("workout-1", workout.Structured().GetProperty("data").GetProperty("result").GetProperty("id").GetString());
   }
 
   [Fact]
@@ -143,6 +144,8 @@ public sealed class MutationToolTests
     Assert.True(workout.Structured().GetProperty("meta").GetProperty("forced").GetBoolean());
     Assert.True(routine.Structured().GetProperty("meta").GetProperty("forced").GetBoolean());
     Assert.True(measurement.Structured().GetProperty("meta").GetProperty("forced").GetBoolean());
+    Assert.False(measurement.Structured().GetProperty("meta").GetProperty("guard_available").GetBoolean());
+    Assert.Contains("do not expose updated_at", measurement.Structured().GetProperty("meta").GetProperty("guard_limitation").GetString(), StringComparison.Ordinal);
   }
 
   [Fact]
@@ -155,9 +158,9 @@ public sealed class MutationToolTests
     var routine = await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.UpdateRoutineRequest(), null, true, true, CancellationToken.None);
     var measurement = await MeasurementWriteTools.UpdateBodyMeasurement(services, new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), null, true, true, CancellationToken.None);
 
-    Assert.Equal("Friday Leg Day", workout.Structured().GetProperty("data").GetProperty("workout").GetProperty("title").GetString());
-    Assert.Equal("April Leg Day", routine.Structured().GetProperty("data").GetProperty("routine").GetProperty("title").GetString());
-    Assert.Equal(80.5m, measurement.Structured().GetProperty("data").GetProperty("weight_kg").GetDecimal());
+    Assert.Equal("Friday Leg Day", workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("title").GetString());
+    Assert.Equal("April Leg Day", routine.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine").GetProperty("title").GetString());
+    Assert.Equal(80.5m, measurement.Structured().GetProperty("data").GetProperty("payload").GetProperty("weight_kg").GetDecimal());
     Assert.Equal(0, client.CallCount);
   }
 
@@ -171,6 +174,8 @@ public sealed class MutationToolTests
 
     Assert.True(result.IsError);
     Assert.Equal("conflict", result.Structured().GetProperty("error").GetProperty("code").GetString());
+    Assert.False(result.Structured().GetProperty("meta").GetProperty("guard_available").GetBoolean());
+    Assert.Contains("do not expose updated_at", result.Structured().GetProperty("meta").GetProperty("guard_limitation").GetString(), StringComparison.Ordinal);
     Assert.Equal(1, client.CallCount);
     Assert.Equal(nameof(IHevyClient.GetBodyMeasurementAsync), client.LastOperation);
   }

@@ -27,8 +27,8 @@ internal static class ToolResults
   internal static CallToolResult Success(object? data, string summary = "Hevy request completed.", object? meta = null) =>
       Create(new ToolResultEnvelope(true, data, Meta: meta), summary, isError: false);
 
-  internal static CallToolResult Error(ToolError error) =>
-      Create(new ToolResultEnvelope(false, Error: error), $"{error.Code}: {error.Message} (correlation_id: {error.CorrelationId})", isError: true);
+  internal static CallToolResult Error(ToolError error, object? meta = null) =>
+      Create(new ToolResultEnvelope(false, Error: error, Meta: meta), $"{error.Code}: {error.Message} (correlation_id: {error.CorrelationId})", isError: true);
 
   private static CallToolResult Create(ToolResultEnvelope envelope, string text, bool isError) => new()
   {
@@ -64,24 +64,38 @@ internal static class ToolResults
     }
   }
 
-  internal static object PageMeta(int page, int pageCount, int pageSize, string detail) =>
-      new
-      {
-        page,
-        page_count = pageCount,
-        page_size = pageSize,
-        detail,
-        truncated = page < pageCount,
-        continuation = page < pageCount ? new { page = page + 1, page_size = pageSize, detail } : null,
-      };
+  internal static PageMeta<PageContinuation> PageMeta(int page, int pageCount, int pageSize, string detail) =>
+      new(page, pageCount, pageSize, detail, page < pageCount,
+          page < pageCount ? new PageContinuation(page + 1, pageSize, detail) : null);
 
-  internal static object DryRunMeta(bool force = false, DateTimeOffset? expectedUpdatedAt = null) => new
-  {
-    dry_run = true,
-    forced = force,
-    expected_updated_at = expectedUpdatedAt,
-    validation_warnings = Array.Empty<string>(),
-  };
+  internal static PageMeta<WorkoutEventContinuation> WorkoutEventPageMeta(
+      int page,
+      int pageCount,
+      int pageSize,
+      DateTimeOffset since,
+      string detail) => new(page, pageCount, pageSize, detail, page < pageCount,
+          page < pageCount ? new WorkoutEventContinuation(page + 1, pageSize, since, detail) : null);
+
+  internal static PageMeta<ExerciseHistoryContinuation> ExerciseHistoryPageMeta(
+      string exerciseTemplateId,
+      int page,
+      int pageCount,
+      int pageSize,
+      DateOnly? startDate,
+      DateOnly? endDate,
+      string detail) => new(page, pageCount, pageSize, detail, page < pageCount,
+          page < pageCount ? new ExerciseHistoryContinuation(exerciseTemplateId, page + 1, pageSize, startDate, endDate, detail) : null);
+
+  internal static MutationMeta DryRunMeta(bool force = false, DateTimeOffset? expectedUpdatedAt = null) =>
+      new(true, force, expectedUpdatedAt, []);
+
+  internal static MutationData<TPayload, TResult> DryRunData<TPayload, TResult>(TPayload payload)
+      where TPayload : class
+      where TResult : class => new(Payload: payload);
+
+  internal static MutationData<TPayload, TResult> MutationResult<TPayload, TResult>(TResult result)
+      where TPayload : class
+      where TResult : class => new(Result: result);
 }
 
 internal static class ToolValidation

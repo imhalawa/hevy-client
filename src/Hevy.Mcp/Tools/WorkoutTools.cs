@@ -8,7 +8,7 @@ namespace Hevy.Mcp.Tools;
 
 internal static class WorkoutReadTools
 {
-  [McpServerTool(Name = "get_workouts", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "get_workouts", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ItemsData<WorkoutListItem>, PageMeta<PageContinuation>>))]
   [Description("Get one page of workouts. Times are UTC offsets; compact output omits nested exercises unless detail is full.")]
   internal static Task<CallToolResult> GetWorkouts(
       IServiceProvider services,
@@ -36,7 +36,7 @@ internal static class WorkoutReadTools
         return ToolResults.Success(new { items }, $"Returned {result.Items.Count} workouts.", ToolResults.PageMeta(result.Page, result.PageCount, page_size, detail));
       });
 
-  [McpServerTool(Name = "get_workout_count", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "get_workout_count", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<WorkoutCountData, NoMeta>))]
   [Description("Get the total workout count for the authenticated Hevy account.")]
   internal static Task<CallToolResult> GetWorkoutCount(IServiceProvider services, CancellationToken cancellationToken = default) =>
       ToolExceptionFilter.ExecuteAsync(async () =>
@@ -45,7 +45,7 @@ internal static class WorkoutReadTools
         return ToolResults.Success(new { workout_count = count }, $"The account has {count} workouts.");
       });
 
-  [McpServerTool(Name = "get_workout_events", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "get_workout_events", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ItemsData<WorkoutEventListItem>, PageMeta<WorkoutEventContinuation>>))]
   [Description("Get one page of workout update/delete events since a UTC timestamp.")]
   internal static Task<CallToolResult> GetWorkoutEvents(
       IServiceProvider services,
@@ -59,11 +59,11 @@ internal static class WorkoutReadTools
         ToolResults.ValidateDetail(detail);
         if (since == default) throw new ArgumentException("since is required.", nameof(since));
         var result = await ToolResults.Client(services).GetWorkoutEventsAsync(page, page_size, since, cancellationToken);
-        object items = detail == "full" ? result.Items : result.Items.Select(CompactEvent).ToArray();
-        return ToolResults.Success(new { items }, $"Returned {result.Items.Count} workout events.", ToolResults.PageMeta(result.Page, result.PageCount, page_size, detail));
+        var items = result.Items.Select(workoutEvent => ProjectEvent(workoutEvent, detail == "full")).ToArray();
+        return ToolResults.Success(new { items }, $"Returned {result.Items.Count} workout events.", ToolResults.WorkoutEventPageMeta(result.Page, result.PageCount, page_size, since, detail));
       });
 
-  [McpServerTool(Name = "get_workout", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "get_workout", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<Workout, NoMeta>))]
   [Description("Get one workout with its complete nested exercise and set data.")]
   internal static Task<CallToolResult> GetWorkout(
       IServiceProvider services,
@@ -75,17 +75,17 @@ internal static class WorkoutReadTools
         return ToolResults.Success(workout, $"Returned workout {workout.Id}.");
       });
 
-  private static object CompactEvent(WorkoutEvent workoutEvent) => workoutEvent switch
+  private static WorkoutEventListItem ProjectEvent(WorkoutEvent workoutEvent, bool full) => workoutEvent switch
   {
-    UpdatedWorkoutEvent updated => new { type = "updated", id = updated.Workout.Id, updated_at = updated.Workout.UpdatedAt },
-    DeletedWorkoutEvent deleted => new { type = "deleted", id = deleted.Id, deleted_at = deleted.DeletedAt },
-    _ => new { type = "unknown", id = string.Empty, updated_at = (DateTimeOffset?)null },
+    UpdatedWorkoutEvent updated => new("updated", updated.Workout.Id, updated.Workout.UpdatedAt, Workout: full ? updated.Workout : null),
+    DeletedWorkoutEvent deleted => new("deleted", deleted.Id, DeletedAt: deleted.DeletedAt),
+    _ => new("unknown", string.Empty),
   };
 }
 
 internal static class WorkoutWriteTools
 {
-  [McpServerTool(Name = "create_workout", Destructive = false, Idempotent = false, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "create_workout", Destructive = false, Idempotent = false, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<MutationData<CreateWorkoutRequest, Workout>, MutationMeta>))]
   [Description("Create a workout. Weights are kilograms, distance meters, duration seconds, and times include UTC offsets.")]
   internal static Task<CallToolResult> CreateWorkout(
       IServiceProvider services,
@@ -95,12 +95,12 @@ internal static class WorkoutWriteTools
       {
         ArgumentNullException.ThrowIfNull(request);
         ToolValidation.Workout(request.Workout);
-        if (dry_run) return ToolResults.Success(request, "Workout payload is valid; no request was sent.", ToolResults.DryRunMeta());
+        if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateWorkoutRequest, Workout>(request), "Workout payload is valid; no request was sent.", ToolResults.DryRunMeta());
         var result = await ToolResults.Client(services).CreateWorkoutAsync(request, cancellationToken);
-        return ToolResults.Success(result, $"Created workout {result.Id}.", new { dry_run = false });
+        return ToolResults.Success(ToolResults.MutationResult<CreateWorkoutRequest, Workout>(result), $"Created workout {result.Id}.", new MutationMeta(false));
       });
 
-  [McpServerTool(Name = "update_workout", Destructive = true, Idempotent = false, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolResultEnvelope))]
+  [McpServerTool(Name = "update_workout", Destructive = true, Idempotent = false, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<MutationData<UpdateWorkoutRequest, Workout>, MutationMeta>))]
   [Description("Replace a workout after an updated_at guard, or explicitly bypass the guard with force.")]
   internal static Task<CallToolResult> UpdateWorkout(
       IServiceProvider services,
@@ -115,7 +115,7 @@ internal static class WorkoutWriteTools
         ArgumentNullException.ThrowIfNull(request);
         ToolValidation.Workout(request.Workout);
         ToolValidation.Guard(expected_updated_at, force);
-        if (dry_run) return ToolResults.Success(request, "Workout replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));
+        if (dry_run) return ToolResults.Success(ToolResults.DryRunData<UpdateWorkoutRequest, Workout>(request), "Workout replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));
         var client = ToolResults.Client(services);
         if (!force)
         {
@@ -126,6 +126,6 @@ internal static class WorkoutWriteTools
           }
         }
         var result = await client.UpdateWorkoutAsync(workout_id, request, cancellationToken);
-        return ToolResults.Success(result, $"Updated workout {result.Id}.", new { dry_run = false, forced = force, expected_updated_at });
+        return ToolResults.Success(ToolResults.MutationResult<UpdateWorkoutRequest, Workout>(result), $"Updated workout {result.Id}.", new MutationMeta(false, force, expected_updated_at));
       });
 }
