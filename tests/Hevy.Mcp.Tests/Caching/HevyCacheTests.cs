@@ -153,6 +153,22 @@ public sealed class HevyCacheTests
   }
 
   [Fact]
+  public async Task Empty_positive_count_catalog_page_is_rejected_and_never_cached()
+  {
+    var client = new FakeHevyClient
+    {
+      GetRoutinesHandler = (page, _, _) => Task.FromResult(new PagedResult<Routine>(page, 1, [])),
+    };
+    using var memory = CreateMemoryCache(100);
+    var cache = new HevyCache(client, memory, TimeProvider.System);
+
+    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
+    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
+
+    Assert.Equal(2, client.CallCount);
+  }
+
+  [Fact]
   public async Task CreatorCancellationCancelsOnlyItsWaitAndSharedLoadCompletesForAnotherWaiter()
   {
     var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

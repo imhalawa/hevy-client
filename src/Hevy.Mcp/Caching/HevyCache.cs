@@ -137,6 +137,7 @@ internal sealed class HevyCache
       }
 
       if ((result.PageCount == 0 && (result.Page != 1 || result.Items.Count != 0)) ||
+          (result.PageCount > 0 && result.Items.Count == 0) ||
           (result.PageCount > 0 && result.Page > result.PageCount))
       {
         throw new InvalidOperationException("Hevy returned an impossible catalog page; the partial catalog was not cached.");

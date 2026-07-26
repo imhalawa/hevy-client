@@ -48,6 +48,42 @@ public sealed class HevyClientResponseContractTests
     { "measurements", Mutate("body-measurement-page.json", root => root["page_count"] = 0) },
   };
 
+  public static TheoryData<string, string, int> CanonicalEmptyPages => new()
+  {
+    { "workouts", EmptyPage("workouts", 1, 0, includeAdditiveField: true), 1 },
+    { "events", EmptyPage("events", 1, 0, includeAdditiveField: true), 1 },
+    { "routines", EmptyPage("routines", 1, 0, includeAdditiveField: true), 1 },
+    { "templates", EmptyPage("exercise_templates", 1, 0, includeAdditiveField: true), 1 },
+    { "folders", EmptyPage("routine_folders", 1, 0, includeAdditiveField: true), 1 },
+    { "measurements", EmptyPage("body_measurements", 1, 0, includeAdditiveField: true), 1 },
+  };
+
+  public static TheoryData<string, string, int> EmptyPositiveCountPages => new()
+  {
+    { "workouts", EmptyPage("workouts", 1, 1), 1 },
+    { "workouts", EmptyPage("workouts", 2, 2), 2 },
+    { "events", EmptyPage("events", 1, 1), 1 },
+    { "events", EmptyPage("events", 2, 2), 2 },
+    { "routines", EmptyPage("routines", 1, 1), 1 },
+    { "routines", EmptyPage("routines", 2, 2), 2 },
+    { "templates", EmptyPage("exercise_templates", 1, 1), 1 },
+    { "templates", EmptyPage("exercise_templates", 2, 2), 2 },
+    { "folders", EmptyPage("routine_folders", 1, 1), 1 },
+    { "folders", EmptyPage("routine_folders", 2, 2), 2 },
+    { "measurements", EmptyPage("body_measurements", 1, 1), 1 },
+    { "measurements", EmptyPage("body_measurements", 2, 2), 2 },
+  };
+
+  public static TheoryData<string, string, int> NonemptyAdditivePages => new()
+  {
+    { "workouts", AddFuturePageFields("workout-page.json", "workouts"), 1 },
+    { "events", AddFuturePageFields("workout-events.json", "events"), 1 },
+    { "routines", AddFuturePageFields("routine-page.json", "routines"), 1 },
+    { "templates", AddFuturePageFields("exercise-template-page.json", "exercise_templates"), 1 },
+    { "folders", AddFuturePageFields("routine-folder-page.json", "routine_folders"), 2 },
+    { "measurements", AddFuturePageFields("body-measurement-page.json", "body_measurements"), 1 },
+  };
+
   [Theory]
   [MemberData(nameof(NullCollectionMembers))]
   public async Task Null_elements_in_every_response_collection_are_rejected_at_the_client_boundary(string operation, string response) =>
@@ -63,16 +99,44 @@ public sealed class HevyClientResponseContractTests
   public async Task Nonempty_zero_count_pages_are_rejected_for_every_paginated_response_family(string operation, string response) =>
       await AssertUnexpectedResponseAsync(operation, response);
 
-  [Fact]
-  public async Task Canonical_empty_first_page_remains_valid()
+  [Theory]
+  [MemberData(nameof(CanonicalEmptyPages))]
+  public async Task Empty_collection_is_valid_only_for_the_canonical_first_page_of_every_paginated_response_family(
+      string operation,
+      string response,
+      int requestedPage)
   {
-    var handler = RespondingWith("{\"page\":1,\"page_count\":0,\"workouts\":[]}");
-    var client = CreateClient(handler);
+    var client = CreateClient(RespondingWith(response));
 
-    var result = await client.GetWorkoutsAsync(1, 10, CancellationToken.None);
+    await InvokeAsync(client, operation, requestedPage);
+  }
 
-    Assert.Empty(result.Items);
-    Assert.Equal(0, result.PageCount);
+  [Theory]
+  [MemberData(nameof(EmptyPositiveCountPages))]
+  public async Task Empty_collection_with_positive_page_count_is_rejected_on_first_and_later_pages_for_every_family(
+      string operation,
+      string response,
+      int requestedPage)
+  {
+    var client = CreateClient(RespondingWith(response));
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => InvokeAsync(client, operation, requestedPage));
+
+    Assert.Equal("unexpected_response", exception.Code);
+    Assert.False(exception.IsRetryable);
+    Assert.Equal(HttpStatusCode.OK, exception.StatusCode);
+  }
+
+  [Theory]
+  [MemberData(nameof(NonemptyAdditivePages))]
+  public async Task Nonempty_pages_with_additive_fields_remain_valid_for_every_paginated_response_family(
+      string operation,
+      string response,
+      int requestedPage)
+  {
+    var client = CreateClient(RespondingWith(response));
+
+    await InvokeAsync(client, operation, requestedPage);
   }
 
   private static async Task AssertUnexpectedResponseAsync(string operation, string response)
@@ -86,21 +150,21 @@ public sealed class HevyClientResponseContractTests
     Assert.Equal(HttpStatusCode.OK, exception.StatusCode);
   }
 
-  private static Task InvokeAsync(HevyClient client, string operation) => operation switch
+  private static Task InvokeAsync(HevyClient client, string operation, int page = 1) => operation switch
   {
     "user" => client.GetUserInfoAsync(default),
     "count" => client.GetWorkoutCountAsync(default),
-    "workouts" => client.GetWorkoutsAsync(1, 10, default),
-    "events" => client.GetWorkoutEventsAsync(1, 10, DateTimeOffset.UnixEpoch, default),
+    "workouts" => client.GetWorkoutsAsync(page, 10, default),
+    "events" => client.GetWorkoutEventsAsync(page, 10, DateTimeOffset.UnixEpoch, default),
     "workout" => client.GetWorkoutAsync("workout-1", default),
-    "routines" => client.GetRoutinesAsync(1, 10, default),
+    "routines" => client.GetRoutinesAsync(page, 10, default),
     "routine" => client.GetRoutineAsync("routine-1", default),
-    "templates" => client.GetExerciseTemplatesAsync(1, 100, default),
+    "templates" => client.GetExerciseTemplatesAsync(page, 100, default),
     "template" => client.GetExerciseTemplateAsync("template-1", default),
-    "folders" => client.GetRoutineFoldersAsync(1, 10, default),
+    "folders" => client.GetRoutineFoldersAsync(page, 10, default),
     "folder" => client.GetRoutineFolderAsync(1, default),
     "history" => client.GetExerciseHistoryAsync("template-1", 1, 10, null, null, default),
-    "measurements" => client.GetBodyMeasurementsAsync(1, 10, default),
+    "measurements" => client.GetBodyMeasurementsAsync(page, 10, default),
     "measurement" => client.GetBodyMeasurementAsync(new DateOnly(2024, 8, 14), default),
     _ => throw new ArgumentOutOfRangeException(nameof(operation)),
   };
@@ -118,6 +182,29 @@ public sealed class HevyClientResponseContractTests
     mutation(routine);
     return new JsonObject { ["routine"] = routine }.ToJsonString();
   }
+
+  private static string EmptyPage(string collectionName, int page, int pageCount, bool includeAdditiveField = false)
+  {
+    var response = new JsonObject
+    {
+      ["page"] = page,
+      ["page_count"] = pageCount,
+      [collectionName] = new JsonArray(),
+    };
+    if (includeAdditiveField)
+    {
+      response["future_page_field"] = "ignored";
+    }
+
+    return response.ToJsonString();
+  }
+
+  private static string AddFuturePageFields(string fixture, string collectionName) => Mutate(fixture, root =>
+  {
+    root["future_page_field"] = "ignored";
+    var collection = root[collectionName]!.AsArray();
+    collection[0]!["future_item_field"] = "ignored";
+  });
 
   private static HevyClient CreateClient(RecordingHttpMessageHandler handler) =>
       new(new HttpClient(handler), new HevyClientOptions("test-api-key"));

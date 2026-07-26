@@ -394,7 +394,8 @@ public sealed class HevyClient : IHevyClient
   {
     if (actualPage != requestedPage || pageCount < 0 || (pageCount == 0 && actualPage != 1) ||
         (pageCount > 0 && actualPage > pageCount) || items is null ||
-        (pageCount == 0 && items.Count != 0) || items.Count > requestedPageSize)
+        (pageCount == 0 && items.Count != 0) || (pageCount > 0 && items.Count == 0) ||
+        items.Count > requestedPageSize)
     {
       throw HevyResponse.UnexpectedResponse(System.Net.HttpStatusCode.OK);
     }
