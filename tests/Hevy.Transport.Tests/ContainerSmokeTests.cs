@@ -35,7 +35,11 @@ public delegate Task<DockerCommandResult> DockerCommandRunner(
 
 public static class DockerAvailabilityPolicy
 {
-  public static DockerAvailabilityDecision Evaluate(DockerProbeResult probe, bool isCi)
+  public static DockerAvailabilityDecision Evaluate(
+      DockerProbeResult probe,
+      bool isCi,
+      string? configuredDockerHost = null,
+      string? configuredDockerContext = null)
   {
     ArgumentNullException.ThrowIfNull(probe);
 
@@ -49,41 +53,129 @@ public static class DockerAvailabilityPolicy
       return DockerAvailabilityDecision.Fail;
     }
 
-    return probe.ExecutableMissing || IsRecognizedStoppedLocalDaemon(probe.StandardError)
-        ? DockerAvailabilityDecision.Skip
-        : DockerAvailabilityDecision.Fail;
-  }
-
-  private static bool IsRecognizedStoppedLocalDaemon(string error)
-  {
-    if (error.Contains("Is the docker daemon running?", StringComparison.Ordinal) &&
-        NamesLocalEndpoint(error, "Cannot connect to the Docker daemon at "))
+    if (probe.ExecutableMissing)
     {
-      return true;
+      return DockerAvailabilityDecision.Skip;
     }
 
-    if (error.Contains("error during connect:", StringComparison.OrdinalIgnoreCase) &&
-        error.Contains("//./pipe/docker", StringComparison.OrdinalIgnoreCase) &&
-        error.Contains("The system cannot find the file specified", StringComparison.Ordinal))
-    {
-      return true;
-    }
-
-    return error.Contains("connection refused", StringComparison.OrdinalIgnoreCase) &&
-        NamesLocalEndpoint(error, "failed to connect to the docker API at ");
+    return DockerConfigurationAllowsLocalSkip(configuredDockerHost, configuredDockerContext) &&
+        IsRecognizedStoppedLocalDaemon(probe.StandardError)
+          ? DockerAvailabilityDecision.Skip
+          : DockerAvailabilityDecision.Fail;
   }
 
-  private static bool NamesLocalEndpoint(string error, string marker)
+  private static bool DockerConfigurationAllowsLocalSkip(
+      string? configuredDockerHost,
+      string? configuredDockerContext)
   {
-    var markerIndex = error.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-    if (markerIndex < 0)
+    if (!string.IsNullOrEmpty(configuredDockerHost) && !IsLocalEndpoint(configuredDockerHost))
     {
       return false;
     }
 
-    var remainder = error[(markerIndex + marker.Length)..].TrimStart();
-    var separatorIndex = remainder.IndexOfAny([' ', '\t', '\r', '\n']);
-    var endpoint = (separatorIndex < 0 ? remainder : remainder[..separatorIndex]).TrimEnd('.', ',', ';', ':');
+    return string.IsNullOrEmpty(configuredDockerContext) ||
+        string.Equals(configuredDockerContext, "default", StringComparison.Ordinal) ||
+        string.Equals(configuredDockerContext, "desktop-linux", StringComparison.Ordinal);
+  }
+
+  private static bool IsRecognizedStoppedLocalDaemon(string error)
+  {
+    var diagnostic = error.TrimEnd('\r', '\n');
+    if (diagnostic.Contains('\r', StringComparison.Ordinal) || diagnostic.Contains('\n', StringComparison.Ordinal))
+    {
+      return false;
+    }
+
+    const string daemonPrefix = "Cannot connect to the Docker daemon at ";
+    const string daemonSuffix = ". Is the docker daemon running?";
+    if (diagnostic.StartsWith(daemonPrefix, StringComparison.Ordinal) &&
+        diagnostic.EndsWith(daemonSuffix, StringComparison.Ordinal))
+    {
+      var endpoint = diagnostic[daemonPrefix.Length..^daemonSuffix.Length];
+      return IsLocalEndpoint(endpoint);
+    }
+
+    return IsLocalWindowsPipeUnavailable(diagnostic) || IsLocalApiRefusal(diagnostic);
+  }
+
+  private static bool IsLocalWindowsPipeUnavailable(string diagnostic)
+  {
+    const string pattern = "^error during connect: " +
+        "(?:in the default daemon configuration on Windows, the docker client must be run with elevated privileges to connect: )?" +
+        "Get (?<quote>\")?http://%2F%2F\\.%2Fpipe%2F(?<requested>docker_engine|dockerDesktopLinuxEngine)(?:/[^\"\\s:]*)?(?(quote)\")" +
+        ": open //\\./pipe/(?<opened>docker_engine|dockerDesktopLinuxEngine)" +
+        ": The system cannot find the file specified\\.?$";
+    var match = Regex.Match(
+        diagnostic,
+        pattern,
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+        TimeSpan.FromMilliseconds(100));
+    return match.Success && string.Equals(
+        match.Groups["requested"].Value,
+        match.Groups["opened"].Value,
+        StringComparison.OrdinalIgnoreCase);
+  }
+
+  private static bool IsLocalApiRefusal(string diagnostic)
+  {
+    const string prefix = "failed to connect to the docker API at ";
+    if (!diagnostic.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+        diagnostic[prefix.Length..].Contains(prefix, StringComparison.OrdinalIgnoreCase))
+    {
+      return false;
+    }
+
+    var remainder = diagnostic[prefix.Length..];
+    const string detailedSeparator = "; check if the path is correct and if the daemon is running: ";
+    var separatorIndex = remainder.IndexOf(detailedSeparator, StringComparison.OrdinalIgnoreCase);
+    var separatorLength = detailedSeparator.Length;
+    if (separatorIndex < 0)
+    {
+      separatorIndex = remainder.IndexOf(": ", StringComparison.Ordinal);
+      separatorLength = 2;
+    }
+    if (separatorIndex <= 0)
+    {
+      return false;
+    }
+
+    var endpoint = remainder[..separatorIndex];
+    var reason = remainder[(separatorIndex + separatorLength)..];
+    if (!IsLocalEndpoint(endpoint) || !IsBoundConnectionRefusal(reason))
+    {
+      return false;
+    }
+
+    return true;
+  }
+
+  private static bool IsBoundConnectionRefusal(string reason)
+  {
+    if (string.Equals(reason, "connection refused", StringComparison.OrdinalIgnoreCase))
+    {
+      return true;
+    }
+
+    const string dialPrefix = "dial tcp ";
+    const string dialSuffix = ": connect: connection refused";
+    if (!reason.StartsWith(dialPrefix, StringComparison.OrdinalIgnoreCase) ||
+        !reason.EndsWith(dialSuffix, StringComparison.OrdinalIgnoreCase))
+    {
+      return false;
+    }
+
+    var dialAddress = reason[dialPrefix.Length..^dialSuffix.Length];
+    return IsLocalEndpoint($"tcp://{dialAddress}");
+  }
+
+  private static bool IsLocalEndpoint(string endpoint)
+  {
+    if (string.Equals(endpoint, "npipe:////./pipe/docker_engine", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(endpoint, "npipe:////./pipe/dockerDesktopLinuxEngine", StringComparison.OrdinalIgnoreCase))
+    {
+      return true;
+    }
+
     if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
     {
       return false;
@@ -91,7 +183,12 @@ public static class DockerAvailabilityPolicy
 
     if (string.Equals(uri.Scheme, "unix", StringComparison.OrdinalIgnoreCase))
     {
-      return string.IsNullOrEmpty(uri.Host) && uri.AbsolutePath.StartsWith("/", StringComparison.Ordinal);
+      return endpoint.StartsWith("unix:///", StringComparison.OrdinalIgnoreCase) &&
+          string.IsNullOrEmpty(uri.Host) &&
+          string.IsNullOrEmpty(uri.UserInfo) &&
+          string.IsNullOrEmpty(uri.Query) &&
+          string.IsNullOrEmpty(uri.Fragment) &&
+          uri.AbsolutePath.Length > 1;
     }
 
     if (!string.Equals(uri.Scheme, "tcp", StringComparison.OrdinalIgnoreCase) &&
@@ -101,8 +198,15 @@ public static class DockerAvailabilityPolicy
       return false;
     }
 
-    return string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+    var pathIsEmpty = string.IsNullOrEmpty(uri.AbsolutePath) || string.Equals(uri.AbsolutePath, "/", StringComparison.Ordinal);
+    var hostIsLoopback = string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
         (IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address));
+    return string.IsNullOrEmpty(uri.UserInfo) &&
+        string.IsNullOrEmpty(uri.Query) &&
+        string.IsNullOrEmpty(uri.Fragment) &&
+        pathIsEmpty &&
+        uri.Port > 0 &&
+        hostIsLoopback;
   }
 }
 
@@ -217,7 +321,9 @@ public sealed class ContainerSmokeFixture : IAsyncLifetime
             availability.StandardOutput,
             availability.StandardError,
             availability.ExecutableMissing),
-        isCi: !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CI")));
+        isCi: !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CI")),
+        configuredDockerHost: Environment.GetEnvironmentVariable("DOCKER_HOST"),
+        configuredDockerContext: Environment.GetEnvironmentVariable("DOCKER_CONTEXT"));
     if (decision is DockerAvailabilityDecision.Skip)
     {
       throw SkipException.ForSkip($"Docker is genuinely unavailable: {availability.StandardError.Trim()}");
@@ -600,16 +706,26 @@ public sealed class ContainerSmokeInfrastructureTests
   {
     var probe = new DockerProbeResult(127, string.Empty, "docker executable was not found", ExecutableMissing: true);
 
-    Assert.Equal(expected, DockerAvailabilityPolicy.Evaluate(probe, isCi));
+    Assert.Equal(
+        expected,
+        DockerAvailabilityPolicy.Evaluate(
+            probe,
+            isCi,
+            configuredDockerHost: "ssh://builder@build-host",
+            configuredDockerContext: "production"));
   }
 
   [Theory]
   [InlineData("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")]
   [InlineData("Cannot connect to the Docker daemon at unix:///home/user/.docker/desktop/docker.sock. Is the docker daemon running?")]
   [InlineData("error during connect: Get http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/info: open //./pipe/docker_engine: The system cannot find the file specified")]
+  [InlineData("error during connect: in the default daemon configuration on Windows, the docker client must be run with elevated privileges to connect: Get \"http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/info\": open //./pipe/docker_engine: The system cannot find the file specified.")]
+  [InlineData("error during connect: Get \"http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/info\": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.")]
   [InlineData("failed to connect to the docker API at tcp://localhost:2375: dial tcp [::1]:2375: connect: connection refused")]
   [InlineData("failed to connect to the docker API at tcp://127.0.0.1:2375: dial tcp 127.0.0.1:2375: connect: connection refused")]
   [InlineData("failed to connect to the docker API at tcp://[::1]:2375: dial tcp [::1]:2375: connect: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://localhost:2375; check if the path is correct and if the daemon is running: dial tcp [::1]:2375: connect: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://127.0.0.1:2375: connection refused")]
   public void RecognizedStoppedLocalDaemonSkipsOnlyOutsideCi(string error)
   {
     var probe = new DockerProbeResult(
@@ -634,6 +750,73 @@ public sealed class ContainerSmokeInfrastructureTests
 
     Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: false));
     Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: true));
+  }
+
+  [Theory]
+  [InlineData("error during connect: Get https://build-host.invalid/--//./pipe/dockerized: The system cannot find the file specified")]
+  [InlineData("error during connect: nonsense //./pipe/docker-not-a-pipe The system cannot find the file specified")]
+  [InlineData("failed to connect to the docker API at tcp://localhost::: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://localhost:2375: unrelated; failed to connect to the docker API at tcp://build-host:2375: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://user@localhost:2375: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://localhost.invalid:2375: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://localhost:70000: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://localhost:2375.: connection refused")]
+  [InlineData("error during connect: Get http://%2F%2F.%2Fpipe%2Fdocker_engine-evil/v1.24/info: open //./pipe/docker_engine-evil: The system cannot find the file specified")]
+  [InlineData("error during connect: Get \"http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/info: open //./pipe/docker_engine: The system cannot find the file specified")]
+  [InlineData("error during connect: Get http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/info\": open //./pipe/docker_engine: The system cannot find the file specified")]
+  public void AdversarialDaemonDiagnosticsFailClosed(string error)
+  {
+    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+
+    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: false));
+    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: true));
+  }
+
+  [Theory]
+  [InlineData("tcp://build-host:2375", null)]
+  [InlineData("ssh://builder@build-host", null)]
+  [InlineData(null, "production")]
+  [InlineData("tcp://127.0.0.1:2375", "production")]
+  public void ExplicitRemoteDockerConfigurationPreventsLocalAbsenceSkip(
+      string? configuredDockerHost,
+      string? configuredDockerContext)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        DockerAvailabilityPolicy.Evaluate(probe, isCi: false, configuredDockerHost, configuredDockerContext));
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        DockerAvailabilityPolicy.Evaluate(probe, isCi: true, configuredDockerHost, configuredDockerContext));
+  }
+
+  [Theory]
+  [InlineData("unix:///var/run/docker.sock", null)]
+  [InlineData("tcp://127.0.0.1:2375", null)]
+  [InlineData("npipe:////./pipe/docker_engine", null)]
+  [InlineData(null, "default")]
+  [InlineData(null, "desktop-linux")]
+  public void ExplicitLocalDockerConfigurationPreservesLocalAbsenceSkip(
+      string? configuredDockerHost,
+      string? configuredDockerContext)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Skip,
+        DockerAvailabilityPolicy.Evaluate(probe, isCi: false, configuredDockerHost, configuredDockerContext));
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        DockerAvailabilityPolicy.Evaluate(probe, isCi: true, configuredDockerHost, configuredDockerContext));
   }
 
   [Theory]
