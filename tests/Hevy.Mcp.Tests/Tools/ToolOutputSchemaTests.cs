@@ -64,7 +64,7 @@ public sealed class ToolOutputSchemaTests
     {
       var method = testCase.Type.GetMethod(testCase.Method, BindingFlags.Static | BindingFlags.NonPublic) ?? throw new InvalidOperationException(testCase.Method);
       var tool = McpServerTool.Create(method, target: null, new McpServerToolCreateOptions { SerializerOptions = ToolResults.JsonOptions });
-      AssertMatches(ToolSchemas.NormalizeInput(tool.ProtocolTool.OutputSchema!.Value), testCase.Result.Structured(), testCase.Method);
+      AssertMatches(ToolSchemas.NormalizeWireValues(tool.ProtocolTool.OutputSchema!.Value), testCase.Result.Structured(), testCase.Method);
     }
   }
 

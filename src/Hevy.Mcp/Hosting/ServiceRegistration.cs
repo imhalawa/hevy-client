@@ -56,10 +56,10 @@ internal static class ServiceRegistration
         .ToArray();
     foreach (var tool in tools)
     {
-      tool.ProtocolTool.InputSchema = ToolSchemas.NormalizeInput(tool.ProtocolTool.InputSchema);
+      tool.ProtocolTool.InputSchema = ToolSchemas.NormalizeWireValues(tool.ProtocolTool.InputSchema);
       if (tool.ProtocolTool.OutputSchema is { } outputSchema)
       {
-        tool.ProtocolTool.OutputSchema = ToolSchemas.NormalizeInput(outputSchema);
+        tool.ProtocolTool.OutputSchema = ToolSchemas.NormalizeWireValues(outputSchema);
       }
     }
     builder.WithListToolsHandler((request, _) =>

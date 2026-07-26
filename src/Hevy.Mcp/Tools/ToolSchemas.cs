@@ -5,7 +5,7 @@ namespace Hevy.Mcp.Tools;
 
 internal static class ToolSchemas
 {
-  internal static JsonElement NormalizeInput(JsonElement schema)
+  internal static JsonElement NormalizeWireValues(JsonElement schema)
   {
     var root = JsonNode.Parse(schema.GetRawText()) ?? throw new InvalidOperationException("Tool schema is empty.");
     NormalizeNode(root);
