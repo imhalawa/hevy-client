@@ -13,17 +13,20 @@ fi
 
 temporary_directory=$(mktemp -d "$RUNNER_TEMP/hevy-syft.XXXXXX")
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
+curl_command=${HEVY_CURL_PATH:-curl}
+sha256_command=${HEVY_SHA256SUM_PATH:-sha256sum}
 
-curl --silent --show-error --fail --location \
+"$curl_command" --silent --show-error --fail --location \
   --output "$temporary_directory/$archive" \
   "$download_url"
 printf '%s  %s\n' "$checksum" "$temporary_directory/$archive" |
-  sha256sum --check --status
+  "$sha256_command" --check --status
 tar --extract --gzip \
   --file "$temporary_directory/$archive" \
   --directory "$temporary_directory" \
   syft
 chmod 0755 "$temporary_directory/syft"
-install_directory=$(mktemp -d "$RUNNER_TEMP/hevy-syft-bin.XXXXXX")
-mv "$temporary_directory/syft" "$install_directory/syft"
+install_directory="$RUNNER_TEMP/hevy-syft-bin"
+install -d -m 0755 "$install_directory"
+install -m 0755 "$temporary_directory/syft" "$install_directory/syft"
 printf '%s\n' "$install_directory" >> "$GITHUB_PATH"

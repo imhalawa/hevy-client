@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
+using System.Formats.Tar;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Xunit;
 
 namespace Hevy.Transport.Tests;
@@ -223,6 +226,253 @@ public sealed class ReleaseSecurityContractTests
     Assert.Contains("SHA-256 digest", rejected.StandardError, StringComparison.Ordinal);
   }
 
+  [Fact]
+  public async Task ReproducibilityGateExecutesExactlyTwoHardenedExportsAndPublishesVerifiedDigests()
+  {
+    var fixture = await ReproducibilityFixture.CreateAsync(mismatch: false, extraDescriptor: false);
+    try
+    {
+      var result = await fixture.RunAsync();
+
+      Assert.Equal(0, result.ExitCode);
+      Assert.Equal(fixture.ExpectedBuildLog, await File.ReadAllTextAsync(fixture.BuildLog));
+      Assert.Equal(
+          $"source_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n",
+          await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData(true, false, "not reproducible")]
+  [InlineData(false, true, "exactly two")]
+  public async Task ReproducibilityGateRejectsMismatchAndExtraDescriptorsWithoutPublishingOutputs(
+      bool mismatch,
+      bool extraDescriptor,
+      string expectedError)
+  {
+    var fixture = await ReproducibilityFixture.CreateAsync(mismatch, extraDescriptor);
+    try
+    {
+      var result = await fixture.RunAsync();
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.Contains(expectedError, result.StandardError, StringComparison.OrdinalIgnoreCase);
+      Assert.Equal(string.Empty, await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task ReproducibilityGateCleansUpWhenBuildxFails()
+  {
+    var fixture = await ReproducibilityFixture.CreateAsync(mismatch: false, extraDescriptor: false);
+    try
+    {
+      var result = await fixture.RunAsync(failOnBuild: "2");
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.Equal(string.Empty, await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData("valid")]
+  [InlineData("extra")]
+  [InlineData("unknown")]
+  public async Task OciIndexValidatorRequiresExactlyTwoTotalLinuxPlatformDescriptors(string scenario)
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-index-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var index = Path.Combine(fixture, "index.json");
+      var bytes = CreatePlatformIndex(extraDescriptor: scenario == "extra", unknownDescriptor: scenario == "unknown");
+      await File.WriteAllBytesAsync(index, bytes);
+      var digest = Sha256Digest(bytes);
+      var script = Path.Combine(RepositoryRoot, "scripts", "validate-oci-index.sh");
+
+      var result = await RunScriptAsync(script, [index, digest], environment: null);
+
+      if (scenario == "valid")
+      {
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n", result.StandardOutput);
+      }
+      else
+      {
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("exactly two", result.StandardError, StringComparison.OrdinalIgnoreCase);
+      }
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Theory]
+  [InlineData("top")]
+  [InlineData("amd64")]
+  [InlineData("arm64")]
+  public async Task StagedIndexVerifierRejectsEachGateDigestMismatch(string mismatch)
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-staged-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var index = Path.Combine(fixture, "index.json");
+      var bytes = CreatePlatformIndex(extraDescriptor: false, unknownDescriptor: false);
+      await File.WriteAllBytesAsync(index, bytes);
+      var digest = Sha256Digest(bytes);
+      var output = Path.Combine(fixture, "github-output.txt");
+      await File.WriteAllTextAsync(output, string.Empty);
+      var expectedTop = mismatch == "top" ? ExistingDigest : digest;
+      var expectedAmd64 = mismatch == "amd64" ? IntendedDigest : ExistingDigest;
+      var expectedArm64 = mismatch == "arm64" ? ExistingDigest : IntendedDigest;
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "verify-staged-index.sh"),
+          [index, digest, expectedTop, expectedAmd64, expectedArm64],
+          new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = output });
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.Contains("reproducibility gate", result.StandardError, StringComparison.OrdinalIgnoreCase);
+      Assert.Equal(string.Empty, await File.ReadAllTextAsync(output));
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task StagedIndexVerifierPublishesOnlyValidatedPlatformDigests()
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-staged-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var index = Path.Combine(fixture, "index.json");
+      var bytes = CreatePlatformIndex(extraDescriptor: false, unknownDescriptor: false);
+      await File.WriteAllBytesAsync(index, bytes);
+      var digest = Sha256Digest(bytes);
+      var output = Path.Combine(fixture, "github-output.txt");
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "verify-staged-index.sh"),
+          [index, digest, digest, ExistingDigest, IntendedDigest],
+          new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = output });
+
+      Assert.Equal(0, result.ExitCode);
+      Assert.Equal($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n", await File.ReadAllTextAsync(output));
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Theory]
+  [InlineData("install-syft.sh", "https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_linux_amd64.tar.gz", "7aa2f03ee92739cf643279ba3990548b9925d4e22cae13f46831ee62821147fe")]
+  [InlineData("install-buildx.sh", "https://github.com/docker/buildx/releases/download/v0.35.0/buildx-v0.35.0.linux-amd64", "d41ece72044243b4f58b343441ae37446d9c29a7d6b5e11c61847bbcf8f7dfda")]
+  public async Task ToolInstallersUseExactDownloadAndChecksumAndCleanStaging(
+      string scriptName,
+      string expectedUrl,
+      string expectedChecksum)
+  {
+    var fixture = await InstallerFixture.CreateAsync(scriptName, expectedUrl, expectedChecksum);
+    try
+    {
+      var result = await fixture.RunAsync(checksumSucceeds: true);
+
+      Assert.Equal(0, result.ExitCode);
+      Assert.Equal(expectedUrl + "\n", await File.ReadAllTextAsync(fixture.UrlLog));
+      Assert.Equal(expectedChecksum + "\n", await File.ReadAllTextAsync(fixture.ChecksumLog));
+      Assert.DoesNotContain(
+          Directory.GetDirectories(fixture.RunnerTemp),
+          static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
+              Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal));
+      Assert.True(File.Exists(fixture.InstalledExecutable));
+      if (scriptName == "install-buildx.sh")
+      {
+        var dockerConfig = Path.Combine(fixture.RunnerTemp, "hevy-buildx-bin");
+        Assert.Equal($"DOCKER_CONFIG={dockerConfig}\n", await File.ReadAllTextAsync(fixture.GitHubEnvironment));
+        Assert.Equal(
+            $"buildx_path={fixture.InstalledExecutable}\ndocker_config={dockerConfig}\n",
+            await File.ReadAllTextAsync(fixture.GitHubOutput));
+      }
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData("install-syft.sh", "https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_linux_amd64.tar.gz", "7aa2f03ee92739cf643279ba3990548b9925d4e22cae13f46831ee62821147fe")]
+  [InlineData("install-buildx.sh", "https://github.com/docker/buildx/releases/download/v0.35.0/buildx-v0.35.0.linux-amd64", "d41ece72044243b4f58b343441ae37446d9c29a7d6b5e11c61847bbcf8f7dfda")]
+  public async Task ToolInstallersFailClosedOnChecksumMismatchAndCleanStaging(
+      string scriptName,
+      string expectedUrl,
+      string expectedChecksum)
+  {
+    var fixture = await InstallerFixture.CreateAsync(scriptName, expectedUrl, expectedChecksum);
+    try
+    {
+      var result = await fixture.RunAsync(checksumSucceeds: false);
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.DoesNotContain(
+          Directory.GetDirectories(fixture.RunnerTemp),
+          static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
+              Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal));
+      Assert.False(File.Exists(fixture.InstalledExecutable));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData("github.com/docker/buildx v0.35.0 a319e5b15052cf6557ceb666eb8ff6e32380b782", 0)]
+  [InlineData("github.com/docker/buildx v0.35.0 wrong", 1)]
+  public async Task BuildxVersionVerifierRequiresExactVersionAndCommit(string reportedVersion, int expectedSuccess)
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-buildx-version-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var fakeBuildx = Path.Combine(fixture, "buildx");
+      await File.WriteAllTextAsync(fakeBuildx, $"#!/bin/sh\nprintf '%s\\n' '{reportedVersion}'\n");
+      MakeExecutable(fakeBuildx);
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "verify-buildx-version.sh"),
+          [],
+          new Dictionary<string, string?> { ["HEVY_BUILDX_PATH"] = fakeBuildx });
+
+      Assert.Equal(expectedSuccess == 0 ? 0 : 1, result.ExitCode == 0 ? 0 : 1);
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
   [Theory]
   [InlineData($"present {IntendedDigest}", 0, false)]
   [InlineData($"present {ExistingDigest}", 1, false)]
@@ -282,6 +532,317 @@ public sealed class ReleaseSecurityContractTests
     {
       Directory.Delete(fixture, recursive: true);
     }
+  }
+
+  private static byte[] CreatePlatformIndex(
+      bool extraDescriptor,
+      bool unknownDescriptor,
+      string arm64Digest = IntendedDigest)
+  {
+    var descriptors = new List<object>
+    {
+      new
+      {
+        mediaType = "application/vnd.oci.image.manifest.v1+json",
+        digest = ExistingDigest,
+        size = 1,
+        platform = new { os = "linux", architecture = "amd64" },
+      },
+      new
+      {
+        mediaType = "application/vnd.oci.image.manifest.v1+json",
+        digest = arm64Digest,
+        size = 1,
+        platform = new { os = "linux", architecture = "arm64" },
+      },
+    };
+    if (extraDescriptor || unknownDescriptor)
+    {
+      descriptors.Add(new
+      {
+        mediaType = "application/vnd.oci.image.manifest.v1+json",
+        digest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        size = 1,
+        platform = unknownDescriptor
+            ? new { os = "unknown", architecture = "unknown" }
+            : new { os = "linux", architecture = "s390x" },
+      });
+    }
+
+    return JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 2, manifests = descriptors });
+  }
+
+  private static string Sha256Digest(byte[] value) =>
+      $"sha256:{Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant()}";
+
+  private sealed class ReproducibilityFixture : IDisposable
+  {
+    private const string Revision = "dddddddddddddddddddddddddddddddddddddddd";
+    private readonly string root;
+    private readonly string buildx;
+
+    private ReproducibilityFixture(
+        string root,
+        string buildx,
+        string buildLog,
+        string githubOutput,
+        string temporaryRoot,
+        string indexDigest)
+    {
+      this.root = root;
+      this.buildx = buildx;
+      BuildLog = buildLog;
+      GitHubOutput = githubOutput;
+      TemporaryRoot = temporaryRoot;
+      IndexDigest = indexDigest;
+      var repositoryRoot = RepositoryRoot;
+      var oneBuild = $"BEGIN\nSOURCE_DATE_EPOCH=1770000000\nbuild\n--platform\nlinux/amd64,linux/arm64\n--pull\n--no-cache\n--build-arg\nVERSION=1.2.3\n--build-arg\nREVISION={Revision}\n--build-arg\nSOURCE_URL=https://github.com/example/hevy-client\n--provenance=false\n--sbom=false\n--output\ntype=oci,dest=ARCHIVE,rewrite-timestamp=true,compatibility-version=30,oci-mediatypes=true\n{repositoryRoot}\nEND\n";
+      ExpectedBuildLog = oneBuild.Replace("ARCHIVE", "1", StringComparison.Ordinal) +
+          oneBuild.Replace("ARCHIVE", "2", StringComparison.Ordinal);
+    }
+
+    public string BuildLog { get; }
+    public string ExpectedBuildLog { get; }
+    public string GitHubOutput { get; }
+    public string IndexDigest { get; }
+    public string TemporaryRoot { get; }
+
+    public static async Task<ReproducibilityFixture> CreateAsync(bool mismatch, bool extraDescriptor)
+    {
+      var root = Path.Combine(Path.GetTempPath(), $"hevy-repro-{Guid.NewGuid():N}");
+      var temporaryRoot = Path.Combine(root, "tmp");
+      Directory.CreateDirectory(temporaryRoot);
+      var firstArchive = Path.Combine(root, "first.tar");
+      var secondArchive = Path.Combine(root, "second.tar");
+      var firstIndex = CreatePlatformIndex(extraDescriptor, unknownDescriptor: false);
+      var secondIndex = CreatePlatformIndex(
+          extraDescriptor: false,
+          unknownDescriptor: false,
+          arm64Digest: mismatch
+              ? "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              : IntendedDigest);
+      await CreateOciArchiveAsync(root, "layout-1", firstArchive, firstIndex);
+      await CreateOciArchiveAsync(root, "layout-2", secondArchive, secondIndex);
+      var buildLog = Path.Combine(root, "build.log");
+      var githubOutput = Path.Combine(root, "github-output.txt");
+      var state = Path.Combine(root, "state.txt");
+      await File.WriteAllTextAsync(githubOutput, string.Empty);
+      await File.WriteAllTextAsync(state, "0\n");
+      var buildx = Path.Combine(root, "buildx");
+      await File.WriteAllTextAsync(
+          buildx,
+          """
+          #!/bin/sh
+          set -eu
+          count=$(cat "$FAKE_BUILDX_STATE")
+          count=$((count + 1))
+          printf '%s\n' "$count" > "$FAKE_BUILDX_STATE"
+          {
+            printf 'BEGIN\nSOURCE_DATE_EPOCH=%s\n' "$SOURCE_DATE_EPOCH"
+            output=
+            want_output=false
+            for argument do
+              if [ "$want_output" = true ]; then
+                output=$argument
+                destination=${argument#type=oci,dest=}
+                destination=${destination%%,*}
+                printf 'type=oci,dest=%s%s\n' "$count" "${argument#*${destination}}"
+                want_output=false
+              else
+                printf '%s\n' "$argument"
+                if [ "$argument" = "--output" ]; then want_output=true; fi
+              fi
+            done
+            printf 'END\n'
+          } >> "$FAKE_BUILDX_LOG"
+          if [ "${FAKE_BUILDX_FAIL_ON:-}" = "$count" ]; then exit 42; fi
+          if [ "$count" = 1 ]; then cp "$FAKE_OCI_FIRST" "$destination"; else cp "$FAKE_OCI_SECOND" "$destination"; fi
+          """);
+      MakeExecutable(buildx);
+      return new ReproducibilityFixture(
+          root,
+          buildx,
+          buildLog,
+          githubOutput,
+          temporaryRoot,
+          Sha256Digest(firstIndex));
+    }
+
+    public Task<DeliveryContractTests.ProcessResult> RunAsync(string? failOnBuild = null) =>
+        RunScriptAsync(
+            Path.Combine(RepositoryRoot, "scripts", "verify-reproducible-image.sh"),
+            [],
+            new Dictionary<string, string?>
+            {
+              ["FAKE_BUILDX_FAIL_ON"] = failOnBuild,
+              ["FAKE_BUILDX_LOG"] = BuildLog,
+              ["FAKE_BUILDX_STATE"] = Path.Combine(root, "state.txt"),
+              ["FAKE_OCI_FIRST"] = Path.Combine(root, "first.tar"),
+              ["FAKE_OCI_SECOND"] = Path.Combine(root, "second.tar"),
+              ["GITHUB_OUTPUT"] = GitHubOutput,
+              ["HEVY_BUILDX_PATH"] = buildx,
+              ["REVISION"] = Revision,
+              ["SOURCE_DATE_EPOCH"] = "1770000000",
+              ["SOURCE_URL"] = "https://github.com/example/hevy-client",
+              ["TMPDIR"] = TemporaryRoot,
+              ["VERSION"] = "1.2.3",
+            });
+
+    public void Dispose() => Directory.Delete(root, recursive: true);
+
+    private static async Task CreateOciArchiveAsync(
+        string root,
+        string layoutName,
+        string archive,
+        byte[] platformIndex)
+    {
+      var layout = Path.Combine(root, layoutName);
+      var digest = Sha256Digest(platformIndex);
+      var blobs = Path.Combine(layout, "blobs", "sha256");
+      Directory.CreateDirectory(blobs);
+      await File.WriteAllBytesAsync(Path.Combine(blobs, digest[7..]), platformIndex);
+      await File.WriteAllTextAsync(Path.Combine(layout, "oci-layout"), "{\"imageLayoutVersion\":\"1.0.0\"}\n");
+      var outerIndex = JsonSerializer.SerializeToUtf8Bytes(new
+      {
+        schemaVersion = 2,
+        manifests = new[]
+        {
+          new
+          {
+            mediaType = "application/vnd.oci.image.index.v1+json",
+            digest,
+            size = platformIndex.Length,
+          },
+        },
+      });
+      await File.WriteAllBytesAsync(Path.Combine(layout, "index.json"), outerIndex);
+      TarFile.CreateFromDirectory(layout, archive, includeBaseDirectory: false);
+      Directory.Delete(layout, recursive: true);
+    }
+  }
+
+  private sealed class InstallerFixture : IDisposable
+  {
+    private readonly string root;
+    private readonly string scriptName;
+    private readonly string expectedUrl;
+    private readonly string expectedChecksum;
+
+    private InstallerFixture(
+        string root,
+        string scriptName,
+        string expectedUrl,
+        string expectedChecksum)
+    {
+      this.root = root;
+      this.scriptName = scriptName;
+      this.expectedUrl = expectedUrl;
+      this.expectedChecksum = expectedChecksum;
+      RunnerTemp = Path.Combine(root, "runner-temp");
+      UrlLog = Path.Combine(root, "url.log");
+      ChecksumLog = Path.Combine(root, "checksum.log");
+      GitHubEnvironment = Path.Combine(root, "github-env.txt");
+      GitHubOutput = Path.Combine(root, "github-output.txt");
+    }
+
+    public string RunnerTemp { get; }
+    public string UrlLog { get; }
+    public string ChecksumLog { get; }
+    public string GitHubEnvironment { get; }
+    public string GitHubOutput { get; }
+    public string InstalledExecutable => scriptName == "install-syft.sh"
+        ? Path.Combine(RunnerTemp, "hevy-syft-bin", "syft")
+        : Path.Combine(RunnerTemp, "hevy-buildx-bin", "cli-plugins", "docker-buildx");
+
+    public static async Task<InstallerFixture> CreateAsync(
+        string scriptName,
+        string expectedUrl,
+        string expectedChecksum)
+    {
+      var root = Path.Combine(Path.GetTempPath(), $"hevy-installer-{Guid.NewGuid():N}");
+      var runnerTemp = Path.Combine(root, "runner-temp");
+      var bin = Path.Combine(root, "bin");
+      Directory.CreateDirectory(runnerTemp);
+      Directory.CreateDirectory(bin);
+      var asset = Path.Combine(root, "asset");
+      if (scriptName == "install-syft.sh")
+      {
+        var contents = Path.Combine(root, "syft-contents");
+        Directory.CreateDirectory(contents);
+        var syft = Path.Combine(contents, "syft");
+        await File.WriteAllTextAsync(syft, "#!/bin/sh\nprintf 'syft fixture\\n'\n");
+        MakeExecutable(syft);
+        var tarResult = await DeliveryContractTests.RunProcessAsync(root, "tar", "-czf", asset, "-C", contents, "syft");
+        Assert.Equal(0, tarResult.ExitCode);
+      }
+      else
+      {
+        await File.WriteAllTextAsync(
+            asset,
+            "#!/bin/sh\nprintf '%s\\n' 'github.com/docker/buildx v0.35.0 a319e5b15052cf6557ceb666eb8ff6e32380b782'\n");
+        MakeExecutable(asset);
+      }
+
+      var curl = Path.Combine(bin, "curl");
+      await File.WriteAllTextAsync(
+          curl,
+          """
+          #!/bin/sh
+          set -eu
+          output=
+          url=
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              --output) output=$2; shift 2 ;;
+              --*) shift ;;
+              *) url=$1; shift ;;
+            esac
+          done
+          printf '%s\n' "$url" > "$FAKE_URL_LOG"
+          test "$url" = "$FAKE_EXPECTED_URL"
+          cp "$FAKE_ASSET" "$output"
+          """);
+      var sha256sum = Path.Combine(bin, "sha256sum");
+      await File.WriteAllTextAsync(
+          sha256sum,
+          """
+          #!/bin/sh
+          set -eu
+          read -r checksum file
+          printf '%s\n' "$checksum" > "$FAKE_CHECKSUM_LOG"
+          test "$checksum" = "$FAKE_EXPECTED_CHECKSUM"
+          test -f "$file"
+          test "$FAKE_CHECKSUM_SUCCEEDS" = true
+          """);
+      MakeExecutable(curl);
+      MakeExecutable(sha256sum);
+      return new InstallerFixture(root, scriptName, expectedUrl, expectedChecksum);
+    }
+
+    public Task<DeliveryContractTests.ProcessResult> RunAsync(bool checksumSucceeds)
+    {
+      var githubPath = Path.Combine(root, "github-path.txt");
+      return RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", scriptName),
+          [],
+          new Dictionary<string, string?>
+          {
+            ["FAKE_ASSET"] = Path.Combine(root, "asset"),
+            ["FAKE_CHECKSUM_LOG"] = ChecksumLog,
+            ["FAKE_CHECKSUM_SUCCEEDS"] = checksumSucceeds ? "true" : "false",
+            ["FAKE_EXPECTED_CHECKSUM"] = expectedChecksum,
+            ["FAKE_EXPECTED_URL"] = expectedUrl,
+            ["FAKE_URL_LOG"] = UrlLog,
+            ["GITHUB_ENV"] = GitHubEnvironment,
+            ["GITHUB_OUTPUT"] = GitHubOutput,
+            ["GITHUB_PATH"] = githubPath,
+            ["HEVY_CURL_PATH"] = Path.Combine(root, "bin", "curl"),
+            ["HEVY_SHA256SUM_PATH"] = Path.Combine(root, "bin", "sha256sum"),
+            ["RUNNER_TEMP"] = RunnerTemp,
+          });
+    }
+
+    public void Dispose() => Directory.Delete(root, recursive: true);
   }
 
   private static string GhcrProbeScript()

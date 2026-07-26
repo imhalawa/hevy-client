@@ -73,13 +73,20 @@ jobs:
         with:
           image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
+      - name: Install pinned Buildx
+        id: buildx-install
+        run: ./scripts/install-buildx.sh
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         with:
-          version: v0.35.0
           driver-opts: image=docker.io/moby/buildkit:v0.31.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
 
+      - name: Verify pinned Buildx
+        run: ./scripts/verify-buildx-version.sh
+
       - name: Verify reproducible multi-architecture image
+        id: reproducibility
         env:
           REVISION: ${{ steps.release.outputs.revision }}
           SOURCE_URL: ${{ steps.release.outputs.source }}
@@ -99,19 +106,6 @@ jobs:
           IMAGE: ${{ steps.release.outputs.image }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: ./scripts/ghcr-manifest.sh "$IMAGE" "$RELEASE_VERSION" >/dev/null
-
-      - name: Derive reproducible build timestamp
-        id: reproducibility
-        env:
-          REVISION: ${{ steps.release.outputs.revision }}
-        run: |
-          set -euo pipefail
-          source_date_epoch="$(git show -s --format=%ct "$REVISION")"
-          if ! printf '%s\n' "$source_date_epoch" | grep -Eq '^[1-9][0-9]*$'; then
-            echo "The source commit timestamp was invalid." >&2
-            exit 1
-          fi
-          printf 'source_date_epoch=%s\n' "$source_date_epoch" >> "$GITHUB_OUTPUT"
 
       - name: Build and stage multi-architecture digest
         id: build
@@ -138,6 +132,9 @@ jobs:
           IMAGE: ${{ steps.release.outputs.image }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          REPRO_INDEX_DIGEST: ${{ steps.reproducibility.outputs.index_digest }}
+          REPRO_AMD64_DIGEST: ${{ steps.reproducibility.outputs.amd64_digest }}
+          REPRO_ARM64_DIGEST: ${{ steps.reproducibility.outputs.arm64_digest }}
           REVISION: ${{ steps.release.outputs.revision }}
           SOURCE_URL: ${{ steps.release.outputs.source }}
         run: |
@@ -147,13 +144,14 @@ jobs:
           response_file="$(mktemp)"
           trap 'rm -f "$index_file" "$response_file"' EXIT
           docker buildx imagetools inspect --raw "$IMAGE@$IMAGE_DIGEST" > "$index_file"
-          test "$(jq '[.manifests[] | select(.platform.os != "unknown")] | length' "$index_file")" = "2"
+          ./scripts/verify-staged-index.sh \
+            "$index_file" \
+            "$IMAGE_DIGEST" \
+            "$REPRO_INDEX_DIGEST" \
+            "$REPRO_AMD64_DIGEST" \
+            "$REPRO_ARM64_DIGEST"
           amd64_digest="$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' "$index_file")"
           arm64_digest="$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest' "$index_file")"
-          ./scripts/validate-sha256-digest.sh "$amd64_digest"
-          ./scripts/validate-sha256-digest.sh "$arm64_digest"
-          printf 'amd64_digest=%s\n' "$amd64_digest" >> "$GITHUB_OUTPUT"
-          printf 'arm64_digest=%s\n' "$arm64_digest" >> "$GITHUB_OUTPUT"
           for platform_digest in "$amd64_digest" "$arm64_digest"; do
             labels="$(docker buildx imagetools inspect "$IMAGE@$platform_digest" --format '{{json .Image.Config.Labels}}')"
             jq -e --arg version "$RELEASE_VERSION" --arg revision "$REVISION" --arg source "$SOURCE_URL" \

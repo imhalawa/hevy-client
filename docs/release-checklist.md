@@ -24,9 +24,9 @@ This is a release-blocking handoff to Task 10. An unchecked blocking item means 
 
 ## Required Task 10 verification
 
-- [ ] Locked restore, format verification, Release build, all non-live tests, OpenAPI checks, two no-cache multi-architecture exports with exactly matching index/platform digests, and real container smokes pass in CI.
+- [ ] Locked restore, format verification, Release build, all non-live tests, OpenAPI checks, the checksum-pinned Buildx version/source-commit proof, two no-cache multi-architecture exports with exactly matching index/platform digests, and real container smokes pass in CI.
 - [ ] CI fails rather than skips for every unavailable or misconfigured Docker state.
-- [ ] SPDX 2.3 SBOM, provenance attestations, the exact staged digest, and the keyless signature are verified before version-tag promotion.
+- [ ] Before SBOM/provenance/signing, the raw staged index has exactly two total linux/amd64 and linux/arm64 descriptors and its top and platform digests all equal the reproducibility-gate outputs. SPDX 2.3 SBOM, provenance attestations, the exact staged digest, and the keyless signature are then verified before version-tag promotion.
 - [ ] Release workflow concurrency is repository-wide, the protected environment admits one writer, and maintainers understand that GHCR has no registry-enforced atomic create-only or immutable-tag operation. Supported consumer references use the digest.
 - [ ] If final promotion reports a transport or post-job failure, authenticate the tag lookup and compare it with the failed run's verified build digest. The same digest is success and an absent tag permits a serialized retry because attestations are external to the reproducible staged index. Only a genuinely different or unverifiable digest enters manual recovery and blocks release pending source, Cosign, and GitHub-attestation investigation.
 - [ ] After the workflow promotes the verified GHCR digest, a maintainer downloads its 90-day SPDX workflow artifacts, attaches them to the draft GitHub Release, repeats both the documented Cosign identity check and `gh attestation verify`, and only then publishes that GitHub Release.

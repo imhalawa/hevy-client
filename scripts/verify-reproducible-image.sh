@@ -63,13 +63,9 @@ for run_number in 1 2; do
   index_digest=$(jq -er 'select(.manifests | length == 1) | .manifests[0].digest' "$extraction/index.json")
   "$script_directory/validate-sha256-digest.sh" "$index_digest"
   index_blob=$extraction/blobs/sha256/${index_digest#sha256:}
-  jq -e '
-    (.manifests | length) == 2 and
-    ([.manifests[] | (.platform.os + "/" + .platform.architecture)] | sort == ["linux/amd64", "linux/arm64"])
-  ' "$index_blob" >/dev/null
-  amd64_digest=$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' "$index_blob")
-  arm64_digest=$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest' "$index_blob")
-  "$script_directory/validate-sha256-digest.sh" "$amd64_digest" "$arm64_digest"
+  validated_index=$({ "$script_directory/validate-oci-index.sh" "$index_blob" "$index_digest"; })
+  amd64_digest=$(awk -F= '$1 == "amd64_digest" { print $2 }' <<<"$validated_index")
+  arm64_digest=$(awk -F= '$1 == "arm64_digest" { print $2 }' <<<"$validated_index")
 
   printf 'repro_run_%s=%s\n' "$run_number" "$index_digest"
   printf 'repro_run_%s_amd64=%s\n' "$run_number" "$amd64_digest"
@@ -85,3 +81,10 @@ for run_number in 1 2; do
     exit 1
   fi
 done
+
+if [[ -n ${GITHUB_OUTPUT:-} ]]; then
+  printf 'source_date_epoch=%s\n' "$source_date_epoch" >> "$GITHUB_OUTPUT"
+  printf 'index_digest=%s\n' "$first_index_digest" >> "$GITHUB_OUTPUT"
+  printf 'amd64_digest=%s\n' "$first_amd64_digest" >> "$GITHUB_OUTPUT"
+  printf 'arm64_digest=%s\n' "$first_arm64_digest" >> "$GITHUB_OUTPUT"
+fi

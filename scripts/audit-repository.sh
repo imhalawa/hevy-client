@@ -29,8 +29,8 @@ cd "$repository_root"
 credential_values=$(mktemp)
 trap 'rm -f "$credential_values"' EXIT HUP INT TERM
 credential_scan_status=0
-quoted_credential_pattern='[\x22\x27]?(?:HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(?:orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*[\x22\x27]([A-Za-z0-9+/=_-]{20,})[\x22\x27]'
-unquoted_credential_pattern='[\x22\x27]?(?:HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(?:orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*([A-Za-z0-9+/=_-]{20,})[[:space:]]*(?:#.*)?$'
+quoted_credential_pattern='[\x22\x27]?(?:HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(?:orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*[\x22\x27]([A-Za-z0-9+/=_.~-]{20,})[\x22\x27]'
+unquoted_credential_pattern='[\x22\x27]?(?:HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(?:orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*([A-Za-z0-9+/=_.~-]{20,})[[:space:]]*(?:#.*)?$'
 rg -o --no-filename --replace '$1' -i --hidden -P \
   -g '!.git/**' \
   -g '!**/bin/**' \

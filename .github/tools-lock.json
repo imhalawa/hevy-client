@@ -20,7 +20,10 @@
     "buildx": {
       "version": "0.35.0",
       "commit": "a319e5b15052cf6557ceb666eb8ff6e32380b782",
-      "source": "https://github.com/docker/buildx/releases/tag/v0.35.0"
+      "archive": "buildx-v0.35.0.linux-amd64",
+      "sha256": "d41ece72044243b4f58b343441ae37446d9c29a7d6b5e11c61847bbcf8f7dfda",
+      "source": "https://github.com/docker/buildx/releases/tag/v0.35.0",
+      "checksums": "https://github.com/docker/buildx/releases/download/v0.35.0/checksums.txt"
     },
     "buildkit": {
       "version": "0.31.2",

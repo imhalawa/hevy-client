@@ -69,10 +69,13 @@ public sealed class DeliveryContractTests
     Assert.Equal("${{ vars.HEVY_CANONICAL_REPOSITORY }}", Scalar(validateEnvironment, "HEVY_CANONICAL_REPOSITORY"));
     Assert.Equal("${{ vars.HEVY_PRIVATE_ADVISORY_VERIFIED }}", Scalar(validateEnvironment, "HEVY_PRIVATE_ADVISORY_VERIFIED"));
 
-    var reproducibility = Step(steps, "Derive reproducible build timestamp");
+    var reproducibility = Step(steps, "Verify reproducible multi-architecture image");
     Assert.Equal("reproducibility", Scalar(reproducibility, "id"));
-    Assert.Equal("${{ steps.release.outputs.revision }}", Scalar(Map(reproducibility, "env"), "REVISION"));
-    Assert.Contains("git show -s --format=%ct \"$REVISION\"", Scalar(reproducibility, "run"), StringComparison.Ordinal);
+    var reproducibilityEnvironment = Map(reproducibility, "env");
+    Assert.Equal("${{ steps.release.outputs.revision }}", Scalar(reproducibilityEnvironment, "REVISION"));
+    Assert.Equal("${{ steps.release.outputs.source }}", Scalar(reproducibilityEnvironment, "SOURCE_URL"));
+    Assert.Equal("${{ steps.release.outputs.version }}", Scalar(reproducibilityEnvironment, "VERSION"));
+    Assert.Equal("./scripts/verify-reproducible-image.sh", Scalar(reproducibility, "run"));
 
     var build = Step(steps, "Build and stage multi-architecture digest");
     Assert.Equal("build", Scalar(build, "id"));
@@ -99,13 +102,12 @@ public sealed class DeliveryContractTests
 
     var imageVerification = Step(steps, "Verify published digest platforms labels and assembly version");
     Assert.Equal("image", Scalar(imageVerification, "id"));
+    var imageVerificationEnvironment = Map(imageVerification, "env");
+    Assert.Equal("${{ steps.reproducibility.outputs.index_digest }}", Scalar(imageVerificationEnvironment, "REPRO_INDEX_DIGEST"));
+    Assert.Equal("${{ steps.reproducibility.outputs.amd64_digest }}", Scalar(imageVerificationEnvironment, "REPRO_AMD64_DIGEST"));
+    Assert.Equal("${{ steps.reproducibility.outputs.arm64_digest }}", Scalar(imageVerificationEnvironment, "REPRO_ARM64_DIGEST"));
     var imageVerificationRun = Scalar(imageVerification, "run");
-    var amd64ValidationIndex = imageVerificationRun.IndexOf("./scripts/validate-sha256-digest.sh \"$amd64_digest\"", StringComparison.Ordinal);
-    var arm64ValidationIndex = imageVerificationRun.IndexOf("./scripts/validate-sha256-digest.sh \"$arm64_digest\"", StringComparison.Ordinal);
-    var amd64OutputIndex = imageVerificationRun.IndexOf("amd64_digest=%s", StringComparison.Ordinal);
-    var arm64OutputIndex = imageVerificationRun.IndexOf("arm64_digest=%s", StringComparison.Ordinal);
-    Assert.True(amd64ValidationIndex >= 0 && amd64ValidationIndex < amd64OutputIndex);
-    Assert.True(arm64ValidationIndex >= 0 && arm64ValidationIndex < arm64OutputIndex);
+    Assert.Contains("./scripts/verify-staged-index.sh", imageVerificationRun, StringComparison.Ordinal);
     var amd64Attestation = Step(steps, "Attest amd64 container SBOM");
     var arm64Attestation = Step(steps, "Attest arm64 container SBOM");
     Assert.StartsWith("actions/attest-sbom@", Scalar(amd64Attestation, "uses"), StringComparison.Ordinal);
@@ -205,7 +207,7 @@ public sealed class DeliveryContractTests
     var buildx = tools.GetProperty("buildx");
     var buildkit = tools.GetProperty("buildkit");
     var buildxWith = Map(Step(steps, "Set up Docker Buildx"), "with");
-    Assert.Equal($"v{buildx.GetProperty("version").GetString()}", Scalar(buildxWith, "version"));
+    Assert.DoesNotContain(new YamlScalarNode("version"), buildxWith.Children.Keys);
     Assert.Equal(
         $"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}",
         Scalar(buildxWith, "driver-opts"));
@@ -215,7 +217,7 @@ public sealed class DeliveryContractTests
         $"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}",
         Scalar(Map(Step(ciSteps, "Set up QEMU"), "with"), "image"));
     var ciBuildxWith = Map(Step(ciSteps, "Set up Docker Buildx"), "with");
-    Assert.Equal($"v{buildx.GetProperty("version").GetString()}", Scalar(ciBuildxWith, "version"));
+    Assert.DoesNotContain(new YamlScalarNode("version"), ciBuildxWith.Children.Keys);
     Assert.Equal(
         $"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}",
         Scalar(ciBuildxWith, "driver-opts"));
@@ -226,19 +228,26 @@ public sealed class DeliveryContractTests
       Assert.StartsWith("https://github.com/", tool.GetProperty("source").GetString(), StringComparison.Ordinal);
     }
 
+    Assert.Matches("^[0-9a-f]{40}$", buildx.GetProperty("commit").GetString()!);
+    Assert.Matches("^[0-9a-f]{64}$", buildx.GetProperty("sha256").GetString()!);
+    Assert.Equal(
+        $"buildx-v{buildx.GetProperty("version").GetString()}.linux-amd64",
+        buildx.GetProperty("archive").GetString());
+    Assert.Equal("./scripts/install-buildx.sh", Scalar(Step(steps, "Install pinned Buildx"), "run"));
+    Assert.Equal("./scripts/install-buildx.sh", Scalar(Step(ciSteps, "Install pinned Buildx"), "run"));
+    Assert.Equal("./scripts/verify-buildx-version.sh", Scalar(Step(steps, "Verify pinned Buildx"), "run"));
+    Assert.Equal("./scripts/verify-buildx-version.sh", Scalar(Step(ciSteps, "Verify pinned Buildx"), "run"));
+    Assert.True(Array.IndexOf(steps, Step(steps, "Install pinned Buildx")) < Array.IndexOf(steps, Step(steps, "Set up Docker Buildx")));
+    Assert.True(Array.IndexOf(steps, Step(steps, "Set up Docker Buildx")) < Array.IndexOf(steps, Step(steps, "Verify pinned Buildx")));
+    Assert.True(Array.IndexOf(ciSteps, Step(ciSteps, "Install pinned Buildx")) < Array.IndexOf(ciSteps, Step(ciSteps, "Set up Docker Buildx")));
+    Assert.True(Array.IndexOf(ciSteps, Step(ciSteps, "Set up Docker Buildx")) < Array.IndexOf(ciSteps, Step(ciSteps, "Verify pinned Buildx")));
+
     var syft = tools.GetProperty("syft");
     Assert.Matches("^[0-9a-f]{64}$", syft.GetProperty("sha256").GetString()!);
     Assert.Matches("^[0-9a-f]{40}$", syft.GetProperty("commit").GetString()!);
     Assert.Equal(
         $"https://github.com/anchore/syft/releases/tag/v{syft.GetProperty("version").GetString()}",
         syft.GetProperty("source").GetString());
-    var syftInstaller = File.ReadAllText(Path.Combine(RepositoryRoot, "scripts", "install-syft.sh"));
-    Assert.Contains($"version={syft.GetProperty("version").GetString()}", syftInstaller, StringComparison.Ordinal);
-    Assert.Contains($"archive={syft.GetProperty("archive").GetString()}", syftInstaller, StringComparison.Ordinal);
-    Assert.Contains($"checksum={syft.GetProperty("sha256").GetString()}", syftInstaller, StringComparison.Ordinal);
-    Assert.Contains("sha256sum --check --status", syftInstaller, StringComparison.Ordinal);
-    var reproducibilityGate = File.ReadAllText(Path.Combine(RepositoryRoot, "scripts", "verify-reproducible-image.sh"));
-    Assert.Contains("oci-mediatypes=true", reproducibilityGate, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -298,14 +307,18 @@ public sealed class DeliveryContractTests
     {
       "scripts/audit-repository.sh",
       "scripts/ghcr-manifest.sh",
+      "scripts/install-buildx.sh",
       "scripts/install-syft.sh",
       "scripts/promote-ghcr-tag.sh",
       "scripts/run-actionlint.sh",
       "scripts/validate-openapi.sh",
+      "scripts/validate-oci-index.sh",
       "scripts/validate-release.sh",
       "scripts/validate-sha256-digest.sh",
       "scripts/validate-spdx.sh",
       "scripts/verify-reproducible-image.sh",
+      "scripts/verify-buildx-version.sh",
+      "scripts/verify-staged-index.sh",
     };
     var result = await RunProcessAsync(
         RepositoryRoot,
@@ -448,6 +461,8 @@ public sealed class DeliveryContractTests
   [InlineData("docs/leak.yml", "HEVY_API_KEY: {0}\n", "credential assignment")]
   [InlineData("tests/mixed.txt", "api_key = \"inventory-test-api-key\"; MCP_AUTH_TOKEN: {0}\n", "credential assignment")]
   [InlineData("docs/embedded.yml", "HEVY_API_KEY: \"AAAAAAAA{1}BBBBBBBB\"\n", "credential assignment")]
+  [InlineData("docs/dotted.yml", "MCP_AUTH_TOKEN: {0}.signed.segment~suffix\n", "credential assignment")]
+  [InlineData("docs/tilde.yml", "MCP_AUTH_TOKEN: {0}~agent-token\n", "credential assignment")]
   [InlineData("src/Origin.cs", "// https://api.hevyapp.com.evil/v1\n", "origin")]
   public async Task RepositoryAuditRejectsAdversarialCredentialsAndLookalikeOrigins(
       string relativePath,
