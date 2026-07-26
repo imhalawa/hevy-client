@@ -64,8 +64,12 @@ for run_number in 1 2; do
   index_digest_file=$extraction/index-digest
   if ! "$python_command" - "$extraction/index.json" >"$index_digest_file" 2>/dev/null <<'PYTHON'
 import json
+import os
 import re
 import sys
+
+MAX_DOCUMENT_BYTES = 4194304
+MAX_DESCRIPTOR_SIZE = "9223372036854775807"
 
 class StrictInteger(str):
   pass
@@ -81,9 +85,21 @@ def unique_object(pairs):
     result[key] = value
   return result
 
+def is_positive_int64_token(value):
+  return (
+      isinstance(value, StrictInteger)
+      and re.fullmatch(r"[1-9][0-9]*", value) is not None
+      and (len(value) < len(MAX_DESCRIPTOR_SIZE)
+           or (len(value) == len(MAX_DESCRIPTOR_SIZE) and value <= MAX_DESCRIPTOR_SIZE)))
+
+if os.stat(sys.argv[1]).st_size > MAX_DOCUMENT_BYTES:
+  raise ValueError("OCI archive index exceeds byte limit")
 with open(sys.argv[1], "rb") as source:
-  document = json.loads(
-      source.read().decode("utf-8"),
+  raw_document = source.read(MAX_DOCUMENT_BYTES + 1)
+if len(raw_document) > MAX_DOCUMENT_BYTES:
+  raise ValueError("OCI archive index exceeds byte limit")
+document = json.loads(
+      raw_document.decode("utf-8"),
       parse_int=StrictInteger,
       parse_float=reject_non_integer,
       parse_constant=reject_non_integer,
@@ -101,7 +117,7 @@ if not isinstance(descriptor, dict):
 if descriptor.get("mediaType") != "application/vnd.oci.image.index.v1+json":
   raise ValueError("invalid OCI layout media type")
 size = descriptor.get("size")
-if not isinstance(size, StrictInteger) or re.fullmatch(r"[1-9][0-9]*", size) is None:
+if not is_positive_int64_token(size):
   raise ValueError("invalid OCI layout descriptor size")
 digest = descriptor.get("digest")
 if not isinstance(digest, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
@@ -109,7 +125,7 @@ if not isinstance(digest, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) i
 print(digest)
 PYTHON
   then
-    printf '%s\n' "The OCI archive index was not one complete strict JSON document." >&2
+    printf '%s\n' "The OCI archive index was not one complete strict JSON document of at most 4194304 bytes." >&2
     exit 1
   fi
   {

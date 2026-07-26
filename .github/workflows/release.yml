@@ -143,7 +143,7 @@ jobs:
           index_file="$(mktemp)"
           response_file="$(mktemp)"
           trap 'rm -f "$index_file" "$response_file"' EXIT
-          docker buildx imagetools inspect --raw "$IMAGE@$IMAGE_DIGEST" > "$index_file"
+          ./scripts/capture-bounded-output.sh "$index_file" docker buildx imagetools inspect --raw "$IMAGE@$IMAGE_DIGEST"
           ./scripts/verify-staged-index.sh \
             "$index_file" \
             "$IMAGE_DIGEST" \

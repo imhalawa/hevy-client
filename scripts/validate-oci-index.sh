@@ -14,18 +14,18 @@ if [[ ! -f $index_file ]]; then
   exit 1
 fi
 "$script_directory/validate-sha256-digest.sh" "$expected_index_digest"
-actual_index_digest=sha256:$(sha256sum "$index_file" | awk '{print $1}')
-if [[ $actual_index_digest != "$expected_index_digest" ]]; then
-  printf '%s\n' "The raw OCI index does not match its expected digest." >&2
-  exit 1
-fi
 
 python_command=${HEVY_PYTHON_PATH:-python3}
 if ! validated_index=$(
-  "$python_command" - "$index_file" 2>/dev/null <<'PYTHON'
+  "$python_command" - "$index_file" "$expected_index_digest" 2>/dev/null <<'PYTHON'
+import hashlib
 import json
+import os
 import re
 import sys
+
+MAX_DOCUMENT_BYTES = 4194304
+MAX_DESCRIPTOR_SIZE = "9223372036854775807"
 
 class StrictInteger(str):
   pass
@@ -41,9 +41,23 @@ def unique_object(pairs):
     result[key] = value
   return result
 
+def is_positive_int64_token(value):
+  return (
+      isinstance(value, StrictInteger)
+      and re.fullmatch(r"[1-9][0-9]*", value) is not None
+      and (len(value) < len(MAX_DESCRIPTOR_SIZE)
+           or (len(value) == len(MAX_DESCRIPTOR_SIZE) and value <= MAX_DESCRIPTOR_SIZE)))
+
+if os.stat(sys.argv[1]).st_size > MAX_DOCUMENT_BYTES:
+  raise ValueError("OCI index exceeds byte limit")
 with open(sys.argv[1], "rb") as source:
-  document = json.loads(
-      source.read().decode("utf-8"),
+  raw_document = source.read(MAX_DOCUMENT_BYTES + 1)
+if len(raw_document) > MAX_DOCUMENT_BYTES:
+  raise ValueError("OCI index exceeds byte limit")
+if "sha256:" + hashlib.sha256(raw_document).hexdigest() != sys.argv[2]:
+  raise ValueError("OCI index digest mismatch")
+document = json.loads(
+      raw_document.decode("utf-8"),
       parse_int=StrictInteger,
       parse_float=reject_non_integer,
       parse_constant=reject_non_integer,
@@ -63,7 +77,7 @@ for descriptor in manifests:
   if descriptor.get("mediaType") != "application/vnd.oci.image.manifest.v1+json":
     raise ValueError("invalid OCI manifest media type")
   size = descriptor.get("size")
-  if not isinstance(size, StrictInteger) or re.fullmatch(r"[1-9][0-9]*", size) is None:
+  if not is_positive_int64_token(size):
     raise ValueError("invalid OCI descriptor size")
   digest = descriptor.get("digest")
   if not isinstance(digest, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
@@ -82,7 +96,7 @@ if set(platform_digests) != required or len(set(platform_digests.values())) != 2
 print(platform_digests[("linux", "amd64")], platform_digests[("linux", "arm64")], sep="\t")
 PYTHON
 ); then
-  printf '%s\n' "The OCI index must be exactly one complete JSON root with exactly two strict linux/amd64 and linux/arm64 descriptors." >&2
+  printf '%s\n' "The OCI index must be at most 4194304 bytes and exactly one complete JSON root with exactly two strict linux/amd64 and linux/arm64 descriptors." >&2
   exit 1
 fi
 

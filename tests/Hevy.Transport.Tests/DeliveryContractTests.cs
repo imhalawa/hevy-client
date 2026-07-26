@@ -107,6 +107,14 @@ public sealed class DeliveryContractTests
     Assert.Equal("${{ steps.reproducibility.outputs.amd64_digest }}", Scalar(imageVerificationEnvironment, "REPRO_AMD64_DIGEST"));
     Assert.Equal("${{ steps.reproducibility.outputs.arm64_digest }}", Scalar(imageVerificationEnvironment, "REPRO_ARM64_DIGEST"));
     var imageVerificationRun = Scalar(imageVerification, "run");
+    Assert.Contains(
+        "./scripts/capture-bounded-output.sh \"$index_file\" docker buildx imagetools inspect --raw \"$IMAGE@$IMAGE_DIGEST\"",
+        imageVerificationRun,
+        StringComparison.Ordinal);
+    Assert.DoesNotContain(
+        "imagetools inspect --raw \"$IMAGE@$IMAGE_DIGEST\" > \"$index_file\"",
+        imageVerificationRun,
+        StringComparison.Ordinal);
     Assert.Contains("./scripts/verify-staged-index.sh", imageVerificationRun, StringComparison.Ordinal);
     var amd64Attestation = Step(steps, "Attest amd64 container SBOM");
     var arm64Attestation = Step(steps, "Attest arm64 container SBOM");
@@ -298,6 +306,7 @@ public sealed class DeliveryContractTests
     var scripts = new[]
     {
       "scripts/audit-repository.sh",
+      "scripts/capture-bounded-output.sh",
       "scripts/ghcr-manifest.sh",
       "scripts/install-buildx.sh",
       "scripts/install-syft.sh",

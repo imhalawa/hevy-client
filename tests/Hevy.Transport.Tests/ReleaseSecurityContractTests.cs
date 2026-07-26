@@ -11,6 +11,7 @@ namespace Hevy.Transport.Tests;
 
 public sealed class ReleaseSecurityContractTests
 {
+  private const int OciIndexByteLimit = 4_194_304;
   private const string ExistingDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   private const string IntendedDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   private static readonly string RepositoryRoot = DockerProcess.RepositoryRoot;
@@ -297,6 +298,105 @@ public sealed class ReleaseSecurityContractTests
   }
 
   [Theory]
+  [InlineData(OciIndexByteLimit - 1)]
+  [InlineData(OciIndexByteLimit)]
+  public async Task BoundedCaptureAtomicallyAcceptsOutputThroughTheExactLimit(int byteCount)
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-bounded-capture-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var source = Path.Combine(fixture, "source.bin");
+      await using (var stream = new FileStream(source, FileMode.CreateNew, FileAccess.Write))
+      {
+        stream.SetLength(byteCount);
+      }
+      var output = Path.Combine(fixture, "index.json");
+      var githubOutput = Path.Combine(fixture, "github-output.txt");
+      await File.WriteAllTextAsync(output, "old-output");
+      await File.WriteAllTextAsync(githubOutput, "sentinel=preserve\n");
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "capture-bounded-output.sh"),
+          [output, "/bin/cat", source],
+          new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = githubOutput });
+
+      Assert.Equal(0, result.ExitCode);
+      Assert.Equal(byteCount, new FileInfo(output).Length);
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
+      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task BoundedCaptureRejectsByteAfterLimitWithoutReplacingOutputOrPublishing()
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-bounded-capture-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var source = Path.Combine(fixture, "source.bin");
+      await using (var stream = new FileStream(source, FileMode.CreateNew, FileAccess.Write))
+      {
+        stream.SetLength(OciIndexByteLimit + 1L);
+      }
+      var output = Path.Combine(fixture, "index.json");
+      var githubOutput = Path.Combine(fixture, "github-output.txt");
+      await File.WriteAllTextAsync(output, "old-output");
+      await File.WriteAllTextAsync(githubOutput, "sentinel=preserve\n");
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "capture-bounded-output.sh"),
+          [output, "/bin/cat", source],
+          new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = githubOutput });
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.Equal("old-output", await File.ReadAllTextAsync(output));
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
+      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task BoundedCapturePreservesProducerFailureWithoutReplacingOutputOrPublishing()
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-bounded-capture-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var producer = Path.Combine(fixture, "producer");
+      await File.WriteAllTextAsync(producer, "#!/bin/sh\nprintf 'partial-output'\nexit 23\n");
+      MakeExecutable(producer);
+      var output = Path.Combine(fixture, "index.json");
+      var githubOutput = Path.Combine(fixture, "github-output.txt");
+      await File.WriteAllTextAsync(output, "old-output");
+      await File.WriteAllTextAsync(githubOutput, "sentinel=preserve\n");
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "capture-bounded-output.sh"),
+          [output, producer],
+          new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = githubOutput });
+
+      Assert.Equal(23, result.ExitCode);
+      Assert.Equal("old-output", await File.ReadAllTextAsync(output));
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
+      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Theory]
   [InlineData("valid")]
   [InlineData("extra")]
   [InlineData("unknown")]
@@ -310,6 +410,8 @@ public sealed class ReleaseSecurityContractTests
   [InlineData("string_schema")]
   [InlineData("zero_size")]
   [InlineData("negative_size")]
+  [InlineData("max_size")]
+  [InlineData("too_large_size")]
   public async Task OciIndexValidatorRequiresOneCompleteStrictTwoPlatformDocument(string scenario)
   {
     var fixture = Path.Combine(Path.GetTempPath(), $"hevy-index-{Guid.NewGuid():N}");
@@ -324,7 +426,7 @@ public sealed class ReleaseSecurityContractTests
 
       var result = await RunScriptAsync(script, [index, digest], environment: null);
 
-      if (scenario == "valid")
+      if (scenario is "valid" or "max_size")
       {
         Assert.Equal(0, result.ExitCode);
         Assert.Equal($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n", result.StandardOutput);
@@ -335,6 +437,61 @@ public sealed class ReleaseSecurityContractTests
         Assert.Contains("OCI index", result.StandardError, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(string.Empty, result.StandardOutput);
       }
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Theory]
+  [InlineData(OciIndexByteLimit - 1)]
+  [InlineData(OciIndexByteLimit)]
+  public async Task OciIndexValidatorAcceptsValidDocumentsThroughTheExactByteLimit(int byteCount)
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-index-size-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var index = Path.Combine(fixture, "index.json");
+      var bytes = PadJsonDocument(CreatePlatformIndex(extraDescriptor: false, unknownDescriptor: false), byteCount);
+      await File.WriteAllBytesAsync(index, bytes);
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "validate-oci-index.sh"),
+          [index, Sha256Digest(bytes)],
+          environment: null);
+
+      Assert.Equal(0, result.ExitCode);
+      Assert.Equal($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n", result.StandardOutput);
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task OciIndexValidatorRejectsByteAfterTheExactLimitBeforeParsing()
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-index-size-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var index = Path.Combine(fixture, "index.json");
+      var bytes = PadJsonDocument(
+          CreatePlatformIndex(extraDescriptor: false, unknownDescriptor: false),
+          OciIndexByteLimit + 1);
+      await File.WriteAllBytesAsync(index, bytes);
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "validate-oci-index.sh"),
+          [index, Sha256Digest(bytes)],
+          environment: null);
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.Contains("OCI index", result.StandardError, StringComparison.OrdinalIgnoreCase);
+      Assert.Equal(string.Empty, result.StandardOutput);
     }
     finally
     {
@@ -400,6 +557,64 @@ public sealed class ReleaseSecurityContractTests
       Assert.NotEqual(0, result.ExitCode);
       Assert.Contains("OCI archive index", result.StandardError, StringComparison.OrdinalIgnoreCase);
       Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData("9223372036854775807", true)]
+  [InlineData("9223372036854775808", false)]
+  public async Task ReproducibilityGateBoundsTheRawOuterDescriptorSizeToken(
+      string outerSizeToken,
+      bool shouldSucceed)
+  {
+    var fixture = await ReproducibilityFixture.CreateAsync(
+        mismatch: false,
+        extraDescriptor: false,
+        outerSizeToken: outerSizeToken);
+    try
+    {
+      var result = await fixture.RunAsync();
+
+      Assert.Equal(shouldSucceed ? 0 : 1, result.ExitCode == 0 ? 0 : 1);
+      Assert.Equal(
+          shouldSucceed
+              ? $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n"
+              : "sentinel=preserve\n",
+          await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData(OciIndexByteLimit, true)]
+  [InlineData(OciIndexByteLimit + 1, false)]
+  public async Task ReproducibilityGateBoundsTheOuterIndexDocumentBeforeParsing(
+      int outerDocumentSize,
+      bool shouldSucceed)
+  {
+    var fixture = await ReproducibilityFixture.CreateAsync(
+        mismatch: false,
+        extraDescriptor: false,
+        outerDocumentSize: outerDocumentSize);
+    try
+    {
+      var result = await fixture.RunAsync();
+
+      Assert.Equal(shouldSucceed ? 0 : 1, result.ExitCode == 0 ? 0 : 1);
+      Assert.Equal(
+          shouldSucceed
+              ? $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n"
+              : "sentinel=preserve\n",
+          await File.ReadAllTextAsync(fixture.GitHubOutput));
       Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
     }
     finally
@@ -784,8 +999,26 @@ public sealed class ReleaseSecurityContractTests
           extraDescriptor: false,
           unknownDescriptor: false,
           amd64Size: -1),
+      "max_size" => ReplaceDescriptorSizes(valid, "9223372036854775807"),
+      "too_large_size" => ReplaceDescriptorSizes(valid, "9223372036854775808"),
       _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown OCI index scenario."),
     };
+  }
+
+  private static byte[] ReplaceDescriptorSizes(byte[] document, string rawSizeToken) =>
+      Encoding.UTF8.GetBytes(
+          Encoding.UTF8.GetString(document).Replace(
+              "\"size\":1",
+              $"\"size\":{rawSizeToken}",
+              StringComparison.Ordinal));
+
+  private static byte[] PadJsonDocument(byte[] document, int byteCount)
+  {
+    Assert.True(document.Length <= byteCount);
+    var padded = new byte[byteCount];
+    document.CopyTo(padded, 0);
+    padded.AsSpan(document.Length).Fill((byte)' ');
+    return padded;
   }
 
   private static string Sha256Digest(byte[] value) =>
@@ -828,7 +1061,9 @@ public sealed class ReleaseSecurityContractTests
         bool extraDescriptor,
         string? invalidIndexScenario = null,
         bool invalidOuterSize = false,
-        bool invalidOuterSchema = false)
+        bool invalidOuterSchema = false,
+        string? outerSizeToken = null,
+        int? outerDocumentSize = null)
     {
       var root = Path.Combine(Path.GetTempPath(), $"hevy-repro-{Guid.NewGuid():N}");
       var temporaryRoot = Path.Combine(root, "tmp");
@@ -846,8 +1081,24 @@ public sealed class ReleaseSecurityContractTests
                   ? "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                   : IntendedDigest)
           : firstIndex;
-      await CreateOciArchiveAsync(root, "layout-1", firstArchive, firstIndex, invalidOuterSize, invalidOuterSchema);
-      await CreateOciArchiveAsync(root, "layout-2", secondArchive, secondIndex, invalidOuterSize, invalidOuterSchema);
+      await CreateOciArchiveAsync(
+          root,
+          "layout-1",
+          firstArchive,
+          firstIndex,
+          invalidOuterSize,
+          invalidOuterSchema,
+          outerSizeToken,
+          outerDocumentSize);
+      await CreateOciArchiveAsync(
+          root,
+          "layout-2",
+          secondArchive,
+          secondIndex,
+          invalidOuterSize,
+          invalidOuterSchema,
+          outerSizeToken,
+          outerDocumentSize);
       var buildLog = Path.Combine(root, "build.log");
       var githubOutput = Path.Combine(root, "github-output.txt");
       var state = Path.Combine(root, "state.txt");
@@ -921,7 +1172,9 @@ public sealed class ReleaseSecurityContractTests
         string archive,
         byte[] platformIndex,
         bool invalidOuterSize,
-        bool invalidOuterSchema)
+        bool invalidOuterSchema,
+        string? outerSizeToken,
+        int? outerDocumentSize)
     {
       var layout = Path.Combine(root, layoutName);
       var digest = Sha256Digest(platformIndex);
@@ -957,6 +1210,18 @@ public sealed class ReleaseSecurityContractTests
                 "\"schemaVersion\":2",
                 "\"schemaVersion\":\"2\"",
                 StringComparison.Ordinal));
+      }
+      if (outerSizeToken is not null)
+      {
+        outerIndex = Encoding.UTF8.GetBytes(
+            Encoding.UTF8.GetString(outerIndex).Replace(
+                $"\"size\":{platformIndex.Length}",
+                $"\"size\":{outerSizeToken}",
+                StringComparison.Ordinal));
+      }
+      if (outerDocumentSize is not null)
+      {
+        outerIndex = PadJsonDocument(outerIndex, outerDocumentSize.Value);
       }
       await File.WriteAllBytesAsync(Path.Combine(layout, "index.json"), outerIndex);
       TarFile.CreateFromDirectory(layout, archive, includeBaseDirectory: false);
