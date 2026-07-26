@@ -10,9 +10,9 @@ internal static class ExerciseReadTools
 {
   [McpServerTool(Name = "get_exercise_templates", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ItemsData<ExerciseTemplate>, PageMeta<PageContinuation>>))]
   [Description("Get one page of exercise templates.")]
-  internal static Task<CallToolResult> GetExerciseTemplates(IServiceProvider services, [Range(1, int.MaxValue)] int page = 1, [Range(1, 10)] int page_size = 10, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
+  internal static Task<CallToolResult> GetExerciseTemplates(IServiceProvider services, [Range(1, int.MaxValue)] int page = 1, [Range(1, 100)] int page_size = 10, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidatePagination(page, page_size);
+    ToolResults.ValidatePagination(page, page_size, 100);
     ToolResults.ValidateDetail(detail);
     var cache = ToolResults.Cache(services);
     var result = cache is null
@@ -59,7 +59,16 @@ internal static class ExerciseWriteTools
     ArgumentNullException.ThrowIfNull(request);
     ToolValidation.Exercise(request.Exercise);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateExerciseTemplateRequest, ExerciseTemplate>(request), "Exercise-template payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    var result = await ToolResults.Client(services).CreateExerciseTemplateAsync(request, cancellationToken);
+    ExerciseTemplate result;
+    try
+    {
+      result = await ToolResults.Client(services).CreateExerciseTemplateAsync(request, cancellationToken);
+    }
+    catch (Hevy.Client.Errors.HevyCommittedReadbackException)
+    {
+      ToolResults.Cache(services)?.InvalidateExerciseTemplates();
+      throw;
+    }
     ToolResults.Cache(services)?.InvalidateExerciseTemplates();
     return ToolResults.Success(ToolResults.MutationResult<CreateExerciseTemplateRequest, ExerciseTemplate>(result), $"Created exercise template {result.Id}.", new MutationMeta(false));
   });

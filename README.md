@@ -264,11 +264,12 @@ Call `get_diagnostics` for a safe snapshot containing only server version, runti
 
 ## Bounds and current limitations
 
-- Low-level Hevy pages preserve explicit page semantics and accept at most 10 items per page.
+- Low-level Hevy pages preserve explicit page semantics. Exercise-template pages accept the official maximum of 100 items; the other paged operations accept at most 10.
 - Composite calls default to 100 returned items and cap each invocation at 1,000 scanned or returned items. Continue with the exact returned continuation inputs when `truncated` is true.
 - Training windows default to 4 UTC weeks and cap at 52 weeks. Partial chunks label whether metrics cover the complete period or only that chunk.
 - Routine and exercise-template catalogs are each capped at 1,000 cached items.
 - Hevy's exercise-history endpoint is unpaginated. The response is streamed with independent 1,000-item and 16 MiB ceilings. Results state whether truncation is continuable or terminal; the server never silently claims completeness beyond those caps.
+- Every other JSON response is read through a 4 MiB ceiling. Required operation fields, page identity/count, and returned page cardinality are validated while unknown additive fields remain compatible.
 - Body-measurement replacement is force-only because the upstream response has no `updated_at` field.
 - This is single-tenant and has no OAuth server, browser credential capture, tunnels, multi-user storage, embedded LLM, subjective coaching, MCP bulk resources, or invented delete operations.
 

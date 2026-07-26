@@ -111,15 +111,23 @@ internal static class ServiceRegistration
           {
             throw;
           }
-          catch (Exception)
+          catch (Exception exception)
           {
-            return ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.");
+            return InvocationFailure(exception);
           }
         },
         category,
         diagnostics,
         cancellationToken);
     });
+  }
+
+  internal static CallToolResult InvocationFailure(Exception exception)
+  {
+    ArgumentNullException.ThrowIfNull(exception);
+    return exception is System.Text.Json.JsonException
+        ? ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.")
+        : ToolExceptionFilter.Unexpected();
   }
 
   private static DiagnosticOperationCategory Category(string? toolName) => toolName switch

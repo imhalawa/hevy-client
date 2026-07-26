@@ -3,23 +3,23 @@ using System.Text.Json.Serialization;
 namespace Hevy.Client.Models;
 
 public sealed record Workout(
-    string Id,
+    [property: JsonRequired] string Id,
     string Title,
     string RoutineId,
     string Description,
-    DateTimeOffset StartTime,
-    DateTimeOffset EndTime,
-    DateTimeOffset UpdatedAt,
-    DateTimeOffset CreatedAt,
-    IReadOnlyList<WorkoutExercise> Exercises);
+    [property: JsonRequired] DateTimeOffset StartTime,
+    [property: JsonRequired] DateTimeOffset EndTime,
+    [property: JsonRequired] DateTimeOffset UpdatedAt,
+    [property: JsonRequired] DateTimeOffset CreatedAt,
+    [property: JsonRequired] IReadOnlyList<WorkoutExercise> Exercises);
 
 public sealed record WorkoutExercise(
     int Index,
     string Title,
     string Notes,
-    string ExerciseTemplateId,
+    [property: JsonRequired] string ExerciseTemplateId,
     [property: JsonPropertyName("supersets_id")] long? SupersetId,
-    IReadOnlyList<WorkoutSet> Sets);
+    [property: JsonRequired] IReadOnlyList<WorkoutSet> Sets);
 
 public sealed record WorkoutSet(
     int Index,
@@ -32,20 +32,26 @@ public sealed record WorkoutSet(
     decimal? CustomMetric)
     : SetMetrics(WeightKg, Reps, DistanceMeters, DurationSeconds, Rpe, CustomMetric);
 
-public sealed record WorkoutPage(int Page, int PageCount, IReadOnlyList<Workout> Workouts);
+public sealed record WorkoutPage(
+    [property: JsonRequired] int Page,
+    [property: JsonRequired] int PageCount,
+    [property: JsonRequired] IReadOnlyList<Workout> Workouts);
 
-public sealed record WorkoutCountResponse(int WorkoutCount);
+public sealed record WorkoutCountResponse([property: JsonRequired] int WorkoutCount);
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(UpdatedWorkoutEvent), "updated")]
 [JsonDerivedType(typeof(DeletedWorkoutEvent), "deleted")]
 public abstract record WorkoutEvent;
 
-public sealed record UpdatedWorkoutEvent(Workout Workout) : WorkoutEvent;
+public sealed record UpdatedWorkoutEvent([property: JsonRequired] Workout Workout) : WorkoutEvent;
 
-public sealed record DeletedWorkoutEvent(string Id, DateTimeOffset DeletedAt) : WorkoutEvent;
+public sealed record DeletedWorkoutEvent([property: JsonRequired] string Id, [property: JsonRequired] DateTimeOffset DeletedAt) : WorkoutEvent;
 
-public sealed record WorkoutEventsPage(int Page, int PageCount, IReadOnlyList<WorkoutEvent> Events);
+public sealed record WorkoutEventsPage(
+    [property: JsonRequired] int Page,
+    [property: JsonRequired] int PageCount,
+    [property: JsonRequired] IReadOnlyList<WorkoutEvent> Events);
 
 public sealed record CreateWorkoutRequest(WorkoutWrite Workout);
 

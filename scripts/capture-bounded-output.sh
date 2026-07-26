@@ -13,7 +13,7 @@ output_file=$1
 shift
 output_directory=$(dirname -- "$output_file")
 output_name=$(basename -- "$output_file")
-if [[ ! -d $output_directory || -z $output_name || $output_name == . || $output_name == .. ]]; then
+if [[ ! -d $output_directory || -d $output_file || -z $output_name || $output_name == . || $output_name == .. ]]; then
   printf '%s\n' "The bounded output destination was invalid." >&2
   exit 1
 fi
@@ -33,9 +33,6 @@ set +e
 "$@" | head -c "$read_limit" > "$temporary_file"
 pipeline_status=("${PIPESTATUS[@]}")
 set -e
-if ((pipeline_status[0] != 0)); then
-  exit "${pipeline_status[0]}"
-fi
 if ((pipeline_status[1] != 0)); then
   exit "${pipeline_status[1]}"
 fi
@@ -44,6 +41,9 @@ captured_size=$(wc -c < "$temporary_file")
 if ((captured_size > maximum_bytes)); then
   printf '%s\n' "Command output exceeded the 4194304-byte limit." >&2
   exit 1
+fi
+if ((pipeline_status[0] != 0)); then
+  exit "${pipeline_status[0]}"
 fi
 
 mv -- "$temporary_file" "$output_file"

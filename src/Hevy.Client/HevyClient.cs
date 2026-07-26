@@ -59,6 +59,7 @@ public sealed class HevyClient : IHevyClient
   {
     ValidatePagination(page, pageSize, 10);
     var response = await GetAsync($"v1/workouts?page={page}&pageSize={pageSize}", HevyJsonContext.Default.WorkoutPage, cancellationToken);
+    ValidatePage(response.Page, response.PageCount, response.Workouts, page, pageSize);
     return new PagedResult<Workout>(response.Page, response.PageCount, response.Workouts);
   }
 
@@ -70,6 +71,7 @@ public sealed class HevyClient : IHevyClient
     ValidatePagination(page, pageSize, 10);
     var encodedSince = Uri.EscapeDataString(since.ToString("O", CultureInfo.InvariantCulture));
     var response = await GetAsync($"v1/workouts/events?page={page}&pageSize={pageSize}&since={encodedSince}", HevyJsonContext.Default.WorkoutEventsPage, cancellationToken);
+    ValidatePage(response.Page, response.PageCount, response.Events, page, pageSize);
     return new PagedResult<WorkoutEvent>(response.Page, response.PageCount, response.Events);
   }
 
@@ -83,6 +85,7 @@ public sealed class HevyClient : IHevyClient
   {
     ValidatePagination(page, pageSize, 10);
     var response = await GetAsync($"v1/routines?page={page}&pageSize={pageSize}", HevyJsonContext.Default.RoutinePage, cancellationToken);
+    ValidatePage(response.Page, response.PageCount, response.Routines, page, pageSize);
     return new PagedResult<Routine>(response.Page, response.PageCount, response.Routines);
   }
 
@@ -93,6 +96,7 @@ public sealed class HevyClient : IHevyClient
   {
     ValidatePagination(page, pageSize, 100);
     var response = await GetAsync($"v1/exercise_templates?page={page}&pageSize={pageSize}", HevyJsonContext.Default.ExerciseTemplatePage, cancellationToken);
+    ValidatePage(response.Page, response.PageCount, response.ExerciseTemplates, page, pageSize);
     return new PagedResult<ExerciseTemplate>(response.Page, response.PageCount, response.ExerciseTemplates);
   }
 
@@ -103,6 +107,7 @@ public sealed class HevyClient : IHevyClient
   {
     ValidatePagination(page, pageSize, 10);
     var response = await GetAsync($"v1/routine_folders?page={page}&pageSize={pageSize}", HevyJsonContext.Default.RoutineFolderPage, cancellationToken);
+    ValidatePage(response.Page, response.PageCount, response.RoutineFolders, page, pageSize);
     return new PagedResult<RoutineFolder>(response.Page, response.PageCount, response.RoutineFolders);
   }
 
@@ -167,6 +172,10 @@ public sealed class HevyClient : IHevyClient
     {
       throw;
     }
+    catch (OperationCanceledException)
+    {
+      throw TimeoutException();
+    }
     catch (HttpRequestException)
     {
       throw new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, null);
@@ -177,6 +186,7 @@ public sealed class HevyClient : IHevyClient
   {
     ValidatePagination(page, pageSize, 10);
     var response = await GetAsync($"v1/body_measurements?page={page}&pageSize={pageSize}", HevyJsonContext.Default.BodyMeasurementPage, cancellationToken);
+    ValidatePage(response.Page, response.PageCount, response.BodyMeasurements, page, pageSize);
     return new PagedResult<BodyMeasurement>(response.Page, response.PageCount, response.BodyMeasurements);
   }
 
@@ -224,7 +234,9 @@ public sealed class HevyClient : IHevyClient
     ArgumentNullException.ThrowIfNull(request);
     ValidateExerciseTemplate(request.Exercise);
     var response = await SendMutationAsync(HttpMethod.Post, "v1/exercise_templates", request, HevyJsonContext.Default.CreateExerciseTemplateRequest, HevyJsonContext.Default.CreateExerciseTemplateResponse, retrySafe: false, cancellationToken);
-    return await GetExerciseTemplateAsync(response.Id.ToString(CultureInfo.InvariantCulture), cancellationToken);
+    return await ReadCommittedResultAsync(
+        () => GetExerciseTemplateAsync(response.Id.ToString(CultureInfo.InvariantCulture), cancellationToken),
+        cancellationToken);
   }
 
   public async Task<BodyMeasurement> CreateBodyMeasurementAsync(CreateBodyMeasurementRequest request, CancellationToken cancellationToken)
@@ -233,7 +245,7 @@ public sealed class HevyClient : IHevyClient
     ValidateMeasurementDate(request.Date, nameof(request));
     ValidateMeasurementValues(request.WeightKg, request.LeanMassKg, request.FatPercent, request.NeckCm, request.ShoulderCm, request.ChestCm, request.LeftBicepCm, request.RightBicepCm, request.LeftForearmCm, request.RightForearmCm, request.Abdomen, request.Waist, request.Hips, request.LeftThigh, request.RightThigh, request.LeftCalf, request.RightCalf);
     await SendMutationWithoutResponseAsync(HttpMethod.Post, "v1/body_measurements", request, HevyJsonContext.Default.CreateBodyMeasurementRequest, retrySafe: false, cancellationToken);
-    return await GetBodyMeasurementAsync(request.Date, cancellationToken);
+    return await ReadCommittedResultAsync(() => GetBodyMeasurementAsync(request.Date, cancellationToken), cancellationToken);
   }
 
   public async Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, UpdateBodyMeasurementRequest request, CancellationToken cancellationToken)
@@ -242,7 +254,7 @@ public sealed class HevyClient : IHevyClient
     ValidateMeasurementDate(date, nameof(date));
     ValidateMeasurementValues(request.WeightKg, request.LeanMassKg, request.FatPercent, request.NeckCm, request.ShoulderCm, request.ChestCm, request.LeftBicepCm, request.RightBicepCm, request.LeftForearmCm, request.RightForearmCm, request.Abdomen, request.Waist, request.Hips, request.LeftThigh, request.RightThigh, request.LeftCalf, request.RightCalf);
     await SendMutationWithoutResponseAsync(HttpMethod.Put, $"v1/body_measurements/{date:yyyy-MM-dd}", request, HevyJsonContext.Default.UpdateBodyMeasurementRequest, retrySafe: true, cancellationToken);
-    return await GetBodyMeasurementAsync(date, cancellationToken);
+    return await ReadCommittedResultAsync(() => GetBodyMeasurementAsync(date, cancellationToken), cancellationToken);
   }
 
   private async Task<T> GetAsync<T>(string relativeUri, JsonTypeInfo<T> jsonTypeInfo, CancellationToken cancellationToken)
@@ -261,6 +273,10 @@ public sealed class HevyClient : IHevyClient
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
       throw;
+    }
+    catch (OperationCanceledException)
+    {
+      throw TimeoutException();
     }
     catch (HttpRequestException)
     {
@@ -281,6 +297,10 @@ public sealed class HevyClient : IHevyClient
     {
       throw;
     }
+    catch (OperationCanceledException)
+    {
+      throw new HevyOutcomeUnknownException();
+    }
     catch (HttpRequestException)
     {
       throw new HevyOutcomeUnknownException();
@@ -299,6 +319,10 @@ public sealed class HevyClient : IHevyClient
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
       throw;
+    }
+    catch (OperationCanceledException)
+    {
+      throw new HevyOutcomeUnknownException();
     }
     catch (HttpRequestException)
     {
@@ -338,6 +362,34 @@ public sealed class HevyClient : IHevyClient
     if (httpClient.Timeout != Timeout.InfiniteTimeSpan)
     {
       request.Options.Set(HevyRetryHandler.RetryDeadline, DateTimeOffset.UtcNow + httpClient.Timeout);
+    }
+  }
+
+  private static async Task<T> ReadCommittedResultAsync<T>(Func<Task<T>> readBack, CancellationToken cancellationToken)
+  {
+    try
+    {
+      return await readBack().ConfigureAwait(false);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      throw;
+    }
+    catch (Exception)
+    {
+      throw new HevyCommittedReadbackException();
+    }
+  }
+
+  private static HevyException TimeoutException() =>
+      new("timeout", "The Hevy API request timed out.", true, null);
+
+  private static void ValidatePage<T>(int actualPage, int pageCount, IReadOnlyList<T>? items, int requestedPage, int requestedPageSize)
+  {
+    if (actualPage != requestedPage || pageCount < 0 || (pageCount == 0 && actualPage != 1) ||
+        (pageCount > 0 && actualPage > pageCount) || items is null || items.Count > requestedPageSize)
+    {
+      throw HevyResponse.UnexpectedResponse(System.Net.HttpStatusCode.OK);
     }
   }
 

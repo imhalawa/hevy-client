@@ -397,6 +397,89 @@ public sealed class ReleaseSecurityContractTests
   }
 
   [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task BoundedCaptureRejectsDirectoryDestinationsWithoutNestingTemporaryFiles(bool useDirectorySymlink)
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-bounded-capture-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var destinationDirectory = Path.Combine(fixture, "destination");
+      Directory.CreateDirectory(destinationDirectory);
+      var output = destinationDirectory;
+      if (useDirectorySymlink)
+      {
+        output = Path.Combine(fixture, "index.json");
+        Directory.CreateSymbolicLink(output, destinationDirectory);
+      }
+      var githubOutput = Path.Combine(fixture, "github-output.txt");
+      await File.WriteAllTextAsync(githubOutput, "sentinel=preserve\n");
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "capture-bounded-output.sh"),
+          [output, "/bin/printf", "new-output"],
+          new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = githubOutput });
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.True(Directory.Exists(output));
+      Assert.Empty(Directory.GetFileSystemEntries(destinationDirectory));
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
+      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+      Assert.Empty(Directory.GetFiles(fixture, ".destination.tmp.*"));
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task BoundedCaptureReportsReaderFailureInsteadOfConsequentialProducerSigpipe()
+  {
+    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-bounded-capture-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fixture);
+    try
+    {
+      var source = Path.Combine(fixture, "source.bin");
+      await using (var stream = new FileStream(source, FileMode.CreateNew, FileAccess.Write))
+      {
+        stream.SetLength(OciIndexByteLimit);
+      }
+      var binaries = Path.Combine(fixture, "bin");
+      Directory.CreateDirectory(binaries);
+      var failingHead = Path.Combine(binaries, "head");
+      await File.WriteAllTextAsync(failingHead, "#!/bin/sh\n/bin/head -c 1 >/dev/null\nexit 37\n");
+      MakeExecutable(failingHead);
+      var producer = Path.Combine(fixture, "producer");
+      await File.WriteAllTextAsync(producer, "#!/bin/sh\ntrap - PIPE\nexec /bin/cat \"$1\"\n");
+      MakeExecutable(producer);
+      var output = Path.Combine(fixture, "index.json");
+      var githubOutput = Path.Combine(fixture, "github-output.txt");
+      await File.WriteAllTextAsync(output, "old-output");
+      await File.WriteAllTextAsync(githubOutput, "sentinel=preserve\n");
+
+      var result = await RunScriptAsync(
+          Path.Combine(RepositoryRoot, "scripts", "capture-bounded-output.sh"),
+          [output, producer, source],
+          new Dictionary<string, string?>
+          {
+            ["GITHUB_OUTPUT"] = githubOutput,
+            ["PATH"] = $"{binaries}{Path.PathSeparator}{System.Environment.GetEnvironmentVariable("PATH")}",
+          });
+
+      Assert.Equal(37, result.ExitCode);
+      Assert.Equal("old-output", await File.ReadAllTextAsync(output));
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
+      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+    }
+    finally
+    {
+      Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Theory]
   [InlineData("valid")]
   [InlineData("extra")]
   [InlineData("unknown")]

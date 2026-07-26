@@ -38,6 +38,54 @@ public sealed class ReadToolTests
   }
 
   [Fact]
+  public async Task ExerciseTemplatePagingAcceptsOneHundredButRejectsOneHundredAndOneBeforeIo()
+  {
+    var acceptedPageSize = 0;
+    var client = new FakeHevyClient
+    {
+      GetExerciseTemplatesHandler = (page, pageSize, _) =>
+      {
+        acceptedPageSize = pageSize;
+        return Task.FromResult(new PagedResult<ExerciseTemplate>(page, 1, []));
+      },
+    };
+    var services = Services(client);
+
+    var accepted = await ExerciseReadTools.GetExerciseTemplates(services, 1, 100, "compact", default);
+    var rejected = await ExerciseReadTools.GetExerciseTemplates(services, 1, 101, "compact", default);
+
+    Assert.False(accepted.IsError);
+    Assert.Equal(100, acceptedPageSize);
+    Assert.True(rejected.IsError);
+    Assert.Equal("validation_error", rejected.Structured().GetProperty("error").GetProperty("code").GetString());
+    Assert.Equal(1, client.CallCount);
+  }
+
+  [Fact]
+  public async Task ExerciseTemplatePresentationPageSizeDoesNotIncreaseInternalCatalogFetches()
+  {
+    var upstreamPageSizes = new List<int>();
+    var templates = Enumerable.Range(1, 12)
+        .Select(index => new ExerciseTemplate($"template-{index:D2}", $"Template {index:D2}", "weight_reps", "quadriceps", [], EquipmentCategory.Barbell, false))
+        .ToArray();
+    var client = new FakeHevyClient
+    {
+      GetExerciseTemplatesHandler = (page, pageSize, _) =>
+      {
+        upstreamPageSizes.Add(pageSize);
+        return Task.FromResult(new PagedResult<ExerciseTemplate>(page, 2, templates.Skip((page - 1) * pageSize).Take(pageSize).ToArray()));
+      },
+    };
+    using var services = CachedServices(client);
+
+    var result = await ExerciseReadTools.GetExerciseTemplates(services, 1, 100, "compact", default);
+
+    Assert.False(result.IsError);
+    Assert.Equal(12, result.Structured().GetProperty("data").GetProperty("items").GetArrayLength());
+    Assert.Equal([10, 10], upstreamPageSizes);
+  }
+
+  [Fact]
   public async Task LowLevelCatalogReadsExpireAndReloadAfterSuccessfulRelatedMutations()
   {
     var clock = new ManualTimeProvider(DateTimeOffset.Parse("2026-07-26T12:00:00Z"));

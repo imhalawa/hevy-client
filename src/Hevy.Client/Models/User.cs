@@ -1,5 +1,7 @@
+using System.Text.Json.Serialization;
+
 namespace Hevy.Client.Models;
 
-public sealed record UserInfo(string Id, string Name, string Url);
+public sealed record UserInfo([property: JsonRequired] string Id, string Name, string Url);
 
-public sealed record UserInfoResponse(UserInfo Data);
+public sealed record UserInfoResponse([property: JsonRequired] UserInfo Data);

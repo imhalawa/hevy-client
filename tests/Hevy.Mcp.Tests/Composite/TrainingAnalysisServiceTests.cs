@@ -98,6 +98,30 @@ public sealed class TrainingAnalysisServiceTests
   }
 
   [Fact]
+  public async Task TrainingSummaryAggregatesRepeatedTemplateBlocksIntoOneWorkoutObservation()
+  {
+    var first = Workout("workout-1", "2026-07-07T10:00:00Z", 100) with
+    {
+      Exercises =
+      [
+        new WorkoutExercise(0, "Squat", "", "template-1", null, [new WorkoutSet(0, "normal", 100, 5, null, null, null, null)]),
+        new WorkoutExercise(1, "Squat", "", "template-1", null, [new WorkoutSet(0, "normal", 50, 5, null, null, null, null)]),
+      ],
+    };
+    var second = Workout("workout-2", "2026-07-21T10:00:00Z", 120);
+    var client = new FakeHevyClient { Workouts = new(1, 1, [first, second]) };
+
+    var result = await new TrainingAnalysisService(client, new FixedTimeProvider(Now)).SummarizeTrainingAsync(4, null, 100, null, default);
+
+    var squat = Assert.Single(result.Exercises);
+    Assert.Equal(1_350m, squat.ChunkVolumeKgReps);
+    Assert.Equal(750m, squat.FirstObservation.VolumeKgReps);
+    Assert.Equal(600m, squat.LastObservation.VolumeKgReps);
+    Assert.Equal(-150m, squat.ChunkProgressionKgReps);
+    Assert.Equal(["workout-1", "workout-2"], squat.Evidence.Select(static item => item.WorkoutId));
+  }
+
+  [Fact]
   public async Task ExerciseHistorySummaryIsChronologicalAndReturnsEvidenceIdentifiers()
   {
     var client = new FakeHevyClient
@@ -450,7 +474,7 @@ public sealed class TrainingAnalysisServiceTests
     Exercises = [new WorkoutExercise(0, "Squat", "", "template-1", null, [new WorkoutSet(0, "normal", weight, 5, null, null, null, null)])],
   };
 
-  private static ExerciseHistoryEntry History(string workoutId, string start, decimal weight, decimal reps) =>
+  private static ExerciseHistoryEntry History(string workoutId, string start, decimal weight, int reps) =>
       new(workoutId, "Workout", DateTimeOffset.Parse(start), DateTimeOffset.Parse(start).AddHours(1), "template-1", weight, reps, null, null, null, null, "normal");
 
   private static PagedResult<T> Page<T>(IReadOnlyList<T> items, int page, int pageSize)

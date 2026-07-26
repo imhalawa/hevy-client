@@ -271,7 +271,14 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
         .Select(group =>
         {
           var ordered = group.OrderBy(static item => item.Workout.StartTime).ThenBy(static item => item.Workout.Id, StringComparer.Ordinal).ToArray();
-          var observations = ordered.Select(static item => new ExerciseVolumeObservation(item.Workout.Id, item.Workout.StartTime, item.Volume)).ToArray();
+          var observations = ordered.GroupBy(static item => item.Workout.Id, StringComparer.Ordinal)
+              .Select(static workout => new ExerciseVolumeObservation(
+                  workout.Key,
+                  workout.First().Workout.StartTime,
+                  workout.Sum(static item => item.Volume)))
+              .OrderBy(static item => item.StartTime)
+              .ThenBy(static item => item.WorkoutId, StringComparer.Ordinal)
+              .ToArray();
           var evidence = observations.Select(static item => new WorkoutEvidenceReference(item.WorkoutId, item.StartTime)).ToArray();
           return new ExerciseTrainingSummary(
               group.Key,

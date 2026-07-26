@@ -93,4 +93,56 @@ public sealed class HevyClientErrorTests
 
     Assert.True(Assert.Single(handler.Requests).CancellationToken.IsCancellationRequested);
   }
+
+  // Break caught: HttpClient's own timeout being mistaken for caller cancellation on a read.
+  [Fact]
+  public async Task Http_client_timeout_on_a_read_becomes_a_safe_retryable_timeout()
+  {
+    using var httpClient = new HttpClient(new DelayingHandler()) { Timeout = TimeSpan.FromMilliseconds(20) };
+    var client = new HevyClient(httpClient, new HevyClientOptions("api-key-secret"));
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+
+    Assert.Equal("timeout", exception.Code);
+    Assert.True(exception.IsRetryable);
+    Assert.DoesNotContain("api-key-secret", exception.ToString(), StringComparison.Ordinal);
+  }
+
+  // Break caught: a success body omitting its required response envelope or identifier being accepted as valid.
+  [Theory]
+  [InlineData("{}")]
+  [InlineData("{\"data\":null}")]
+  [InlineData("{\"data\":{\"id\":null,\"name\":\"User\",\"url\":\"https://example.invalid\"}}")]
+  public async Task Missing_required_response_members_are_rejected(string response)
+  {
+    var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));
+    var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+
+    Assert.Equal("unexpected_response", exception.Code);
+    Assert.False(exception.IsRetryable);
+  }
+
+  // Break caught: ordinary JSON endpoints buffering an arbitrarily large upstream response.
+  [Fact]
+  public async Task Oversized_ordinary_response_is_rejected_at_the_byte_ceiling()
+  {
+    var response = "{\"data\":{\"id\":\"user-1\",\"name\":\"User\",\"url\":\"https://example.invalid\"},\"extra\":\"" + new string('x', 4_194_304) + "\"}";
+    var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));
+    var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+
+    Assert.Equal("unexpected_response", exception.Code);
+  }
+
+  private sealed class DelayingHandler : HttpMessageHandler
+  {
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+      await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+      throw new InvalidOperationException("Unreachable.");
+    }
+  }
 }

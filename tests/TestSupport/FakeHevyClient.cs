@@ -19,6 +19,7 @@ public sealed class FakeHevyClient : IHevyClient
   public Func<string, ExerciseHistoryWindowRequest, CancellationToken, Task<ExerciseHistoryWindow>>? GetExerciseHistoryWindowHandler { get; set; }
   public Func<int, int, CancellationToken, Task<PagedResult<BodyMeasurement>>>? GetBodyMeasurementsHandler { get; set; }
   public Func<DateOnly, CancellationToken, Task<BodyMeasurement>>? GetBodyMeasurementHandler { get; set; }
+  public Func<CreateExerciseTemplateRequest, CancellationToken, Task<ExerciseTemplate>>? CreateExerciseTemplateHandler { get; set; }
 
   public PagedResult<Workout> Workouts { get; set; } = new(1, 0, []);
   public int WorkoutCount { get; set; }
@@ -118,7 +119,11 @@ public sealed class FakeHevyClient : IHevyClient
   public Task<Routine> CreateRoutineAsync(CreateRoutineRequest request, CancellationToken cancellationToken) => Return(nameof(CreateRoutineAsync), Routine, cancellationToken, request);
   public Task<Routine> UpdateRoutineAsync(string routineId, UpdateRoutineRequest request, CancellationToken cancellationToken) => Return(nameof(UpdateRoutineAsync), Routine, cancellationToken, new { routineId, request });
   public Task<RoutineFolder> CreateRoutineFolderAsync(CreateRoutineFolderRequest request, CancellationToken cancellationToken) => Return(nameof(CreateRoutineFolderAsync), RoutineFolder, cancellationToken, request);
-  public Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateRequest request, CancellationToken cancellationToken) => Return(nameof(CreateExerciseTemplateAsync), ExerciseTemplate, cancellationToken, request);
+  public Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateRequest request, CancellationToken cancellationToken)
+  {
+    Record(nameof(CreateExerciseTemplateAsync), request, cancellationToken);
+    return CreateExerciseTemplateHandler?.Invoke(request, cancellationToken) ?? Task.FromResult(ExerciseTemplate);
+  }
   public Task<BodyMeasurement> CreateBodyMeasurementAsync(CreateBodyMeasurementRequest request, CancellationToken cancellationToken) => Return(nameof(CreateBodyMeasurementAsync), BodyMeasurement, cancellationToken, request);
   public Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, UpdateBodyMeasurementRequest request, CancellationToken cancellationToken) => Return(nameof(UpdateBodyMeasurementAsync), BodyMeasurement, cancellationToken, new { date, request });
 

@@ -98,8 +98,8 @@ internal sealed record ExerciseHistoryListItem(
     string SetType,
     DateTimeOffset? WorkoutEndTime = null,
     decimal? WeightKg = null,
-    decimal? Reps = null,
-    decimal? DistanceMeters = null,
-    decimal? DurationSeconds = null,
+    int? Reps = null,
+    int? DistanceMeters = null,
+    int? DurationSeconds = null,
     decimal? Rpe = null,
     decimal? CustomMetric = null);

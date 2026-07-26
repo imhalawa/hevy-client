@@ -1,34 +1,38 @@
+using System.Text.Json.Serialization;
+
 namespace Hevy.Client.Models;
 
 public sealed record ExerciseTemplate(
-    string Id,
+    [property: JsonRequired] string Id,
     string Title,
     string Type,
     string PrimaryMuscleGroup,
-    IReadOnlyList<string> SecondaryMuscleGroups,
+    [property: JsonRequired] IReadOnlyList<string> SecondaryMuscleGroups,
     EquipmentCategory EquipmentCategory,
     bool IsCustom);
 
-public sealed record ExerciseTemplatePage(int Page, int PageCount, IReadOnlyList<ExerciseTemplate> ExerciseTemplates);
+public sealed record ExerciseTemplatePage(
+    [property: JsonRequired] int Page,
+    [property: JsonRequired] int PageCount,
+    [property: JsonRequired] IReadOnlyList<ExerciseTemplate> ExerciseTemplates);
 
-public sealed record CreateExerciseTemplateResponse(int Id);
+public sealed record CreateExerciseTemplateResponse([property: JsonRequired] int Id);
 
 public sealed record ExerciseHistoryEntry(
-    string WorkoutId,
+    [property: JsonRequired] string WorkoutId,
     string WorkoutTitle,
-    DateTimeOffset WorkoutStartTime,
-    DateTimeOffset WorkoutEndTime,
-    string ExerciseTemplateId,
+    [property: JsonRequired] DateTimeOffset WorkoutStartTime,
+    [property: JsonRequired] DateTimeOffset WorkoutEndTime,
+    [property: JsonRequired] string ExerciseTemplateId,
     decimal? WeightKg,
-    decimal? Reps,
-    decimal? DistanceMeters,
-    decimal? DurationSeconds,
+    int? Reps,
+    int? DistanceMeters,
+    int? DurationSeconds,
     decimal? Rpe,
     decimal? CustomMetric,
-    string SetType)
-    : SetMetrics(WeightKg, Reps, DistanceMeters, DurationSeconds, Rpe, CustomMetric);
+    string SetType);
 
-public sealed record ExerciseHistoryResponse(IReadOnlyList<ExerciseHistoryEntry> ExerciseHistory);
+public sealed record ExerciseHistoryResponse([property: JsonRequired] IReadOnlyList<ExerciseHistoryEntry> ExerciseHistory);
 
 public sealed record CreateExerciseTemplateRequest(CustomExerciseWrite Exercise);
 

@@ -47,6 +47,49 @@ public sealed class HttpHostTests
     Assert.Equal("Bearer", missingResponse.Headers.WwwAuthenticate.Single().Scheme);
   }
 
+  [Theory]
+  [InlineData("GET")]
+  [InlineData("DELETE")]
+  public async Task EveryHttpMethodOnTheMcpEndpointRequiresBearerAuthentication(string method)
+  {
+    await using var server = new HttpServerFixture();
+    using var client = server.CreateClient();
+    using var request = new HttpRequestMessage(new HttpMethod(method), "/mcp");
+
+    using var response = await client.SendAsync(request);
+
+    Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
+  }
+
+  [Fact]
+  public async Task McpSubpathsAreProtectedAndRejectedByMcpRouting()
+  {
+    await using var server = new HttpServerFixture();
+    using var client = server.CreateClient();
+    using var missingCredential = new HttpRequestMessage(HttpMethod.Get, "/mcp/subpath");
+    using var authenticated = new HttpRequestMessage(HttpMethod.Get, "/mcp/subpath");
+    authenticated.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "mcp-auth-token");
+
+    using var protectedResponse = await client.SendAsync(missingCredential);
+    using var routedResponse = await client.SendAsync(authenticated);
+
+    Assert.Equal(HttpStatusCode.Unauthorized, protectedResponse.StatusCode);
+    Assert.Equal(HttpStatusCode.NotFound, routedResponse.StatusCode);
+  }
+
+  [Fact]
+  public async Task SimilarNonMcpPathIsNotSubjectToMcpAuthentication()
+  {
+    await using var server = new HttpServerFixture();
+    using var client = server.CreateClient();
+
+    using var response = await client.GetAsync("/mcpx");
+
+    Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    Assert.Empty(response.Headers.WwwAuthenticate);
+  }
+
   [Fact]
   public async Task CorrectBearerCredentialReachesAStatelessMcpServer()
   {

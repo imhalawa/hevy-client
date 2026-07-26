@@ -1,5 +1,6 @@
 using System.Net;
 using Hevy.Client;
+using Hevy.Client.Errors;
 using Hevy.Client.Http;
 using Hevy.Client.Models;
 using TestSupport;
@@ -16,17 +17,56 @@ public sealed class HevyClientReadTests
     var handler = RespondingWith(Fixture.Read("workout-page.json"));
     var client = CreateClient(handler);
 
-    var page = await client.GetWorkoutsAsync(2, 5, CancellationToken.None);
+    var page = await client.GetWorkoutsAsync(1, 5, CancellationToken.None);
 
     var request = Assert.Single(handler.Requests);
     Assert.Equal(HttpMethod.Get, request.Method);
-    Assert.Equal("https://api.hevyapp.com/v1/workouts?page=2&pageSize=5", request.RequestUri!.AbsoluteUri);
+    Assert.Equal("https://api.hevyapp.com/v1/workouts?page=1&pageSize=5", request.RequestUri!.AbsoluteUri);
     Assert.Null(request.Body);
     Assert.True(request.Headers.TryGetValue("api-key", out var keys));
     Assert.Equal(["test-api-key"], keys);
     Assert.Equal(1, page.Page);
     Assert.Equal(2, page.PageCount);
     Assert.Equal("workout-page-1", page.Items[0].Id);
+  }
+
+  // Break caught: an upstream page with the wrong identity or too many items being trusted by the typed client.
+  [Theory]
+  [InlineData("{\"page\":2,\"page_count\":2,\"workouts\":[]}")]
+  public async Task Get_workouts_rejects_inconsistent_pages(string response)
+  {
+    var handler = RespondingWith(response);
+    var client = CreateClient(handler);
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetWorkoutsAsync(1, 1, CancellationToken.None));
+
+    Assert.Equal("unexpected_response", exception.Code);
+  }
+
+  // Break caught: a page returning more valid items than requested bypassing the bounded page contract.
+  [Fact]
+  public async Task Get_workouts_rejects_more_items_than_the_requested_page_size()
+  {
+    using var fixture = System.Text.Json.JsonDocument.Parse(Fixture.Read("workout-page.json"));
+    var item = fixture.RootElement.GetProperty("workouts")[0].GetRawText();
+    var handler = RespondingWith($"{{\"page\":1,\"page_count\":1,\"workouts\":[{item},{item}]}}");
+    var client = CreateClient(handler);
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetWorkoutsAsync(1, 1, CancellationToken.None));
+
+    Assert.Equal("unexpected_response", exception.Code);
+  }
+
+  // Break caught: a zero-page response claiming to be a later requested page being accepted as consistent.
+  [Fact]
+  public async Task Get_workouts_rejects_a_later_page_when_page_count_is_zero()
+  {
+    var handler = RespondingWith("{\"page\":2,\"page_count\":0,\"workouts\":[]}");
+    var client = CreateClient(handler);
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetWorkoutsAsync(2, 1, CancellationToken.None));
+
+    Assert.Equal("unexpected_response", exception.Code);
   }
 
   // Break caught: a supplied HttpClient base address being used to exfiltrate authenticated traffic.
@@ -94,31 +134,31 @@ public sealed class HevyClientReadTests
     var client = CreateClient(handler);
 
     Assert.Equal(42, await client.GetWorkoutCountAsync(CancellationToken.None));
-    await client.GetWorkoutEventsAsync(3, 4, new DateTimeOffset(2024, 1, 2, 3, 4, 5, TimeSpan.Zero), CancellationToken.None);
+    await client.GetWorkoutEventsAsync(1, 4, new DateTimeOffset(2024, 1, 2, 3, 4, 5, TimeSpan.Zero), CancellationToken.None);
     Assert.Equal("workout-1", (await client.GetWorkoutAsync("a/b", CancellationToken.None)).Id);
-    await client.GetRoutinesAsync(4, 5, CancellationToken.None);
+    await client.GetRoutinesAsync(1, 5, CancellationToken.None);
     Assert.Equal("routine-response-1", (await client.GetRoutineAsync("routine/1", CancellationToken.None)).Id);
-    await client.GetExerciseTemplatesAsync(5, 50, CancellationToken.None);
+    await client.GetExerciseTemplatesAsync(1, 50, CancellationToken.None);
     Assert.Equal("D04AC939", (await client.GetExerciseTemplateAsync("template/1", CancellationToken.None)).Id);
-    await client.GetRoutineFoldersAsync(6, 7, CancellationToken.None);
+    await client.GetRoutineFoldersAsync(2, 7, CancellationToken.None);
     Assert.Equal(42, (await client.GetRoutineFolderAsync(42, CancellationToken.None)).Id);
     await client.GetExerciseHistoryAsync("template/1", 1, 5, new DateOnly(2024, 1, 2), new DateOnly(2024, 2, 3), CancellationToken.None);
-    await client.GetBodyMeasurementsAsync(7, 8, CancellationToken.None);
+    await client.GetBodyMeasurementsAsync(1, 8, CancellationToken.None);
     Assert.Equal(new DateOnly(2024, 8, 14), (await client.GetBodyMeasurementAsync(new DateOnly(2024, 8, 14), CancellationToken.None)).Date);
 
     Assert.Equal(
     [
         "https://api.hevyapp.com/v1/workouts/count",
-            "https://api.hevyapp.com/v1/workouts/events?page=3&pageSize=4&since=2024-01-02T03%3A04%3A05.0000000%2B00%3A00",
+            "https://api.hevyapp.com/v1/workouts/events?page=1&pageSize=4&since=2024-01-02T03%3A04%3A05.0000000%2B00%3A00",
             "https://api.hevyapp.com/v1/workouts/a%2Fb",
-            "https://api.hevyapp.com/v1/routines?page=4&pageSize=5",
+            "https://api.hevyapp.com/v1/routines?page=1&pageSize=5",
             "https://api.hevyapp.com/v1/routines/routine%2F1",
-            "https://api.hevyapp.com/v1/exercise_templates?page=5&pageSize=50",
+            "https://api.hevyapp.com/v1/exercise_templates?page=1&pageSize=50",
             "https://api.hevyapp.com/v1/exercise_templates/template%2F1",
-            "https://api.hevyapp.com/v1/routine_folders?page=6&pageSize=7",
+            "https://api.hevyapp.com/v1/routine_folders?page=2&pageSize=7",
             "https://api.hevyapp.com/v1/routine_folders/42",
             "https://api.hevyapp.com/v1/exercise_history/template%2F1?start_date=2024-01-02&end_date=2024-02-03",
-            "https://api.hevyapp.com/v1/body_measurements?page=7&pageSize=8",
+            "https://api.hevyapp.com/v1/body_measurements?page=1&pageSize=8",
             "https://api.hevyapp.com/v1/body_measurements/2024-08-14",
         ],
     handler.Requests.Select(request => request.RequestUri!.AbsoluteUri));

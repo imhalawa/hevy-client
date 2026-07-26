@@ -3,21 +3,21 @@ using System.Text.Json.Serialization;
 namespace Hevy.Client.Models;
 
 public sealed record Routine(
-    string Id,
+    [property: JsonRequired] string Id,
     string Title,
     long? FolderId,
-    DateTimeOffset UpdatedAt,
-    DateTimeOffset CreatedAt,
-    IReadOnlyList<RoutineExercise> Exercises);
+    [property: JsonRequired] DateTimeOffset UpdatedAt,
+    [property: JsonRequired] DateTimeOffset CreatedAt,
+    [property: JsonRequired] IReadOnlyList<RoutineExercise> Exercises);
 
 public sealed record RoutineExercise(
     int Index,
     string Title,
     string RestSeconds,
     string Notes,
-    string ExerciseTemplateId,
+    [property: JsonRequired] string ExerciseTemplateId,
     [property: JsonPropertyName("supersets_id")] long? SupersetId,
-    IReadOnlyList<RoutineSet> Sets);
+    [property: JsonRequired] IReadOnlyList<RoutineSet> Sets);
 
 public sealed record RoutineSet(
     int Index,
@@ -31,18 +31,24 @@ public sealed record RoutineSet(
     RepRange? RepRange)
     : SetMetrics(WeightKg, Reps, DistanceMeters, DurationSeconds, Rpe, CustomMetric);
 
-public sealed record RoutinePage(int Page, int PageCount, IReadOnlyList<Routine> Routines);
+public sealed record RoutinePage(
+    [property: JsonRequired] int Page,
+    [property: JsonRequired] int PageCount,
+    [property: JsonRequired] IReadOnlyList<Routine> Routines);
 
-public sealed record RoutineResponse(Routine Routine);
+public sealed record RoutineResponse([property: JsonRequired] Routine Routine);
 
 public sealed record RoutineFolder(
-    long Id,
+    [property: JsonRequired] long Id,
     int Index,
     string Title,
-    DateTimeOffset UpdatedAt,
-    DateTimeOffset CreatedAt);
+    [property: JsonRequired] DateTimeOffset UpdatedAt,
+    [property: JsonRequired] DateTimeOffset CreatedAt);
 
-public sealed record RoutineFolderPage(int Page, int PageCount, IReadOnlyList<RoutineFolder> RoutineFolders);
+public sealed record RoutineFolderPage(
+    [property: JsonRequired] int Page,
+    [property: JsonRequired] int PageCount,
+    [property: JsonRequired] IReadOnlyList<RoutineFolder> RoutineFolders);
 
 public sealed record CreateRoutineRequest(CreateRoutineWrite Routine);
 

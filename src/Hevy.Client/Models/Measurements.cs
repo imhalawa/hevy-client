@@ -1,7 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace Hevy.Client.Models;
 
 public sealed record BodyMeasurement(
-    DateOnly Date,
+    [property: JsonRequired] DateOnly Date,
     decimal? WeightKg,
     decimal? LeanMassKg,
     decimal? FatPercent,
@@ -20,7 +22,10 @@ public sealed record BodyMeasurement(
     decimal? LeftCalf,
     decimal? RightCalf);
 
-public sealed record BodyMeasurementPage(int Page, int PageCount, IReadOnlyList<BodyMeasurement> BodyMeasurements);
+public sealed record BodyMeasurementPage(
+    [property: JsonRequired] int Page,
+    [property: JsonRequired] int PageCount,
+    [property: JsonRequired] IReadOnlyList<BodyMeasurement> BodyMeasurements);
 
 public sealed record CreateBodyMeasurementRequest(
     DateOnly Date,

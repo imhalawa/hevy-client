@@ -11,9 +11,17 @@ internal static class ToolExceptionFilter
     {
       return await action();
     }
-    catch (OperationCanceledException)
+    catch (OperationCanceledException exception) when (exception.CancellationToken.IsCancellationRequested)
     {
       throw;
+    }
+    catch (OperationCanceledException)
+    {
+      return ToolResults.Error(new ToolError(
+          "timeout",
+          "The Hevy API request timed out.",
+          true,
+          NewCorrelationId()));
     }
     catch (HevyException exception)
     {
@@ -23,6 +31,14 @@ internal static class ToolExceptionFilter
           exception.IsRetryable,
           NewCorrelationId(),
           exception.StatusCode is null ? null : (int)exception.StatusCode.Value));
+    }
+    catch (HevyCommittedReadbackException exception)
+    {
+      return ToolResults.Error(new ToolError(
+          exception.Code,
+          exception.Message,
+          exception.IsRetryable,
+          NewCorrelationId()));
     }
     catch (HevyOutcomeUnknownException exception)
     {
@@ -39,16 +55,18 @@ internal static class ToolExceptionFilter
     }
     catch (Exception)
     {
-      return ToolResults.Error(new ToolError(
-          "unexpected_error",
-          "The tool could not complete the request.",
-          false,
-          NewCorrelationId()));
+      return Unexpected();
     }
   }
 
   internal static CallToolResult Validation(string message) => ToolResults.Error(new ToolError(
       "validation_error", message, false, NewCorrelationId()));
+
+  internal static CallToolResult Unexpected() => ToolResults.Error(new ToolError(
+      "unexpected_error",
+      "The tool could not complete the request.",
+      false,
+      NewCorrelationId()));
 
   internal static CallToolResult Conflict(string message, object? meta = null) => ToolResults.Error(new ToolError(
       "conflict", message, false, NewCorrelationId()), meta);

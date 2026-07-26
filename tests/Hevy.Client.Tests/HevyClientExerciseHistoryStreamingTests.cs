@@ -11,6 +11,19 @@ namespace Hevy.Client.Tests;
 
 public sealed class HevyClientExerciseHistoryStreamingTests
 {
+  // Break caught: fractional values in upstream fields documented as integers being widened silently.
+  [Fact]
+  public async Task Fractional_history_reps_are_rejected_as_an_unexpected_response()
+  {
+    const string response = "{\"exercise_history\":[{\"workout_id\":\"workout-1\",\"workout_title\":\"Leg Day\",\"workout_start_time\":\"2024-08-14T12:00:00Z\",\"workout_end_time\":\"2024-08-14T13:00:00Z\",\"exercise_template_id\":\"template-1\",\"weight_kg\":100,\"reps\":5.5,\"distance_meters\":null,\"duration_seconds\":null,\"rpe\":8,\"custom_metric\":null,\"set_type\":\"normal\"}]}";
+    var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));
+    var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("test-api-key"));
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() =>
+        client.GetExerciseHistoryAsync("template-1", 1, 10, null, null, CancellationToken.None));
+
+    Assert.Equal("unexpected_response", exception.Code);
+  }
   [Theory]
   [InlineData(100, 150, 101, null)]
   [InlineData(1_000, 1_050, 1_000, "item_safety_cap")]

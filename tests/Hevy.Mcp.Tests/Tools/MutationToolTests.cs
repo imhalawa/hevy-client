@@ -1,4 +1,5 @@
 using Hevy.Client;
+using Hevy.Client.Errors;
 using Hevy.Client.Models;
 using Hevy.Mcp.Caching;
 using Hevy.Mcp.Tools;
@@ -211,6 +212,33 @@ public sealed class MutationToolTests
     await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, default);
     await cache.GetExerciseTemplatesAsync(default);
     Assert.Equal(6, client.CallCount);
+  }
+
+  // Break caught: a committed exercise creation whose read-back fails leaving the stale catalog cached.
+  [Fact]
+  public async Task Committed_exercise_with_failed_readback_invalidates_the_template_cache()
+  {
+    var client = new FakeHevyClient
+    {
+      ExerciseTemplates = new(1, 1, [new ExerciseTemplate("template-1", "Squat", "weight_reps", "quadriceps", ["glutes"], EquipmentCategory.Barbell, false)]),
+      CreateExerciseTemplateHandler = (_, _) => Task.FromException<ExerciseTemplate>(new HevyCommittedReadbackException()),
+    };
+    var collection = new ServiceCollection()
+        .AddSingleton<IHevyClient>(client)
+        .AddMemoryCache(memory => memory.SizeLimit = 2)
+        .AddSingleton(TimeProvider.System)
+        .AddSingleton<HevyCache>();
+    using var services = collection.BuildServiceProvider();
+    var cache = services.GetRequiredService<HevyCache>();
+    await cache.GetExerciseTemplatesAsync(default);
+
+    var result = await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, default);
+    await cache.GetExerciseTemplatesAsync(default);
+
+    Assert.True(result.IsError);
+    Assert.Equal("committed_readback_failed", result.Structured().GetProperty("error").GetProperty("code").GetString());
+    Assert.False(result.Structured().GetProperty("error").GetProperty("retryable").GetBoolean());
+    Assert.Equal(3, client.CallCount);
   }
 
   private static IServiceProvider Services(IHevyClient client) => new ServiceCollection()

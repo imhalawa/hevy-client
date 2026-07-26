@@ -115,6 +115,16 @@ public sealed class ToolInventoryTests
     Assert.Equal(1, workoutsSchema.GetProperty("page_size").GetProperty("minimum").GetInt32());
     Assert.Equal(10, workoutsSchema.GetProperty("page_size").GetProperty("maximum").GetInt32());
     Assert.Equal("^(compact|full)$", workoutsSchema.GetProperty("detail").GetProperty("pattern").GetString());
+    var exerciseTemplatesSchema = tools.Single(tool => tool.GetProperty("name").GetString() == "get_exercise_templates")
+        .GetProperty("inputSchema").GetProperty("properties");
+    Assert.Equal(1, exerciseTemplatesSchema.GetProperty("page_size").GetProperty("minimum").GetInt32());
+    Assert.Equal(100, exerciseTemplatesSchema.GetProperty("page_size").GetProperty("maximum").GetInt32());
+    var historyItemSchema = tools.Single(tool => tool.GetProperty("name").GetString() == "get_exercise_history")
+        .GetProperty("outputSchema").GetProperty("properties").GetProperty("data")
+        .GetProperty("properties").GetProperty("items").GetProperty("items").GetProperty("properties");
+    Assert.Equal(["integer", "null"], historyItemSchema.GetProperty("reps").GetProperty("type").EnumerateArray().Select(static value => value.GetString()));
+    Assert.Equal(["integer", "null"], historyItemSchema.GetProperty("distance_meters").GetProperty("type").EnumerateArray().Select(static value => value.GetString()));
+    Assert.Equal(["integer", "null"], historyItemSchema.GetProperty("duration_seconds").GetProperty("type").EnumerateArray().Select(static value => value.GetString()));
     AssertOutputShape(tools, "get_workouts", "items", "page", "continuation");
     AssertOutputShape(tools, "get_workout_count", "workout_count");
     AssertOutputShape(tools, "get_workout", "id");

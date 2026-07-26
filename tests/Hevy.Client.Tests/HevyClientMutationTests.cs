@@ -99,6 +99,58 @@ public sealed class HevyClientMutationTests
     Assert.True(Assert.Single(handler.Requests).CancellationToken.IsCancellationRequested);
   }
 
+  // Break caught: an internal transport timeout after a mutation begins being exposed as cancellable/retryable.
+  [Fact]
+  public async Task Http_client_timeout_after_mutation_send_is_outcome_unknown()
+  {
+    using var httpClient = new HttpClient(new DelayingHandler()) { Timeout = TimeSpan.FromMilliseconds(20) };
+    var client = new HevyClient(httpClient, new HevyClientOptions("test-api-key"));
+
+    var exception = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None));
+
+    Assert.Equal("outcome_unknown", exception.Code);
+  }
+
+  // Break caught: a committed custom exercise being reported as a retryable whole-operation failure when read-back fails.
+  [Fact]
+  public async Task Committed_custom_exercise_with_failed_readback_is_non_retryable_and_forbids_replay()
+  {
+    var responses = new Queue<HttpResponseMessage>([
+        RecordingHttpMessageHandler.Json(HttpStatusCode.Created, Fixture.Read("exercise-template-create.json")),
+        RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}")]);
+    var client = CreateClient(new RecordingHttpMessageHandler((_, _) => responses.Dequeue()));
+
+    var exception = await Assert.ThrowsAnyAsync<Exception>(() =>
+        client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), CancellationToken.None));
+
+    Assert.Equal("committed_readback_failed", exception.GetType().GetProperty("Code")?.GetValue(exception));
+    Assert.Equal(false, exception.GetType().GetProperty("IsRetryable")?.GetValue(exception));
+    Assert.Contains("fetch", exception.Message, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains("do not replay", exception.Message, StringComparison.OrdinalIgnoreCase);
+  }
+
+  // Break caught: successful measurement POST/PUT followed by failed GET encouraging the agent to replay the write.
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Committed_measurement_with_failed_readback_is_non_retryable_and_forbids_replay(bool update)
+  {
+    var responses = new Queue<HttpResponseMessage>([
+        RecordingHttpMessageHandler.Json(HttpStatusCode.OK, "{}"),
+        RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}")]);
+    var client = CreateClient(new RecordingHttpMessageHandler((_, _) => responses.Dequeue()));
+
+    var exception = update
+        ? await Assert.ThrowsAnyAsync<Exception>(() => client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), CancellationToken.None))
+        : await Assert.ThrowsAnyAsync<Exception>(() => client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None));
+
+    Assert.Equal("committed_readback_failed", exception.GetType().GetProperty("Code")?.GetValue(exception));
+    Assert.Equal(false, exception.GetType().GetProperty("IsRetryable")?.GetValue(exception));
+    Assert.Contains("fetch", exception.Message, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains("do not replay", exception.Message, StringComparison.OrdinalIgnoreCase);
+  }
+
   // Break caught: injected test transports labelling a write connection failure retryable even though the remote outcome is ambiguous.
   [Fact]
   public async Task Mutation_transport_failures_are_unknown_without_a_retry_handler()
@@ -169,5 +221,14 @@ public sealed class HevyClientMutationTests
       InnerHandler = handler,
     };
     return new HevyClient(new HttpClient(retry), new HevyClientOptions("test-api-key"));
+  }
+
+  private sealed class DelayingHandler : HttpMessageHandler
+  {
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+      await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+      throw new InvalidOperationException("Unreachable.");
+    }
   }
 }

@@ -56,11 +56,11 @@ internal static class ToolResults
     return new PagedResult<T>(page, pageCount, items);
   }
 
-  internal static void ValidatePagination(int page, int pageSize)
+  internal static void ValidatePagination(int page, int pageSize, int maximumPageSize = 10)
   {
     ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
     ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(pageSize, 10);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(pageSize, maximumPageSize);
   }
 
   internal static void ValidateDetail(string detail)

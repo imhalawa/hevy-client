@@ -137,9 +137,14 @@ internal sealed class HevyCache
       }
 
       expectedPageCount = result.PageCount;
-      if (expectedPageCount * PageSize > MaximumCatalogItems)
+      if ((long)expectedPageCount * PageSize > MaximumCatalogItems)
       {
         throw new InvalidOperationException($"The catalog exceeds the bounded {MaximumCatalogItems}-item cache limit.");
+      }
+
+      if (result.Items.Count > PageSize)
+      {
+        throw new InvalidOperationException("Hevy returned more catalog items than the requested page size.");
       }
 
       items.AddRange(result.Items);

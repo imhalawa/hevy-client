@@ -120,6 +120,22 @@ public sealed class HevyCacheTests
     Assert.True(client.CallCount >= 3);
   }
 
+  // Break caught: page-count multiplication overflowing and driving an effectively unbounded empty-page loop.
+  [Fact]
+  public async Task Maximum_integer_page_count_is_rejected_after_one_page()
+  {
+    var client = new FakeHevyClient
+    {
+      GetRoutinesHandler = (page, _, _) => Task.FromResult(new PagedResult<Routine>(page, int.MaxValue, [])),
+    };
+    using var memory = CreateMemoryCache(100);
+    var cache = new HevyCache(client, memory, TimeProvider.System);
+
+    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
+
+    Assert.Equal(1, client.CallCount);
+  }
+
   [Fact]
   public async Task CreatorCancellationCancelsOnlyItsWaitAndSharedLoadCompletesForAnotherWaiter()
   {
