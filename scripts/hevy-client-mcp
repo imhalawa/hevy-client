@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+image=${HEVY_CLIENT_IMAGE:-hevy-client:local}
+
+case "$(uname -s)" in
+  Darwin)
+    HEVY_API_KEY=$(security find-generic-password -a "$USER" -s hevy-client-api-key -w)
+    ;;
+  Linux)
+    HEVY_API_KEY=$(secret-tool lookup service hevy-client credential api-key)
+    ;;
+  *)
+    printf '%s\n' 'hevy-client-mcp supports macOS Keychain and Linux Secret Service.' >&2
+    exit 2
+    ;;
+esac
+
+if [ -z "$HEVY_API_KEY" ]; then
+  printf '%s\n' 'The Hevy API key was not found in the configured system secret store.' >&2
+  exit 2
+fi
+
+export HEVY_API_KEY
+if [ -n "${WSL_INTEROP:-}" ]; then
+  WSLENV="${WSLENV:+$WSLENV:}HEVY_API_KEY/w"
+  export WSLENV
+fi
+exec docker run \
+  --rm \
+  -i \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  -e HEVY_API_KEY \
+  "$image"

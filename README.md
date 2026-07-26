@@ -26,13 +26,13 @@ Build the local image from a reviewed checkout:
 docker build --pull --tag hevy-client:local .
 ```
 
-Load the key into the environment using your shell's secret-manager integration. On a private interactive Bash session, this avoids placing the value in shell history:
+For a terminal client launched from the same private Bash session, this avoids placing the value in shell history:
 
 ```sh
 read -r -s -p "Hevy API key: " HEVY_API_KEY && export HEVY_API_KEY && printf '\n'
 ```
 
-Do not put the key in a Dockerfile, image, MCP JSON/TOML, command argument, URL, source file, or committed `.env` file. Every Docker example below uses `-e HEVY_API_KEY` without a value so Docker copies the existing host variable into the container. The MCP client process must inherit that variable; restart a desktop client after setting it.
+Do not put the key in a Dockerfile, image, MCP JSON/TOML, command argument, URL, source file, or committed `.env` file. Every Docker example uses `-e HEVY_API_KEY` without a value so Docker copies the existing host variable into the container. Shell exports apply only to programs started from that shell; they are not a reliable way to provision an already-running graphical application.
 
 ## Recommended local stdio setup
 
@@ -46,130 +46,129 @@ docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_AP
 
 The configurations below all run that same command. JSON snippets are complete documents; merge the shown server entry if the file already contains other settings.
 
+## Desktop clients without persisted API keys
+
+Graphical clients need a launcher that obtains the key before the client or MCP process starts. This repository includes two launchers, and their container seams are tested with generated fake credentials and a real MCP handshake. The tests also check that the fake value is not written to launcher or temporary files.
+
+### macOS Keychain
+
+Copy `scripts/hevy-client-mcp` to a stable, user-owned absolute path such as `~/.local/bin/hevy-client-mcp`, then make it executable. In **Keychain Access**, create a **Generic Password** whose service/name is `hevy-client-api-key`, whose account is your current macOS username, and whose password is the Hevy API key. This avoids putting the key in a command argument or shell history.
+
+The launcher retrieves the value from macOS Keychain for each MCP startup and passes only the environment-variable name to Docker. Point the desktop client's MCP `command` directly at the launcher's absolute path.
+
+### Linux Secret Service
+
+Install a Secret Service provider and the `secret-tool` client, then copy `scripts/hevy-client-mcp` to a stable, user-owned absolute path such as `~/.local/bin/hevy-client-mcp` and make it executable. Store the key without placing it in an argument or shell history:
+
+```bash
+read -r -s -p "Hevy API key: " hevy_key && printf '%s' "$hevy_key" | secret-tool store --label='hevy-client Hevy API key' service hevy-client credential api-key
+unset hevy_key
+printf '\n'
+```
+
+The graphical session's keyring must be unlocked. The launcher retrieves `service=hevy-client, credential=api-key` for each MCP startup, keeps it in process memory, and replaces itself with Docker. Point the desktop client's MCP `command` at the launcher's absolute path.
+
+The launcher uses `hevy-client:local` by default. Set `HEVY_CLIENT_IMAGE` in the launcher's environment only when selecting a different reviewed image; it is not a credential.
+
+### Windows secure-prompt launcher
+
+Windows users can start a desktop client through `scripts/Start-HevyClient.ps1`. It securely prompts for the key, keeps the plaintext only in process memory and the launched process environment, and restores the previous environment after that client exits. The key is not stored in the MCP configuration or command history.
+
+First review the script and, if Windows marked the downloaded file as blocked, run `Unblock-File .\scripts\Start-HevyClient.ps1`. Then start the client from a trusted PowerShell session, supplying its actual installed executable path:
+
+```powershell
+powershell -NoProfile -File .\scripts\Start-HevyClient.ps1 -ClientPath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe"
+```
+
+Fully exit every existing instance of the graphical client first; a single-instance application that reconnects to an older process will not receive the new environment. Use the installed executable path for Claude Desktop, Cursor, Codex, or another supported client in place of the VS Code example. Configure that client to run the common `docker run ... -e HEVY_API_KEY hevy-client:local` stdio command shown above. Because the launcher starts the process that hosts MCP, Docker inherits the prompted value without storing it.
+
 ### Codex
 
-The current Codex CLI can add the server without recording the key:
+When Codex CLI is launched from the same terminal in which `HEVY_API_KEY` was exported, it can add the server without recording the key:
 
 ```sh
 codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY hevy-client:local
 codex mcp get hevy
 ```
 
-Codex CLI, the Codex IDE extension, and the ChatGPT desktop app share `~/.codex/config.toml`. See the official [Codex MCP documentation](https://developers.openai.com/codex/mcp).
+On macOS or Linux, graphical Codex clients can instead point their shared `~/.codex/config.toml` entry at the secret-backed launcher:
+
+```toml
+[mcp_servers.hevy]
+command = "/absolute/path/to/hevy-client-mcp"
+```
+
+On Windows, retain the Docker MCP command and start the graphical client through `scripts/Start-HevyClient.ps1`. See the official [Codex MCP documentation](https://developers.openai.com/codex/mcp).
 
 ### Claude Desktop
 
-Open Claude Desktop's developer settings and edit its MCP configuration:
+On macOS or Linux, open Claude Desktop's developer settings and point its MCP configuration at the installed secret-backed launcher:
 
 ```json
 {
   "mcpServers": {
     "hevy": {
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "--read-only",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=16m",
-        "-e",
-        "HEVY_API_KEY",
-        "hevy-client:local"
-      ]
+      "command": "/absolute/path/to/hevy-client-mcp"
     }
   }
 }
 ```
 
-Restart Claude Desktop after saving. Claude Code accepts the same `mcpServers` entry in `.mcp.json`; its verified CLI equivalent is `claude mcp add --transport stdio hevy -- docker run ...`. See Anthropic's [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) and [Claude Code MCP reference](https://code.claude.com/docs/en/mcp).
+Start Claude Desktop normally after saving. On Windows, keep the Docker command and start Claude Desktop through the PowerShell launcher. Claude Code can use the same launcher entry in `.mcp.json`; a terminal session with an exported key can instead use `claude mcp add --transport stdio hevy -- docker run ...`. See Anthropic's [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) and [Claude Code MCP reference](https://code.claude.com/docs/en/mcp).
 
 ### Cursor
 
-Add this to the user MCP settings or `.cursor/mcp.json`, then enable the server in Cursor settings:
+On macOS or Linux, add this to the user MCP settings or `.cursor/mcp.json`, then enable the server in Cursor settings:
 
 ```json
 {
   "mcpServers": {
     "hevy": {
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "--read-only",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=16m",
-        "-e",
-        "HEVY_API_KEY",
-        "hevy-client:local"
-      ]
+      "command": "/absolute/path/to/hevy-client-mcp"
     }
   }
 }
 ```
 
-See the official [Cursor MCP documentation](https://cursor.com/docs/context/mcp).
+On Windows, keep the Docker command and start Cursor through the PowerShell launcher. See the official [Cursor MCP documentation](https://cursor.com/docs/context/mcp).
 
 ### Visual Studio Code
 
-Use the `MCP: Open User Configuration` command, or create `.vscode/mcp.json` for a trusted workspace:
+On macOS or Linux, use the `MCP: Open User Configuration` command, or create `.vscode/mcp.json` for a trusted workspace:
 
 ```json
 {
   "servers": {
     "hevy": {
       "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "--read-only",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=16m",
-        "-e",
-        "HEVY_API_KEY",
-        "hevy-client:local"
-      ]
+      "command": "/absolute/path/to/hevy-client-mcp"
     }
   }
 }
 ```
 
-Start it from the MCP server view and approve only the tools you intend to use. See the official [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
+Start it from the MCP server view and approve only the tools you intend to use. On Windows, keep the Docker command and start VS Code through the PowerShell launcher. See the official [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
 
 ### Gemini CLI
 
-Add this entry to the user `~/.gemini/settings.json` or project `.gemini/settings.json`:
+On macOS or Linux, add this entry to the user `~/.gemini/settings.json` or project `.gemini/settings.json`:
 
 ```json
 {
   "mcpServers": {
     "hevy": {
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "--read-only",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=16m",
-        "-e",
-        "HEVY_API_KEY",
-        "hevy-client:local"
-      ],
+      "command": "/absolute/path/to/hevy-client-mcp",
       "trust": false
     }
   }
 }
 ```
 
-Keep `trust` false so Gemini asks before tool calls. Check discovery with `/mcp`. See the official [Gemini CLI MCP documentation](https://geminicli.com/docs/tools/mcp-server/).
+Keep `trust` false so Gemini asks before tool calls. Check discovery with `/mcp`. A terminal-only Gemini CLI can retain the direct Docker command when it inherits an exported key. On Windows, start Gemini's graphical host through the PowerShell launcher. See the official [Gemini CLI MCP documentation](https://geminicli.com/docs/tools/mcp-server/).
 
 ### Other stdio clients
 
-Configure executable `docker` with these arguments, in this exact order:
+Terminal clients that inherit an exported key can configure executable `docker` with these arguments, in this exact order:
 
 ```text
 run
@@ -183,7 +182,7 @@ HEVY_API_KEY
 hevy-client:local
 ```
 
-The client must send newline-delimited MCP JSON-RPC on stdin and keep stdin attached for the life of the server.
+The client must send newline-delimited MCP JSON-RPC on stdin and keep stdin attached for the life of the server. On macOS or Linux, a graphical client should use `/absolute/path/to/hevy-client-mcp` as its command instead. On Windows, use the same Docker arguments but start the client through `scripts/Start-HevyClient.ps1`.
 
 ## Writes, read-only mode, and dry runs
 

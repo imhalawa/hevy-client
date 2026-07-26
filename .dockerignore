@@ -12,6 +12,7 @@
 .env
 .env.*
 docs
+scripts
 tests
 README.md
 SECURITY.md
