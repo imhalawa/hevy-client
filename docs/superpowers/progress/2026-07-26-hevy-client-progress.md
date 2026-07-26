@@ -6,8 +6,8 @@
 
 - Design: approved and committed at `16fe62c`.
 - Implementation plan: complete and committed at `06b5bc3`.
-- Active task: Task 4 complete in this commit.
-- Next task: Task 5 — MCP configuration, stdio host, and authenticated HTTP host.
+- Active task: Task 5 complete in this commit.
+- Next task: Task 6 — complete MCP tool surface.
 - Execution mode: subagent-driven with specification-compliance and code-quality review gates after each task.
 
 ## Non-negotiable constraints
@@ -32,6 +32,7 @@
 | Task 4 | Complete | `feat: add safe Hevy mutations and retries` | RED evidence for missing mutation/retry API, direct routine response, endpoint-specific retry safety, nested validation, per-attempt request isolation, deadline-bounded Retry-After, exact-origin, date Retry-After, and single-sample jitter regressions; focused mutation (4), retry (12), and full Release solution (74) suites pass with zero warnings | Every official POST/PUT family validates before I/O and writes exact JSON. Production retries GET and only the documented full-replacement body-measurement PUT (maximum three total), creates a fresh request per attempt from operation-scoped buffered content, preserves exact-origin checks, honors deadline-bounded Retry-After with injectable collaborators, and fails ambiguous writes as `outcome_unknown`. |
 | Task 4, fix round 1 | Complete | `fix: classify ambiguous Hevy writes` | RED: unselected mutation 501 returned normally and injected write transport failures became `transient_upstream`; GREEN: focused mutation (5), retry (13), and full Release solution (76) suites pass with zero warnings | Any mutation 5xx outside the selected retry set now becomes `outcome_unknown`; selected statuses still permit only read and explicitly safe body-measurement PUT retries. Both mutation send paths preserve the same classification without the production retry handler. |
 | Task 4, fix round 2 | Complete | `fix: classify direct mutation failures` | RED: direct injected-client 501 responses became retryable `transient_upstream`; GREEN: focused mutation (6), retry (13), and full Release solution (77) suites pass with zero warnings | Both mutation response helpers classify every 5xx as `outcome_unknown` before the shared response mapper, without changing cancellation or 4xx client-error handling. |
+| Task 5 | Complete | `feat: host MCP over stdio and authenticated HTTP` | RED: absent options types failed compilation; the empty executable produced no handshake and exited zero on invalid configuration; the HTTP stub failed all 9 initial WAF tests; review-hardening tests observed remote HTTP Origin accepted and wildcard hosts allowed. GREEN: MCP (33), transport (2), and full Release solution (112) suites pass with zero warnings | Immutable environment parsing keeps secrets out of diagnostics; production DI constructs `HevyClient` only from environment-derived `HevyClientOptions`. Stdio is protocol-only. HTTP is stateless, bearer protected with fixed-time hashed comparison, and limits Host/Origin values to explicit reverse-proxy-safe authorities. The empty DI-backed `tools/list` seam is intentional until Task 6. |
 
 ## Resume instructions
 
