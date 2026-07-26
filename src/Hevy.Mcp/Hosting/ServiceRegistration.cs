@@ -8,9 +8,7 @@ using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
-using Microsoft.Extensions.Logging;
 using System.Reflection;
-using System.Diagnostics;
 
 namespace Hevy.Mcp.Hosting;
 
@@ -87,49 +85,40 @@ internal static class ServiceRegistration
     });
     return builder.WithCallToolHandler(async (request, cancellationToken) =>
     {
-      var started = Stopwatch.GetTimestamp();
-      var correlationId = Guid.NewGuid();
       var name = request.Params?.Name;
       var tool = tools.SingleOrDefault(candidate => string.Equals(candidate.ProtocolTool.Name, name, StringComparison.Ordinal));
       if (tool is null)
       {
-        return Complete(ToolExceptionFilter.Validation($"Unknown tool '{name}'."), DiagnosticOperationCategory.Protocol);
+        return await DiagnosticToolDispatch.InvokeAsync(
+            _ => Task.FromResult(ToolExceptionFilter.Validation($"Unknown tool '{name}'.")),
+            DiagnosticOperationCategory.Protocol,
+            diagnostics,
+            cancellationToken);
       }
 
       var category = Category(name);
-      request.MatchedPrimitive = tool;
-      try
-      {
-        var result = await tool.InvokeAsync(request, cancellationToken);
-        result = result.IsError == true && result.StructuredContent is null
-            ? ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.")
-            : result;
-        return Complete(result, category);
-      }
-      catch (OperationCanceledException)
-      {
-        diagnostics?.Write(
-            LogLevel.Warning,
-            SafeOperationEvent.Cancelled(category, Stopwatch.GetElapsedTime(started), correlationId));
-        throw;
-      }
-      catch (Exception)
-      {
-        return Complete(
-            ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema."),
-            category);
-      }
-
-      CallToolResult Complete(CallToolResult result, DiagnosticOperationCategory operationCategory)
-      {
-        var operationEvent = SafeOperationEvent.FromToolResult(
-            operationCategory,
-            Stopwatch.GetElapsedTime(started),
-            result,
-            correlationId);
-        diagnostics?.Write(result.IsError == true ? LogLevel.Warning : LogLevel.Information, operationEvent);
-        return result;
-      }
+      return await DiagnosticToolDispatch.InvokeAsync(async invocationCancellationToken =>
+        {
+          request.MatchedPrimitive = tool;
+          try
+          {
+            var result = await tool.InvokeAsync(request, invocationCancellationToken);
+            return result.IsError == true && result.StructuredContent is null
+                ? ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.")
+                : result;
+          }
+          catch (OperationCanceledException)
+          {
+            throw;
+          }
+          catch (Exception)
+          {
+            return ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.");
+          }
+        },
+        category,
+        diagnostics,
+        cancellationToken);
     });
   }
 

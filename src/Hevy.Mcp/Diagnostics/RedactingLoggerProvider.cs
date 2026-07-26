@@ -107,7 +107,7 @@ internal sealed record SafeOperationEvent(
 
   private static (DiagnosticOperationStatus Status, DiagnosticExceptionCategory Exception) ClassifyError(string? code) => code switch
   {
-    "validation_error" or "conflict" or "not_found" or "authentication" or "authorization" =>
+    "validation" or "validation_error" or "conflict" or "not_found" or "authentication" or "authorization" =>
         (DiagnosticOperationStatus.Rejected, DiagnosticExceptionCategory.Validation),
     "outcome_unknown" => (DiagnosticOperationStatus.Failed, DiagnosticExceptionCategory.OutcomeUnknown),
     "rate_limited" or "transient_upstream" or "timeout" or "unexpected_response" =>
@@ -142,6 +142,7 @@ internal sealed class RedactingLoggerProvider : ILoggerProvider
   private readonly TextWriter writer;
   private readonly DiagnosticSnapshot snapshot;
   private readonly LogLevel minimumLevel;
+  private bool sinkDisabled;
 
   private RedactingLoggerProvider(TextWriter writer, DiagnosticSnapshot snapshot, LogLevel minimumLevel)
   {
@@ -167,7 +168,6 @@ internal sealed class RedactingLoggerProvider : ILoggerProvider
 
   internal void Write(LogLevel logLevel, SafeOperationEvent operationEvent)
   {
-    ArgumentNullException.ThrowIfNull(operationEvent);
     if (!IsEnabled(logLevel) ||
         !Enum.IsDefined(operationEvent.OperationCategory) ||
         !Enum.IsDefined(operationEvent.DurationBucket) ||
@@ -178,27 +178,39 @@ internal sealed class RedactingLoggerProvider : ILoggerProvider
       return;
     }
 
-    var record = new DiagnosticLogRecord(
-        snapshot.ServerVersion,
-        snapshot.RuntimeVersion,
-        snapshot.Transport,
-        snapshot.ReadOnly,
-        operationEvent.OperationCategory,
-        operationEvent.DurationBucket,
-        operationEvent.Status,
-        operationEvent.CorrelationId.ToString("N"),
-        operationEvent.ExceptionCategory,
-        operationEvent.HttpStatus);
-    var line = JsonSerializer.Serialize(record, ToolResults.JsonOptions);
     lock (writeLock)
     {
-      writer.WriteLine(line);
-      writer.Flush();
+      if (sinkDisabled)
+      {
+        return;
+      }
+
+      try
+      {
+        var record = new DiagnosticLogRecord(
+            snapshot.ServerVersion,
+            snapshot.RuntimeVersion,
+            snapshot.Transport,
+            snapshot.ReadOnly,
+            operationEvent.OperationCategory,
+            operationEvent.DurationBucket,
+            operationEvent.Status,
+            operationEvent.CorrelationId.ToString("N"),
+            operationEvent.ExceptionCategory,
+            operationEvent.HttpStatus);
+        var line = JsonSerializer.Serialize(record, ToolResults.JsonOptions);
+        writer.WriteLine(line);
+        writer.Flush();
+      }
+      catch (Exception)
+      {
+        Volatile.Write(ref sinkDisabled, true);
+      }
     }
   }
 
   private bool IsEnabled(LogLevel logLevel) =>
-      logLevel is not LogLevel.None && logLevel >= minimumLevel;
+      !Volatile.Read(ref sinkDisabled) && logLevel is not LogLevel.None && logLevel >= minimumLevel;
 
   private sealed class AllowlistLogger(RedactingLoggerProvider provider) : ILogger
   {
