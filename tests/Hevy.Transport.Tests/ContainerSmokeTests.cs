@@ -66,7 +66,7 @@ public static class DockerAvailabilityPolicy
     // Compatibility: pinned Docker CLI v29.5.2 resolves a nonempty DOCKER_HOST before
     // DOCKER_CONTEXT, despite the Docker CLI docs claiming the inverse. Re-audit this
     // on every Docker client bump:
-    // https://github.com/docker/cli/blob/v29.5.2/cli/command/cli.go#L439-L456
+    // https://github.com/docker/cli/blob/v29.5.2/cli/command/cli.go#L409-L426
     // https://docs.docker.com/engine/reference/commandline/cli/#environment-variables
     var effectiveEndpoint = configuredDockerHost;
     if (string.IsNullOrEmpty(effectiveEndpoint))
