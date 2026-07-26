@@ -104,6 +104,42 @@ public sealed class HevyMcpOptionsTests
     Assert.Equal("MCP_AUTH_TOKEN is required for HTTP transport.", exception.Message);
   }
 
+  [Theory]
+  [InlineData(" token")]
+  [InlineData("token ")]
+  [InlineData("to ken")]
+  [InlineData("token?")]
+  [InlineData("\"token\"")]
+  [InlineData("=token")]
+  [InlineData("token=padding")]
+  [InlineData("tøken")]
+  public void HttpRejectsAuthenticationTokensOutsideBearerToken68Grammar(string token)
+  {
+    var environment = ValidEnvironment();
+    environment["HEVY_MCP_TRANSPORT"] = "http";
+    environment["MCP_AUTH_TOKEN"] = token;
+
+    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+
+    Assert.Equal("MCP_AUTH_TOKEN must use Bearer token68 syntax.", exception.Message);
+  }
+
+  [Theory]
+  [InlineData("AZaz09-._~+/")]
+  [InlineData("token=")]
+  [InlineData("token==")]
+  [InlineData("token====")]
+  public void HttpAcceptsBearerToken68IncludingTrailingPadding(string token)
+  {
+    var environment = ValidEnvironment();
+    environment["HEVY_MCP_TRANSPORT"] = "http";
+    environment["MCP_AUTH_TOKEN"] = token;
+
+    var options = HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault);
+
+    Assert.Equal(token, options.McpAuthToken);
+  }
+
   [Fact]
   public void HttpRequiresAuthenticationTokenDistinctFromHevyApiKey()
   {

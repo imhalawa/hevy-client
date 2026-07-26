@@ -32,14 +32,18 @@ public sealed class HttpHostTests
     malformed.Headers.Authorization = new AuthenticationHeaderValue("Basic", "not-bearer");
     using var wrong = InitializeRequest();
     wrong.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "wrong-token");
+    using var multiple = InitializeRequest();
+    multiple.Headers.TryAddWithoutValidation("Authorization", ["Bearer mcp-auth-token", "Bearer mcp-auth-token"]);
 
     using var missingResponse = await client.SendAsync(missing);
     using var malformedResponse = await client.SendAsync(malformed);
     using var wrongResponse = await client.SendAsync(wrong);
+    using var multipleResponse = await client.SendAsync(multiple);
 
     Assert.Equal(HttpStatusCode.Unauthorized, missingResponse.StatusCode);
     Assert.Equal(HttpStatusCode.Unauthorized, malformedResponse.StatusCode);
     Assert.Equal(HttpStatusCode.Unauthorized, wrongResponse.StatusCode);
+    Assert.Equal(HttpStatusCode.Unauthorized, multipleResponse.StatusCode);
     Assert.Equal("Bearer", missingResponse.Headers.WwwAuthenticate.Single().Scheme);
   }
 

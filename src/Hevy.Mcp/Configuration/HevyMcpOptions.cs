@@ -47,6 +47,11 @@ public sealed class HevyMcpOptions
         throw new InvalidOperationException("MCP_AUTH_TOKEN is required for HTTP transport.");
       }
 
+      if (!BearerToken.IsValidToken68(authToken))
+      {
+        throw new InvalidOperationException("MCP_AUTH_TOKEN must use Bearer token68 syntax.");
+      }
+
       if (FixedTimeEquals(apiKey, authToken))
       {
         throw new InvalidOperationException("MCP_AUTH_TOKEN must be distinct from HEVY_API_KEY.");

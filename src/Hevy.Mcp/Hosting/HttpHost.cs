@@ -102,12 +102,13 @@ internal static class HttpHost
     if (authorizationValues.Count != 1 ||
         !AuthenticationHeaderValue.TryParse(authorizationValues[0], out var authorization) ||
         !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
-        string.IsNullOrEmpty(authorization.Parameter))
+        authorization.Parameter is not { } suppliedToken ||
+        !BearerToken.IsValidToken68(suppliedToken))
     {
       return false;
     }
 
-    var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(authorization.Parameter));
+    var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(suppliedToken));
     var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expectedToken));
     return CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash);
   }
