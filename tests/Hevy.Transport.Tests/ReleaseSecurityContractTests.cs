@@ -224,6 +224,13 @@ public sealed class ReleaseSecurityContractTests
     var rejected = await RunScriptAsync(script, [ExistingDigest, "sha256:not-a-digest"], environment: null);
     Assert.NotEqual(0, rejected.ExitCode);
     Assert.Contains("SHA-256 digest", rejected.StandardError, StringComparison.Ordinal);
+
+    var rejectedMultiline = await RunScriptAsync(
+        script,
+        [ExistingDigest + "\ntrailing-value"],
+        environment: null);
+    Assert.NotEqual(0, rejectedMultiline.ExitCode);
+    Assert.Contains("SHA-256 digest", rejectedMultiline.StandardError, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -237,7 +244,7 @@ public sealed class ReleaseSecurityContractTests
       Assert.Equal(0, result.ExitCode);
       Assert.Equal(fixture.ExpectedBuildLog, await File.ReadAllTextAsync(fixture.BuildLog));
       Assert.Equal(
-          $"source_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n",
+          $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n",
           await File.ReadAllTextAsync(fixture.GitHubOutput));
       Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
     }
@@ -262,7 +269,7 @@ public sealed class ReleaseSecurityContractTests
 
       Assert.NotEqual(0, result.ExitCode);
       Assert.Contains(expectedError, result.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Equal(string.Empty, await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
       Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
     }
     finally
@@ -280,7 +287,7 @@ public sealed class ReleaseSecurityContractTests
       var result = await fixture.RunAsync(failOnBuild: "2");
 
       Assert.NotEqual(0, result.ExitCode);
-      Assert.Equal(string.Empty, await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
       Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
     }
     finally
@@ -293,14 +300,24 @@ public sealed class ReleaseSecurityContractTests
   [InlineData("valid")]
   [InlineData("extra")]
   [InlineData("unknown")]
-  public async Task OciIndexValidatorRequiresExactlyTwoTotalLinuxPlatformDescriptors(string scenario)
+  [InlineData("concatenated_roots")]
+  [InlineData("trailing_json")]
+  [InlineData("trailing_garbage")]
+  [InlineData("newline_digest")]
+  [InlineData("duplicate_amd64")]
+  [InlineData("fractional_size")]
+  [InlineData("large_fractional_size")]
+  [InlineData("string_schema")]
+  [InlineData("zero_size")]
+  [InlineData("negative_size")]
+  public async Task OciIndexValidatorRequiresOneCompleteStrictTwoPlatformDocument(string scenario)
   {
     var fixture = Path.Combine(Path.GetTempPath(), $"hevy-index-{Guid.NewGuid():N}");
     Directory.CreateDirectory(fixture);
     try
     {
       var index = Path.Combine(fixture, "index.json");
-      var bytes = CreatePlatformIndex(extraDescriptor: scenario == "extra", unknownDescriptor: scenario == "unknown");
+      var bytes = CreateAdversarialPlatformIndex(scenario);
       await File.WriteAllBytesAsync(index, bytes);
       var digest = Sha256Digest(bytes);
       var script = Path.Combine(RepositoryRoot, "scripts", "validate-oci-index.sh");
@@ -315,12 +332,150 @@ public sealed class ReleaseSecurityContractTests
       else
       {
         Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("exactly two", result.StandardError, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("OCI index", result.StandardError, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(string.Empty, result.StandardOutput);
       }
     }
     finally
     {
       Directory.Delete(fixture, recursive: true);
+    }
+  }
+
+  [Fact]
+  public async Task ReproducibilityGateRejectsMultipleJsonRootsWithoutTouchingExistingOutputs()
+  {
+    var fixture = await ReproducibilityFixture.CreateAsync(
+        mismatch: false,
+        extraDescriptor: false,
+        invalidIndexScenario: "concatenated_roots");
+    try
+    {
+      var result = await fixture.RunAsync();
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.Contains("OCI index", result.StandardError, StringComparison.OrdinalIgnoreCase);
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task ReproducibilityGateRejectsLexicallyFractionalOuterSizeWithoutTouchingExistingOutputs()
+  {
+    var fixture = await ReproducibilityFixture.CreateAsync(
+        mismatch: false,
+        extraDescriptor: false,
+        invalidOuterSize: true);
+    try
+    {
+      var result = await fixture.RunAsync();
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.Contains("OCI archive index", result.StandardError, StringComparison.OrdinalIgnoreCase);
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task ReproducibilityGateRejectsStringOuterSchemaWithoutTouchingExistingOutputs()
+  {
+    var fixture = await ReproducibilityFixture.CreateAsync(
+        mismatch: false,
+        extraDescriptor: false,
+        invalidOuterSchema: true);
+    try
+    {
+      var result = await fixture.RunAsync();
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.Contains("OCI archive index", result.StandardError, StringComparison.OrdinalIgnoreCase);
+      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task ActionlintRunnerDownloadsChecksExecutesExactArgumentsAndCleansUp()
+  {
+    var pin = ReadActionlintPin();
+    var fixture = await ActionlintFixture.CreateAsync(toolPresent: true);
+    try
+    {
+      var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 0);
+
+      Assert.Equal(0, result.ExitCode);
+      Assert.Equal(
+          $"--fail\n--location\n--proto\n=https\n--tlsv1.2\n--output\n{pin.Archive}\nhttps://github.com/rhysd/actionlint/releases/download/v{pin.Version}/{pin.Archive}\n",
+          await File.ReadAllTextAsync(fixture.DownloadLog));
+      Assert.Equal(
+          $"arguments=--check --status\nchecksum={pin.Checksum}\nfile={pin.Archive}\n",
+          await File.ReadAllTextAsync(fixture.ChecksumLog));
+      Assert.Equal("-color\n", await File.ReadAllTextAsync(fixture.ExecutionLog));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Theory]
+  [InlineData("network")]
+  [InlineData("checksum")]
+  [InlineData("missing_tool")]
+  public async Task ActionlintRunnerFailsClosedBeforeAnyUnverifiedExecution(string scenario)
+  {
+    var fixture = await ActionlintFixture.CreateAsync(toolPresent: scenario != "missing_tool");
+    try
+    {
+      var result = await fixture.RunAsync(
+          downloadSucceeds: scenario != "network",
+          checksumSucceeds: scenario != "checksum",
+          actionlintExitCode: 0);
+
+      Assert.NotEqual(0, result.ExitCode);
+      Assert.False(File.Exists(fixture.ExecutionLog));
+      if (scenario == "network")
+      {
+        Assert.False(File.Exists(fixture.ChecksumLog));
+      }
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
+    }
+  }
+
+  [Fact]
+  public async Task ActionlintRunnerReturnsTheVerifiedExecutableResult()
+  {
+    var fixture = await ActionlintFixture.CreateAsync(toolPresent: true);
+    try
+    {
+      var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 17);
+
+      Assert.Equal(17, result.ExitCode);
+      Assert.Equal("-color\n", await File.ReadAllTextAsync(fixture.ExecutionLog));
+      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+    }
+    finally
+    {
+      fixture.Dispose();
     }
   }
 
@@ -534,10 +689,26 @@ public sealed class ReleaseSecurityContractTests
     }
   }
 
+  private static ActionlintPin ReadActionlintPin()
+  {
+    using var document = JsonDocument.Parse(
+        File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "tools-lock.json")));
+    var actionlint = document.RootElement.GetProperty("tools").GetProperty("actionlint");
+    return new ActionlintPin(
+        actionlint.GetProperty("version").GetString()!,
+        actionlint.GetProperty("archive").GetString()!,
+        actionlint.GetProperty("sha256").GetString()!);
+  }
+
+  private sealed record ActionlintPin(string Version, string Archive, string Checksum);
+
   private static byte[] CreatePlatformIndex(
       bool extraDescriptor,
       bool unknownDescriptor,
-      string arm64Digest = IntendedDigest)
+      string arm64Digest = IntendedDigest,
+      string arm64Architecture = "arm64",
+      double amd64Size = 1,
+      double arm64Size = 1)
   {
     var descriptors = new List<object>
     {
@@ -545,15 +716,15 @@ public sealed class ReleaseSecurityContractTests
       {
         mediaType = "application/vnd.oci.image.manifest.v1+json",
         digest = ExistingDigest,
-        size = 1,
+        size = amd64Size,
         platform = new { os = "linux", architecture = "amd64" },
       },
       new
       {
         mediaType = "application/vnd.oci.image.manifest.v1+json",
         digest = arm64Digest,
-        size = 1,
-        platform = new { os = "linux", architecture = "arm64" },
+        size = arm64Size,
+        platform = new { os = "linux", architecture = arm64Architecture },
       },
     };
     if (extraDescriptor || unknownDescriptor)
@@ -570,6 +741,51 @@ public sealed class ReleaseSecurityContractTests
     }
 
     return JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 2, manifests = descriptors });
+  }
+
+  private static byte[] CreateAdversarialPlatformIndex(string scenario)
+  {
+    var valid = CreatePlatformIndex(extraDescriptor: false, unknownDescriptor: false);
+    return scenario switch
+    {
+      "valid" => valid,
+      "extra" => CreatePlatformIndex(extraDescriptor: true, unknownDescriptor: false),
+      "unknown" => CreatePlatformIndex(extraDescriptor: false, unknownDescriptor: true),
+      "concatenated_roots" => [.. valid, .. valid],
+      "trailing_json" => [.. valid, .. Encoding.UTF8.GetBytes("\n{}")],
+      "trailing_garbage" => [.. valid, .. Encoding.UTF8.GetBytes("\nnot-json")],
+      "newline_digest" => CreatePlatformIndex(
+          extraDescriptor: false,
+          unknownDescriptor: false,
+          arm64Digest: IntendedDigest + "\n"),
+      "duplicate_amd64" => CreatePlatformIndex(
+          extraDescriptor: false,
+          unknownDescriptor: false,
+          arm64Architecture: "amd64"),
+      "fractional_size" => CreatePlatformIndex(
+          extraDescriptor: false,
+          unknownDescriptor: false,
+          amd64Size: 1.5),
+      "large_fractional_size" => Encoding.UTF8.GetBytes(
+          Encoding.UTF8.GetString(valid).Replace(
+              "\"size\":1",
+              "\"size\":9223372036854775807.5",
+              StringComparison.Ordinal)),
+      "string_schema" => Encoding.UTF8.GetBytes(
+          Encoding.UTF8.GetString(valid).Replace(
+              "\"schemaVersion\":2",
+              "\"schemaVersion\":\"2\"",
+              StringComparison.Ordinal)),
+      "zero_size" => CreatePlatformIndex(
+          extraDescriptor: false,
+          unknownDescriptor: false,
+          amd64Size: 0),
+      "negative_size" => CreatePlatformIndex(
+          extraDescriptor: false,
+          unknownDescriptor: false,
+          amd64Size: -1),
+      _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, "Unknown OCI index scenario."),
+    };
   }
 
   private static string Sha256Digest(byte[] value) =>
@@ -607,26 +823,35 @@ public sealed class ReleaseSecurityContractTests
     public string IndexDigest { get; }
     public string TemporaryRoot { get; }
 
-    public static async Task<ReproducibilityFixture> CreateAsync(bool mismatch, bool extraDescriptor)
+    public static async Task<ReproducibilityFixture> CreateAsync(
+        bool mismatch,
+        bool extraDescriptor,
+        string? invalidIndexScenario = null,
+        bool invalidOuterSize = false,
+        bool invalidOuterSchema = false)
     {
       var root = Path.Combine(Path.GetTempPath(), $"hevy-repro-{Guid.NewGuid():N}");
       var temporaryRoot = Path.Combine(root, "tmp");
       Directory.CreateDirectory(temporaryRoot);
       var firstArchive = Path.Combine(root, "first.tar");
       var secondArchive = Path.Combine(root, "second.tar");
-      var firstIndex = CreatePlatformIndex(extraDescriptor, unknownDescriptor: false);
-      var secondIndex = CreatePlatformIndex(
-          extraDescriptor: false,
-          unknownDescriptor: false,
-          arm64Digest: mismatch
-              ? "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-              : IntendedDigest);
-      await CreateOciArchiveAsync(root, "layout-1", firstArchive, firstIndex);
-      await CreateOciArchiveAsync(root, "layout-2", secondArchive, secondIndex);
+      var firstIndex = invalidIndexScenario is null
+          ? CreatePlatformIndex(extraDescriptor, unknownDescriptor: false)
+          : CreateAdversarialPlatformIndex(invalidIndexScenario);
+      var secondIndex = invalidIndexScenario is null
+          ? CreatePlatformIndex(
+              extraDescriptor: false,
+              unknownDescriptor: false,
+              arm64Digest: mismatch
+                  ? "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  : IntendedDigest)
+          : firstIndex;
+      await CreateOciArchiveAsync(root, "layout-1", firstArchive, firstIndex, invalidOuterSize, invalidOuterSchema);
+      await CreateOciArchiveAsync(root, "layout-2", secondArchive, secondIndex, invalidOuterSize, invalidOuterSchema);
       var buildLog = Path.Combine(root, "build.log");
       var githubOutput = Path.Combine(root, "github-output.txt");
       var state = Path.Combine(root, "state.txt");
-      await File.WriteAllTextAsync(githubOutput, string.Empty);
+      await File.WriteAllTextAsync(githubOutput, "sentinel=preserve\n");
       await File.WriteAllTextAsync(state, "0\n");
       var buildx = Path.Combine(root, "buildx");
       await File.WriteAllTextAsync(
@@ -694,7 +919,9 @@ public sealed class ReleaseSecurityContractTests
         string root,
         string layoutName,
         string archive,
-        byte[] platformIndex)
+        byte[] platformIndex,
+        bool invalidOuterSize,
+        bool invalidOuterSchema)
     {
       var layout = Path.Combine(root, layoutName);
       var digest = Sha256Digest(platformIndex);
@@ -715,10 +942,139 @@ public sealed class ReleaseSecurityContractTests
           },
         },
       });
+      if (invalidOuterSize)
+      {
+        outerIndex = Encoding.UTF8.GetBytes(
+            Encoding.UTF8.GetString(outerIndex).Replace(
+                $"\"size\":{platformIndex.Length}",
+                "\"size\":9223372036854775807.5",
+                StringComparison.Ordinal));
+      }
+      if (invalidOuterSchema)
+      {
+        outerIndex = Encoding.UTF8.GetBytes(
+            Encoding.UTF8.GetString(outerIndex).Replace(
+                "\"schemaVersion\":2",
+                "\"schemaVersion\":\"2\"",
+                StringComparison.Ordinal));
+      }
       await File.WriteAllBytesAsync(Path.Combine(layout, "index.json"), outerIndex);
       TarFile.CreateFromDirectory(layout, archive, includeBaseDirectory: false);
       Directory.Delete(layout, recursive: true);
     }
+  }
+
+  private sealed class ActionlintFixture : IDisposable
+  {
+    private readonly string root;
+
+    private ActionlintFixture(string root)
+    {
+      this.root = root;
+      TemporaryRoot = Path.Combine(root, "tmp");
+      DownloadLog = Path.Combine(root, "download.log");
+      ChecksumLog = Path.Combine(root, "checksum.log");
+      ExecutionLog = Path.Combine(root, "execution.log");
+    }
+
+    public string TemporaryRoot { get; }
+    public string DownloadLog { get; }
+    public string ChecksumLog { get; }
+    public string ExecutionLog { get; }
+
+    public static async Task<ActionlintFixture> CreateAsync(bool toolPresent)
+    {
+      var root = Path.Combine(Path.GetTempPath(), $"hevy-actionlint-{Guid.NewGuid():N}");
+      var temporaryRoot = Path.Combine(root, "tmp");
+      var contents = Path.Combine(root, "contents");
+      var binaries = Path.Combine(root, "bin");
+      Directory.CreateDirectory(temporaryRoot);
+      Directory.CreateDirectory(contents);
+      Directory.CreateDirectory(binaries);
+      var archivedName = toolPresent ? "actionlint" : "not-actionlint";
+      var archivedTool = Path.Combine(contents, archivedName);
+      await File.WriteAllTextAsync(
+          archivedTool,
+          toolPresent
+              ? "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ACTIONLINT_EXECUTION_LOG\"\nexit \"$ACTIONLINT_EXIT_CODE\"\n"
+              : "missing tool fixture\n");
+      if (toolPresent)
+      {
+        MakeExecutable(archivedTool);
+      }
+      var asset = Path.Combine(root, "actionlint.tar.gz");
+      var tarResult = await DeliveryContractTests.RunProcessAsync(
+          root,
+          "tar",
+          "-czf",
+          asset,
+          "-C",
+          contents,
+          archivedName);
+      Assert.Equal(0, tarResult.ExitCode);
+
+      var curl = Path.Combine(binaries, "curl");
+      await File.WriteAllTextAsync(
+          curl,
+          """
+          #!/bin/sh
+          set -eu
+          output=
+          : > "$ACTIONLINT_DOWNLOAD_LOG"
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              --output)
+                output=$2
+                printf '%s\n%s\n' "$1" "${2##*/}" >> "$ACTIONLINT_DOWNLOAD_LOG"
+                shift 2
+                ;;
+              *)
+                printf '%s\n' "$1" >> "$ACTIONLINT_DOWNLOAD_LOG"
+                shift
+                ;;
+            esac
+          done
+          test "$ACTIONLINT_DOWNLOAD_SUCCEEDS" = true
+          cp "$ACTIONLINT_ASSET" "$output"
+          """);
+      var checksum = Path.Combine(binaries, "sha256sum");
+      await File.WriteAllTextAsync(
+          checksum,
+          """
+          #!/bin/sh
+          set -eu
+          arguments=$*
+          read -r checksum file
+          printf 'arguments=%s\nchecksum=%s\nfile=%s\n' "$arguments" "$checksum" "${file##*/}" > "$ACTIONLINT_CHECKSUM_LOG"
+          test "$ACTIONLINT_CHECKSUM_SUCCEEDS" = true
+          """);
+      MakeExecutable(curl);
+      MakeExecutable(checksum);
+      return new ActionlintFixture(root);
+    }
+
+    public Task<DeliveryContractTests.ProcessResult> RunAsync(
+        bool downloadSucceeds,
+        bool checksumSucceeds,
+        int actionlintExitCode) =>
+        RunScriptAsync(
+            Path.Combine(RepositoryRoot, "scripts", "run-actionlint.sh"),
+            [],
+            new Dictionary<string, string?>
+            {
+              ["ACTIONLINT_ASSET"] = Path.Combine(root, "actionlint.tar.gz"),
+              ["ACTIONLINT_CHECKSUM_LOG"] = ChecksumLog,
+              ["ACTIONLINT_CHECKSUM_SUCCEEDS"] = checksumSucceeds ? "true" : "false",
+              ["ACTIONLINT_DOWNLOAD_LOG"] = DownloadLog,
+              ["ACTIONLINT_DOWNLOAD_SUCCEEDS"] = downloadSucceeds ? "true" : "false",
+              ["ACTIONLINT_EXECUTION_LOG"] = ExecutionLog,
+              ["ACTIONLINT_EXIT_CODE"] = actionlintExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture),
+              ["HEVY_CURL_PATH"] = Path.Combine(root, "bin", "curl"),
+              ["HEVY_SHA256SUM_PATH"] = Path.Combine(root, "bin", "sha256sum"),
+              ["TMPDIR"] = TemporaryRoot,
+            });
+
+    public void Dispose() => Directory.Delete(root, recursive: true);
   }
 
   private sealed class InstallerFixture : IDisposable

@@ -60,7 +60,65 @@ for run_number in 1 2; do
     "$repository_root"
 
   tar --extract --file "$archive" --directory "$extraction"
-  index_digest=$(jq -er 'select(.manifests | length == 1) | .manifests[0].digest' "$extraction/index.json")
+  python_command=${HEVY_PYTHON_PATH:-python3}
+  index_digest_file=$extraction/index-digest
+  if ! "$python_command" - "$extraction/index.json" >"$index_digest_file" 2>/dev/null <<'PYTHON'
+import json
+import re
+import sys
+
+class StrictInteger(str):
+  pass
+
+def reject_non_integer(value):
+  raise ValueError(f"non-integer JSON number: {value}")
+
+def unique_object(pairs):
+  result = {}
+  for key, value in pairs:
+    if key in result:
+      raise ValueError(f"duplicate JSON key: {key}")
+    result[key] = value
+  return result
+
+with open(sys.argv[1], "rb") as source:
+  document = json.loads(
+      source.read().decode("utf-8"),
+      parse_int=StrictInteger,
+      parse_float=reject_non_integer,
+      parse_constant=reject_non_integer,
+      object_pairs_hook=unique_object)
+
+schema_version = document.get("schemaVersion") if isinstance(document, dict) else None
+if not isinstance(schema_version, StrictInteger) or schema_version != "2":
+  raise ValueError("invalid OCI layout schema")
+manifests = document.get("manifests")
+if not isinstance(manifests, list) or len(manifests) != 1:
+  raise ValueError("invalid OCI layout descriptor count")
+descriptor = manifests[0]
+if not isinstance(descriptor, dict):
+  raise ValueError("invalid OCI layout descriptor")
+if descriptor.get("mediaType") != "application/vnd.oci.image.index.v1+json":
+  raise ValueError("invalid OCI layout media type")
+size = descriptor.get("size")
+if not isinstance(size, StrictInteger) or re.fullmatch(r"[1-9][0-9]*", size) is None:
+  raise ValueError("invalid OCI layout descriptor size")
+digest = descriptor.get("digest")
+if not isinstance(digest, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+  raise ValueError("invalid OCI layout digest")
+print(digest)
+PYTHON
+  then
+    printf '%s\n' "The OCI archive index was not one complete strict JSON document." >&2
+    exit 1
+  fi
+  {
+    IFS= read -r index_digest
+    if IFS= read -r _; then
+      printf '%s\n' "The OCI archive index produced more than one digest." >&2
+      exit 1
+    fi
+  } < "$index_digest_file"
   "$script_directory/validate-sha256-digest.sh" "$index_digest"
   index_blob=$extraction/blobs/sha256/${index_digest#sha256:}
   validated_index=$({ "$script_directory/validate-oci-index.sh" "$index_blob" "$index_digest"; })
@@ -82,9 +140,12 @@ for run_number in 1 2; do
   fi
 done
 
+"$script_directory/validate-sha256-digest.sh" \
+  "$first_index_digest" "$first_amd64_digest" "$first_arm64_digest"
 if [[ -n ${GITHUB_OUTPUT:-} ]]; then
-  printf 'source_date_epoch=%s\n' "$source_date_epoch" >> "$GITHUB_OUTPUT"
-  printf 'index_digest=%s\n' "$first_index_digest" >> "$GITHUB_OUTPUT"
-  printf 'amd64_digest=%s\n' "$first_amd64_digest" >> "$GITHUB_OUTPUT"
-  printf 'arm64_digest=%s\n' "$first_arm64_digest" >> "$GITHUB_OUTPUT"
+  printf 'source_date_epoch=%s\nindex_digest=%s\namd64_digest=%s\narm64_digest=%s\n' \
+    "$source_date_epoch" \
+    "$first_index_digest" \
+    "$first_amd64_digest" \
+    "$first_arm64_digest" >> "$GITHUB_OUTPUT"
 fi

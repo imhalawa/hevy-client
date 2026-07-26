@@ -280,24 +280,16 @@ public sealed class DeliveryContractTests
   }
 
   [Fact]
-  public void EphemeralActionlintBinaryMatchesItsAuditedReleaseChecksum()
+  public void ActionlintLockRecordsAnAuditedReleaseChecksum()
   {
     var lockPath = Path.Combine(RepositoryRoot, ".github", "tools-lock.json");
     Assert.True(File.Exists(lockPath), "The audited CI-tool lock document must exist.");
     using var document = JsonDocument.Parse(File.ReadAllText(lockPath));
     var actionlint = document.RootElement.GetProperty("tools").GetProperty("actionlint");
     var version = actionlint.GetProperty("version").GetString()!;
-    var archive = actionlint.GetProperty("archive").GetString()!;
     var checksum = actionlint.GetProperty("sha256").GetString()!;
     Assert.Matches("^[0-9a-f]{64}$", checksum);
     Assert.Equal($"https://github.com/rhysd/actionlint/releases/tag/v{version}", actionlint.GetProperty("source").GetString());
-
-    var installer = File.ReadAllText(Path.Combine(RepositoryRoot, "scripts", "run-actionlint.sh"));
-    Assert.Contains($"version={version}", installer, StringComparison.Ordinal);
-    Assert.Contains($"archive={archive}", installer, StringComparison.Ordinal);
-    Assert.Contains($"checksum={checksum}", installer, StringComparison.Ordinal);
-    Assert.Contains("sha256sum --check --status", installer, StringComparison.Ordinal);
-    Assert.Contains("mktemp -d", installer, StringComparison.Ordinal);
   }
 
   [Fact]

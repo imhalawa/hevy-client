@@ -11,7 +11,10 @@ url="https://github.com/rhysd/actionlint/releases/download/v$version/$archive"
 
 temporary_directory=$(mktemp -d)
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
-curl --fail --location --proto '=https' --tlsv1.2 --output "$temporary_directory/$archive" "$url"
-printf '%s  %s\n' "$checksum" "$temporary_directory/$archive" | sha256sum --check --status
+curl_command=${HEVY_CURL_PATH:-curl}
+sha256_command=${HEVY_SHA256SUM_PATH:-sha256sum}
+"$curl_command" --fail --location --proto '=https' --tlsv1.2 --output "$temporary_directory/$archive" "$url"
+printf '%s  %s\n' "$checksum" "$temporary_directory/$archive" | "$sha256_command" --check --status
 tar -xzf "$temporary_directory/$archive" -C "$temporary_directory" actionlint
+chmod 0755 "$temporary_directory/actionlint"
 "$temporary_directory/actionlint" -color
