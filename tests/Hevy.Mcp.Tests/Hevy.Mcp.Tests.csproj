@@ -14,4 +14,9 @@
       <IncludeAssets>runtime;build;native;contentfiles;analyzers;buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../TestSupport/FakeHevyClient.cs" Link="TestSupport/FakeHevyClient.cs" />
+    <Compile Include="../TestSupport/FixtureFactory.cs" Link="TestSupport/FixtureFactory.cs" />
+  </ItemGroup>
 </Project>

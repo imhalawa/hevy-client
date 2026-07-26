@@ -21,13 +21,27 @@ public sealed class StdioHandshakeTests
     await process.StandardInput.FlushAsync();
 
     using var toolsResponse = await ReadProtocolMessageAsync(process, TimeSpan.FromSeconds(10));
+
+    await process.StandardInput.WriteLineAsync("""{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_routine_folder","arguments":{"request":{"routine_folder":{"title":"Transport Dry Run"}},"dry_run":true}}}""");
+    await process.StandardInput.FlushAsync();
+    using var callResponse = await ReadProtocolMessageAsync(process, TimeSpan.FromSeconds(10));
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
     Assert.Equal(1, initializeResponse.RootElement.GetProperty("id").GetInt32());
     Assert.Equal("hevy-client", initializeResponse.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
     Assert.Equal(2, toolsResponse.RootElement.GetProperty("id").GetInt32());
-    Assert.Empty(toolsResponse.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray());
+    var tools = toolsResponse.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray().ToArray();
+    Assert.Equal(22, tools.Length);
+    Assert.All(tools, tool =>
+    {
+      Assert.Equal("object", tool.GetProperty("inputSchema").GetProperty("type").GetString());
+      Assert.Equal("object", tool.GetProperty("outputSchema").GetProperty("type").GetString());
+    });
+    var callResult = callResponse.RootElement.GetProperty("result");
+    Assert.False(callResult.GetProperty("isError").GetBoolean());
+    Assert.Equal("Transport Dry Run", callResult.GetProperty("structuredContent").GetProperty("data").GetProperty("routine_folder").GetProperty("title").GetString());
+    Assert.True(callResult.GetProperty("structuredContent").GetProperty("meta").GetProperty("dry_run").GetBoolean());
     Assert.Equal(0, process.ExitCode);
     Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
     Assert.Equal(string.Empty, await process.StandardOutput.ReadToEndAsync());

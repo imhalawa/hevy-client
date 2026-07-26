@@ -6,8 +6,8 @@
 
 - Design: approved and committed at `16fe62c`.
 - Implementation plan: complete and committed at `06b5bc3`.
-- Active task: Task 5 complete in this commit.
-- Next task: Task 6 — complete MCP tool surface.
+- Active task: Task 6 complete in this commit.
+- Next task: Task 7 — cache, continuations, search, deterministic analysis, and prompts.
 - Execution mode: subagent-driven with specification-compliance and code-quality review gates after each task.
 
 ## Non-negotiable constraints
@@ -34,6 +34,7 @@
 | Task 4, fix round 2 | Complete | `fix: classify direct mutation failures` | RED: direct injected-client 501 responses became retryable `transient_upstream`; GREEN: focused mutation (6), retry (13), and full Release solution (77) suites pass with zero warnings | Both mutation response helpers classify every 5xx as `outcome_unknown` before the shared response mapper, without changing cancellation or 4xx client-error handling. |
 | Task 5 | Complete | `feat: host MCP over stdio and authenticated HTTP` | RED: absent options types failed compilation; the empty executable produced no handshake and exited zero on invalid configuration; the HTTP stub failed all 9 initial WAF tests; review-hardening tests observed remote HTTP Origin accepted and wildcard hosts allowed. GREEN: MCP (33), transport (2), and full Release solution (112) suites pass with zero warnings | Immutable environment parsing keeps secrets out of diagnostics; production DI constructs `HevyClient` only from environment-derived `HevyClientOptions`. Stdio is protocol-only. HTTP is stateless, bearer protected with fixed-time hashed comparison, and limits Host/Origin values to explicit reverse-proxy-safe authorities. The empty DI-backed `tools/list` seam is intentional until Task 6. |
 | Task 5, fix round 1 | Complete | `fix: validate MCP bearer token configuration` | RED: all 8 malformed token68 option cases passed startup unexpectedly. GREEN: focused options/HTTP (45) and full Release solution (124) suites pass with zero warnings | Startup and HTTP authentication now share the exact token68 grammar: ASCII alphanumeric plus `-._~+/`, with `=` permitted only as trailing padding. Surrounding whitespace, quoted/unicode values, invalid punctuation, and embedded padding are rejected; multiple Authorization values remain unauthorized. Fixed-time comparison and distinct-token enforcement are preserved. |
+| Task 6 | Complete | `feat: expose complete Hevy MCP tool surface` | RED: empty real inventory, missing read/mutation handlers, and stale transport expectation. GREEN: MCP (65), transport (2), and full Release solution (144) suites pass with zero warnings | Exactly 22 snapshot-derived snake_case tools are exposed (14 GET tools in read-only mode). Results use authoritative structured content plus short text; inputs validate before I/O; reads propagate cancellation; writes support exact dry runs and safe guards. Since body measurements expose no `updated_at`, their replacement is conservatively force-only after current-state review. |
 
 ## Resume instructions
 
