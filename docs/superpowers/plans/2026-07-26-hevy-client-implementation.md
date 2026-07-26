@@ -556,7 +556,7 @@ CI on pull requests and pushes must restore locked dependencies, check formattin
 
 - [ ] **Step 2: Add release workflow**
 
-On `v*.*.*` tags, validate semantic version, build `linux/amd64` and `linux/arm64`, push immutable version tags to GHCR, generate SPDX SBOM and GitHub provenance attestations, and keylessly sign the digest with Sigstore/Cosign. Grant only `contents:read`, `packages:write`, `id-token:write`, and `attestations:write`.
+On `v*.*.*` tags, validate semantic version, build `linux/amd64` and `linux/arm64`, stage and verify the exact digest, generate SPDX SBOM and GitHub provenance attestations, keylessly sign the digest with Sigstore/Cosign, then promote a serialized version tag as the final operation. GHCR has no atomic immutable-tag facility, so require a protected exclusive writer and document digest pinning. Grant only `contents:read`, `packages:write`, `id-token:write`, and `attestations:write`.
 
 - [ ] **Step 3: Add dependency-update policy**
 

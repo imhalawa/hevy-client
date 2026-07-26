@@ -12,7 +12,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-ghcr-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -65,11 +65,26 @@ jobs:
       - name: Run all non-live release tests
         run: env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN dotnet test HevyClient.slnx --configuration Release --no-build
 
+      - name: Run real release container smokes
+        run: env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN dotnet test tests/Hevy.Transport.Tests/Hevy.Transport.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~ContainerSmokeTests
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.35.0
+          driver-opts: image=docker.io/moby/buildkit:v0.31.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
+
+      - name: Verify reproducible multi-architecture image
+        env:
+          REVISION: ${{ steps.release.outputs.revision }}
+          SOURCE_URL: ${{ steps.release.outputs.source }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: ./scripts/verify-reproducible-image.sh
 
       - name: Log in to GHCR
         uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
@@ -78,52 +93,43 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Refuse an existing immutable version tag
+      - name: Authenticate GHCR version-tag lookup
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ${{ steps.release.outputs.image }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: ./scripts/ghcr-manifest.sh "$IMAGE" "$RELEASE_VERSION" >/dev/null
+
+      - name: Derive reproducible build timestamp
+        id: reproducibility
+        env:
+          REVISION: ${{ steps.release.outputs.revision }}
         run: |
           set -euo pipefail
-          repository_path="${IMAGE#ghcr.io/}"
-          if ! status="$(curl --silent --show-error \
-            --user "$GITHUB_ACTOR:$GHCR_TOKEN" \
-            --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
-            --output /dev/null \
-            --write-out '%{http_code}' \
-            --request HEAD \
-            "https://ghcr.io/v2/$repository_path/manifests/$RELEASE_VERSION")"; then
-            echo "The registry availability probe failed." >&2
+          source_date_epoch="$(git show -s --format=%ct "$REVISION")"
+          if ! printf '%s\n' "$source_date_epoch" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "The source commit timestamp was invalid." >&2
             exit 1
           fi
-          case "$status" in
-            200)
-              echo "The immutable release tag already exists." >&2
-              exit 1
-              ;;
-            404)
-              ;;
-            *)
-              echo "The registry availability probe returned unexpected HTTP status $status." >&2
-              exit 1
-              ;;
-          esac
+          printf 'source_date_epoch=%s\n' "$source_date_epoch" >> "$GITHUB_OUTPUT"
 
-      - name: Build and stage immutable multi-architecture digest
+      - name: Build and stage multi-architecture digest
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.reproducibility.outputs.source_date_epoch }}
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           pull: true
           tags: ${{ steps.release.outputs.image }}
-          outputs: type=image,name=${{ steps.release.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ steps.release.outputs.image }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true,compatibility-version=30,oci-mediatypes=true
           build-args: |
             VERSION=${{ steps.release.outputs.version }}
             REVISION=${{ steps.release.outputs.revision }}
             SOURCE_URL=${{ steps.release.outputs.source }}
-          provenance: mode=max
-          sbom: true
+          provenance: false
+          sbom: false
 
       - name: Verify published digest platforms labels and assembly version
         id: image
@@ -136,10 +142,7 @@ jobs:
           SOURCE_URL: ${{ steps.release.outputs.source }}
         run: |
           set -euo pipefail
-          if ! printf '%s\n' "$IMAGE_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
-            echo "Build output was not an immutable SHA-256 digest." >&2
-            exit 1
-          fi
+          ./scripts/validate-sha256-digest.sh "$IMAGE_DIGEST"
           index_file="$(mktemp)"
           response_file="$(mktemp)"
           trap 'rm -f "$index_file" "$response_file"' EXIT
@@ -147,6 +150,8 @@ jobs:
           test "$(jq '[.manifests[] | select(.platform.os != "unknown")] | length' "$index_file")" = "2"
           amd64_digest="$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' "$index_file")"
           arm64_digest="$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest' "$index_file")"
+          ./scripts/validate-sha256-digest.sh "$amd64_digest"
+          ./scripts/validate-sha256-digest.sh "$arm64_digest"
           printf 'amd64_digest=%s\n' "$amd64_digest" >> "$GITHUB_OUTPUT"
           printf 'arm64_digest=%s\n' "$arm64_digest" >> "$GITHUB_OUTPUT"
           for platform_digest in "$amd64_digest" "$arm64_digest"; do
@@ -167,18 +172,25 @@ jobs:
           wait "$MCP_SERVER_PID"
           test "$(jq -er 'select(.id == 1) | .result.serverInfo.version' "$response_file")" = "$RELEASE_VERSION.0"
 
-      - name: Extract platform SPDX SBOMs
+      - name: Install pinned Syft
+        run: ./scripts/install-syft.sh
+
+      - name: Generate platform SPDX SBOMs
+        id: sbom
         env:
+          AMD64_DIGEST: ${{ steps.image.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ steps.image.outputs.arm64_digest }}
           IMAGE: ${{ steps.release.outputs.image }}
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
         run: |
           set -euo pipefail
           mkdir -p dist
-          docker buildx imagetools inspect "$IMAGE@$IMAGE_DIGEST" --format '{{json (index .SBOM "linux/amd64").SPDX}}' > "dist/hevy-client-$RELEASE_VERSION-linux-amd64.spdx.json"
-          docker buildx imagetools inspect "$IMAGE@$IMAGE_DIGEST" --format '{{json (index .SBOM "linux/arm64").SPDX}}' > "dist/hevy-client-$RELEASE_VERSION-linux-arm64.spdx.json"
-          jq -e '.spdxVersion | startswith("SPDX-")' "dist/hevy-client-$RELEASE_VERSION-linux-amd64.spdx.json" >/dev/null
-          jq -e '.spdxVersion | startswith("SPDX-")' "dist/hevy-client-$RELEASE_VERSION-linux-arm64.spdx.json" >/dev/null
+          syft "registry:$IMAGE@$AMD64_DIGEST" --scope all-layers --output "spdx-json=dist/hevy-client-$RELEASE_VERSION-linux-amd64.spdx.json"
+          syft "registry:$IMAGE@$ARM64_DIGEST" --scope all-layers --output "spdx-json=dist/hevy-client-$RELEASE_VERSION-linux-arm64.spdx.json"
+          ./scripts/validate-spdx.sh \
+            "dist/hevy-client-$RELEASE_VERSION-linux-amd64.spdx.json" \
+            "dist/hevy-client-$RELEASE_VERSION-linux-arm64.spdx.json"
 
       - name: Upload SPDX SBOMs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -189,12 +201,12 @@ jobs:
           retention-days: 90
 
       - name: Attest SBOM artifacts provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/*.spdx.json
 
-      - name: Attest container provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+      - name: Attest staged container provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ${{ steps.release.outputs.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -202,33 +214,32 @@ jobs:
           create-storage-record: false
 
       - name: Attest amd64 container SBOM
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ steps.release.outputs.image }}
           subject-digest: ${{ steps.image.outputs.amd64_digest }}
           sbom-path: dist/hevy-client-${{ steps.release.outputs.version }}-linux-amd64.spdx.json
           push-to-registry: true
-          create-storage-record: false
 
       - name: Attest arm64 container SBOM
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ steps.release.outputs.image }}
           subject-digest: ${{ steps.image.outputs.arm64_digest }}
           sbom-path: dist/hevy-client-${{ steps.release.outputs.version }}-linux-arm64.spdx.json
           push-to-registry: true
-          create-storage-record: false
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
 
-      - name: Keylessly sign and verify the immutable digest
+      - name: Keylessly sign and verify the staged digest
         env:
           IMAGE: ${{ steps.release.outputs.image }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          REVISION: ${{ steps.release.outputs.revision }}
           SOURCE_URL: ${{ steps.release.outputs.source }}
         run: |
           set -euo pipefail
@@ -236,6 +247,7 @@ jobs:
           certificate_identity="$SOURCE_URL/.github/workflows/release.yml@refs/tags/v$RELEASE_VERSION"
           cosign verify "$IMAGE@$IMAGE_DIGEST" \
             --certificate-identity "$certificate_identity" \
+            --certificate-github-workflow-sha "$REVISION" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
       - name: Verify GitHub attestations
@@ -247,6 +259,7 @@ jobs:
           ARM64_DIGEST: ${{ steps.image.outputs.arm64_digest }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           REVISION: ${{ steps.release.outputs.revision }}
+          SPDX_PREDICATE_TYPE: ${{ steps.sbom.outputs.predicate_type }}
         run: |
           set -euo pipefail
           signer_workflow="$GITHUB_REPOSITORY/.github/workflows/release.yml"
@@ -262,22 +275,14 @@ jobs:
               --signer-workflow "$signer_workflow" \
               --source-digest "$REVISION" \
               --source-ref "refs/tags/v$RELEASE_VERSION" \
-              --predicate-type https://spdx.dev/Document \
+              --predicate-type "$SPDX_PREDICATE_TYPE" \
               --bundle-from-oci
           done
 
-      - name: Promote verified digest to immutable version tag
+      - name: Promote verified digest to version tag
         env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ${{ steps.release.outputs.image }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          set -euo pipefail
-          metadata_file="$(mktemp)"
-          trap 'rm -f "$metadata_file"' EXIT
-          docker buildx imagetools create \
-            --tag "$IMAGE:$RELEASE_VERSION" \
-            --metadata-file "$metadata_file" \
-            "$IMAGE@$IMAGE_DIGEST"
-          test "$(jq -er '."containerimage.descriptor".digest' "$metadata_file")" = "$IMAGE_DIGEST"
-          test "$(docker buildx imagetools inspect "$IMAGE:$RELEASE_VERSION" --format '{{.Manifest.Digest}}')" = "$IMAGE_DIGEST"
+        run: exec ./scripts/promote-ghcr-tag.sh "$IMAGE" "$RELEASE_VERSION" "$IMAGE_DIGEST"

@@ -2,10 +2,15 @@
   "schema_version": 1,
   "reviewed_at": "2026-07-26",
   "actions": {
-    "actions/attest": {
-      "version": "v4.2.0",
-      "commit": "f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6",
-      "source": "https://github.com/actions/attest/tree/v4.2.0"
+    "actions/attest-build-provenance": {
+      "version": "v4.1.1",
+      "commit": "0f67c3f4856b2e3261c31976d6725780e5e4c373",
+      "source": "https://github.com/actions/attest-build-provenance/tree/v4.1.1"
+    },
+    "actions/attest-sbom": {
+      "version": "v4.1.0",
+      "commit": "c604332985a26aa8cf1bdc465b92731239ec6b9e",
+      "source": "https://github.com/actions/attest-sbom/tree/v4.1.0"
     },
     "actions/checkout": {
       "version": "v7.0.1",

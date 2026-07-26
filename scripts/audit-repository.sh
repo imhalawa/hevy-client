@@ -26,25 +26,37 @@ fi
 
 cd "$repository_root"
 
-credential_matches=$(mktemp)
-trap 'rm -f "$credential_matches"' EXIT HUP INT TERM
+credential_values=$(mktemp)
+trap 'rm -f "$credential_values"' EXIT HUP INT TERM
 credential_scan_status=0
-rg -n -i --hidden -P \
+quoted_credential_pattern='[\x22\x27]?(?:HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(?:orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*[\x22\x27]([A-Za-z0-9+/=_-]{20,})[\x22\x27]'
+unquoted_credential_pattern='[\x22\x27]?(?:HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(?:orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*([A-Za-z0-9+/=_-]{20,})[[:space:]]*(?:#.*)?$'
+rg -o --no-filename --replace '$1' -i --hidden -P \
   -g '!.git/**' \
   -g '!**/bin/**' \
   -g '!**/obj/**' \
   -g '!**/TestResults/**' \
   -g '!scripts/audit-repository.sh' \
-  -e '[\x22\x27]?(?:HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(?:orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*[\x22\x27][A-Za-z0-9+/=_-]{20,}[\x22\x27]' \
-  -e '(?:^|[\x22\x27])(?:HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(?:orization)?|bearer[-_]?token)[[:space:]]*=[[:space:]]*[A-Za-z0-9+/=_-]{20,}(?:$|[\x22\x27])' \
-  . > "$credential_matches" 2>/dev/null || credential_scan_status=$?
+  -e "$quoted_credential_pattern" \
+  -e "$unquoted_credential_pattern" \
+  . > "$credential_values" 2>/dev/null || credential_scan_status=$?
 
 if [ "$credential_scan_status" -gt 1 ]; then
   report "Repository-wide credential scan could not complete."
-elif grep -Eiv \
-  'inventory-test-api-key|fixture-api-key-never-output|prompt-contract-test|composite-contract-test|container-smoke-fixture-key|container-smoke-auth-token' \
-  "$credential_matches" | grep -q .; then
-  report "Secret-looking credential assignment found."
+else
+  credential_failure=0
+  while IFS= read -r credential_value; do
+    case "$credential_value" in
+      inventory-test-api-key|fixture-api-key-never-output|prompt-contract-test|composite-contract-test|container-smoke-fixture-key|container-smoke-auth-token)
+        ;;
+      *)
+        credential_failure=1
+        ;;
+    esac
+  done < "$credential_values"
+  if [ "$credential_failure" -ne 0 ]; then
+    report "Secret-looking credential assignment found."
+  fi
 fi
 
 if rg -l -i \
@@ -53,7 +65,7 @@ if rg -l -i \
   report "Telemetry package or runtime hook found."
 fi
 
-if rg -o "https?://[^\"'[:space:])>]+" src 2>/dev/null | grep -Fv 'https://api.hevyapp.com' | grep -q .; then
+if rg -o --no-filename "https?://[^\"'[:space:])>]+" src 2>/dev/null | grep -Ev '^https://api\.hevyapp\.com/?$' | grep -q .; then
   report "Non-Hevy runtime origin found in production source."
 fi
 

@@ -203,7 +203,7 @@ The repository is public and MIT licensed. A multi-stage Dockerfile produces a m
 - Supports `linux/amd64` and `linux/arm64`.
 - Includes OCI source, revision, version, license, and description labels.
 
-GitHub releases use semantic versioning. GitHub Container Registry publishes immutable version tags and digests. Release workflows generate an SBOM and provenance attestations and sign images keylessly. Documentation recommends pinning a semantic version or digest rather than relying on automatic `latest` upgrades.
+GitHub releases use semantic versioning. GitHub Container Registry publishes version tags plus immutable content digests; because GHCR does not enforce tag immutability or atomic create-only writes, a protected exclusive-writer workflow mitigates tag races and consumers are told to pin the digest. Release workflows generate an SBOM and provenance attestations and sign images keylessly.
 
 The README includes Docker MCP configuration examples for Codex, Claude Desktop, Cursor, VS Code, Gemini CLI, and generic stdio clients, plus a secure reverse-proxy example for Streamable HTTP. Client-specific configuration does not change protocol behavior.
 

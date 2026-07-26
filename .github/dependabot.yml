@@ -14,12 +14,12 @@ updates:
     ignore:
       - dependency-name: ModelContextProtocol
         versions:
-          - "2.x"
+          - "2.*"
         update-types:
           - version-update:semver-major
       - dependency-name: ModelContextProtocol.AspNetCore
         versions:
-          - "2.x"
+          - "2.*"
         update-types:
           - version-update:semver-major
 
