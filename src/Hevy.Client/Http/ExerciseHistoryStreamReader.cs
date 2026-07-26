@@ -7,7 +7,7 @@ namespace Hevy.Client.Http;
 
 internal static class ExerciseHistoryStreamReader
 {
-  private static readonly byte[] ExerciseHistoryPropertyName = "exercise_history"u8.ToArray();
+  private const string ExerciseHistoryPropertyName = "exercise_history";
 
   internal static async Task<ExerciseHistoryWindow> ReadAsync(
       Stream stream,
@@ -17,162 +17,276 @@ internal static class ExerciseHistoryStreamReader
       HttpStatusCode statusCode,
       CancellationToken cancellationToken)
   {
-    var reader = new BoundedByteReader(stream, maximumResponseBytes);
-    var items = new List<ExerciseHistoryEntry>(request.Limit);
-    var eligibleCount = 0;
-    var scannedCount = 0;
+    var reader = new IncrementalJsonReader(stream, maximumResponseBytes);
+    var history = new HistoryReadState(request, entryTypeInfo);
 
     try
     {
-      await ReadEnvelopeStartAsync(reader, cancellationToken).ConfigureAwait(false);
-      var first = true;
+      if ((await ReadRequiredTokenAsync(reader, cancellationToken).ConfigureAwait(false)).Type != JsonTokenType.StartObject)
+      {
+        throw new JsonException();
+      }
+
+      var foundHistory = false;
       while (true)
       {
-        var token = await reader.ReadNonWhitespaceAsync(cancellationToken).ConfigureAwait(false);
-        if (token == ']')
-        {
-          return new ExerciseHistoryWindow(items.AsReadOnly(), false, scannedCount);
-        }
-        if (!first)
-        {
-          if (token != ',') throw new JsonException();
-          token = await reader.ReadNonWhitespaceAsync(cancellationToken).ConfigureAwait(false);
-        }
-        first = false;
-        if (token != '{') throw new JsonException();
+        var token = await ReadRequiredTokenAsync(reader, cancellationToken).ConfigureAwait(false);
+        if (token.Type == JsonTokenType.EndObject) break;
+        if (token.Type != JsonTokenType.PropertyName) throw new JsonException();
 
-        if (scannedCount == ExerciseHistoryWindowRequest.MaximumScannedItems)
+        var value = await ReadRequiredTokenAsync(reader, cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(token.Text, ExerciseHistoryPropertyName, StringComparison.Ordinal))
         {
-          return new ExerciseHistoryWindow(items.AsReadOnly(), true, scannedCount, ExerciseHistoryWindow.ItemSafetyCap);
-        }
-
-        var payload = await ReadObjectAsync(reader, cancellationToken).ConfigureAwait(false);
-        scannedCount++;
-        var entry = JsonSerializer.Deserialize(payload, entryTypeInfo) ?? throw new JsonException();
-        if (!IsEligible(entry, request)) continue;
-
-        if (eligibleCount++ < request.Offset) continue;
-        if (items.Count < request.Limit)
-        {
-          items.Add(entry);
+          await ConsumeValueAsync(reader, value, null, cancellationToken).ConfigureAwait(false);
           continue;
         }
 
-        return new ExerciseHistoryWindow(items.AsReadOnly(), true, scannedCount);
+        if (foundHistory || value.Type != JsonTokenType.StartArray) throw new JsonException();
+        foundHistory = true;
+        var truncated = await ReadHistoryArrayAsync(reader, history, cancellationToken).ConfigureAwait(false);
+        if (truncated is not null) return truncated;
       }
+
+      if (!foundHistory || await reader.ReadTokenAsync(cancellationToken).ConfigureAwait(false) is not null)
+      {
+        throw new JsonException();
+      }
+
+      return history.Complete();
     }
     catch (ResponseByteLimitExceededException)
     {
-      return new ExerciseHistoryWindow(items.AsReadOnly(), true, scannedCount, ExerciseHistoryWindow.ByteSafetyCap);
+      return history.Truncated(ExerciseHistoryWindow.ByteSafetyCap);
     }
     catch (JsonException)
     {
       throw HevyResponse.UnexpectedResponse(statusCode);
     }
-    catch (EndOfStreamException)
+  }
+
+  private static async Task<ExerciseHistoryWindow?> ReadHistoryArrayAsync(
+      IncrementalJsonReader reader,
+      HistoryReadState history,
+      CancellationToken cancellationToken)
+  {
+    while (true)
     {
-      throw HevyResponse.UnexpectedResponse(statusCode);
+      var token = await ReadRequiredTokenAsync(reader, cancellationToken).ConfigureAwait(false);
+      if (token.Type == JsonTokenType.EndArray) return null;
+      if (token.Type != JsonTokenType.StartObject) throw new JsonException();
+      if (history.ScannedItemCount == ExerciseHistoryWindowRequest.MaximumScannedItems)
+      {
+        return history.Truncated(ExerciseHistoryWindow.ItemSafetyCap);
+      }
+
+      using var payload = new MemoryStream();
+      using (var writer = new Utf8JsonWriter(payload))
+      {
+        await ConsumeValueAsync(reader, token, writer, cancellationToken).ConfigureAwait(false);
+      }
+
+      var entry = JsonSerializer.Deserialize(payload.ToArray(), history.EntryTypeInfo) ?? throw new JsonException();
+      var truncated = history.Add(entry);
+      if (truncated is not null) return truncated;
     }
+  }
+
+  private static async Task ConsumeValueAsync(
+      IncrementalJsonReader reader,
+      BufferedJsonToken firstToken,
+      Utf8JsonWriter? writer,
+      CancellationToken cancellationToken)
+  {
+    var depth = firstToken.Type switch
+    {
+      JsonTokenType.StartArray or JsonTokenType.StartObject => 1,
+      JsonTokenType.String or JsonTokenType.Number or JsonTokenType.True or JsonTokenType.False or JsonTokenType.Null => 0,
+      _ => throw new JsonException(),
+    };
+    WriteToken(writer, firstToken);
+
+    while (depth > 0)
+    {
+      var token = await ReadRequiredTokenAsync(reader, cancellationToken).ConfigureAwait(false);
+      WriteToken(writer, token);
+      if (token.Type is JsonTokenType.StartArray or JsonTokenType.StartObject)
+      {
+        depth++;
+      }
+      else if (token.Type is JsonTokenType.EndArray or JsonTokenType.EndObject)
+      {
+        depth--;
+      }
+    }
+
+    writer?.Flush();
+  }
+
+  private static void WriteToken(Utf8JsonWriter? writer, BufferedJsonToken token)
+  {
+    if (writer is null) return;
+    switch (token.Type)
+    {
+      case JsonTokenType.StartObject:
+        writer.WriteStartObject();
+        break;
+      case JsonTokenType.EndObject:
+        writer.WriteEndObject();
+        break;
+      case JsonTokenType.StartArray:
+        writer.WriteStartArray();
+        break;
+      case JsonTokenType.EndArray:
+        writer.WriteEndArray();
+        break;
+      case JsonTokenType.PropertyName:
+        writer.WritePropertyName(token.Text ?? throw new JsonException());
+        break;
+      case JsonTokenType.String:
+        writer.WriteStringValue(token.Text);
+        break;
+      case JsonTokenType.Number:
+        writer.WriteRawValue(token.RawValue ?? throw new JsonException(), skipInputValidation: true);
+        break;
+      case JsonTokenType.True:
+        writer.WriteBooleanValue(true);
+        break;
+      case JsonTokenType.False:
+        writer.WriteBooleanValue(false);
+        break;
+      case JsonTokenType.Null:
+        writer.WriteNullValue();
+        break;
+      default:
+        throw new JsonException();
+    }
+  }
+
+  private static async ValueTask<BufferedJsonToken> ReadRequiredTokenAsync(
+      IncrementalJsonReader reader,
+      CancellationToken cancellationToken) =>
+      await reader.ReadTokenAsync(cancellationToken).ConfigureAwait(false) ?? throw new JsonException();
+
+  private sealed class HistoryReadState(
+      ExerciseHistoryWindowRequest request,
+      JsonTypeInfo<ExerciseHistoryEntry> entryTypeInfo)
+  {
+    private readonly List<ExerciseHistoryEntry> items = new(request.Limit);
+    private int eligibleItemCount;
+
+    internal int ScannedItemCount { get; private set; }
+    internal JsonTypeInfo<ExerciseHistoryEntry> EntryTypeInfo { get; } = entryTypeInfo;
+
+    internal ExerciseHistoryWindow? Add(ExerciseHistoryEntry entry)
+    {
+      ScannedItemCount++;
+      if (!IsEligible(entry, request)) return null;
+      if (eligibleItemCount++ < request.Offset) return null;
+      if (items.Count < request.Limit)
+      {
+        items.Add(entry);
+        return null;
+      }
+
+      return Truncated(null);
+    }
+
+    internal ExerciseHistoryWindow Complete() =>
+        new(items.AsReadOnly(), false, ScannedItemCount);
+
+    internal ExerciseHistoryWindow Truncated(string? reason) =>
+        new(items.AsReadOnly(), true, ScannedItemCount, reason);
   }
 
   private static bool IsEligible(ExerciseHistoryEntry entry, ExerciseHistoryWindowRequest request) =>
       (request.EligibleStartTime is null || entry.WorkoutStartTime >= request.EligibleStartTime) &&
       (request.EligibleEndTime is null || entry.WorkoutStartTime < request.EligibleEndTime);
 
-  private static async Task ReadEnvelopeStartAsync(BoundedByteReader reader, CancellationToken cancellationToken)
+  private readonly record struct BufferedJsonToken(JsonTokenType Type, string? Text, byte[]? RawValue)
   {
-    if (await reader.ReadNonWhitespaceAsync(cancellationToken).ConfigureAwait(false) != '{' ||
-        await reader.ReadNonWhitespaceAsync(cancellationToken).ConfigureAwait(false) != '"')
+    internal static BufferedJsonToken Create(ref Utf8JsonReader reader) => reader.TokenType switch
     {
-      throw new JsonException();
-    }
-
-    for (var index = 0; index < ExerciseHistoryPropertyName.Length; index++)
-    {
-      if (await reader.ReadByteAsync(cancellationToken).ConfigureAwait(false) != ExerciseHistoryPropertyName[index])
-      {
-        throw new JsonException();
-      }
-    }
-
-    if (await reader.ReadByteAsync(cancellationToken).ConfigureAwait(false) != '"' ||
-        await reader.ReadNonWhitespaceAsync(cancellationToken).ConfigureAwait(false) != ':' ||
-        await reader.ReadNonWhitespaceAsync(cancellationToken).ConfigureAwait(false) != '[')
-    {
-      throw new JsonException();
-    }
+      JsonTokenType.PropertyName or JsonTokenType.String => new(reader.TokenType, reader.GetString(), null),
+      JsonTokenType.Number => new(reader.TokenType, null, reader.ValueSpan.ToArray()),
+      _ => new(reader.TokenType, null, null),
+    };
   }
 
-  private static async Task<byte[]> ReadObjectAsync(BoundedByteReader reader, CancellationToken cancellationToken)
+  private sealed class IncrementalJsonReader(Stream stream, long maximumBytes)
   {
-    using var payload = new MemoryStream();
-    payload.WriteByte((byte)'{');
-    var depth = 1;
-    var inString = false;
-    var escaped = false;
-    while (depth > 0)
-    {
-      var next = await reader.ReadByteAsync(cancellationToken).ConfigureAwait(false);
-      payload.WriteByte((byte)next);
-      if (inString)
-      {
-        if (escaped)
-        {
-          escaped = false;
-        }
-        else if (next == '\\')
-        {
-          escaped = true;
-        }
-        else if (next == '"')
-        {
-          inString = false;
-        }
-        continue;
-      }
-
-      if (next == '"')
-      {
-        inString = true;
-      }
-      else if (next is '{' or '[')
-      {
-        depth++;
-      }
-      else if (next is '}' or ']')
-      {
-        depth--;
-      }
-    }
-    return payload.ToArray();
-  }
-
-  private sealed class BoundedByteReader(Stream stream, long maximumBytes)
-  {
-    private readonly byte[] buffer = new byte[4_096];
+    private const int BufferSize = 4_096;
+    private readonly Stream stream = stream;
+    private readonly long maximumBytes = maximumBytes;
+    private byte[] buffer = new byte[(int)Math.Min(BufferSize, maximumBytes)];
+    private JsonReaderState state;
     private int position;
     private int length;
     private long bytesRead;
+    private bool isFinalBlock;
 
-    internal async ValueTask<int> ReadNonWhitespaceAsync(CancellationToken cancellationToken)
+    internal async ValueTask<BufferedJsonToken?> ReadTokenAsync(CancellationToken cancellationToken)
     {
       while (true)
       {
-        var value = await ReadByteAsync(cancellationToken).ConfigureAwait(false);
-        if (value is not (' ' or '\t' or '\r' or '\n')) return value;
+        if (TryReadToken(out var token)) return token;
+        if (isFinalBlock) return null;
+        await FillBufferAsync(cancellationToken).ConfigureAwait(false);
       }
     }
 
-    internal async ValueTask<int> ReadByteAsync(CancellationToken cancellationToken)
+    private bool TryReadToken(out BufferedJsonToken token)
     {
-      if (position < length) return buffer[position++];
+      var reader = new Utf8JsonReader(buffer.AsSpan(position, length - position), isFinalBlock, state);
+      if (!reader.Read())
+      {
+        Advance(ref reader);
+        token = default;
+        return false;
+      }
+
+      token = BufferedJsonToken.Create(ref reader);
+      Advance(ref reader);
+      return true;
+    }
+
+    private void Advance(ref Utf8JsonReader reader)
+    {
+      position += checked((int)reader.BytesConsumed);
+      state = reader.CurrentState;
+    }
+
+    private async ValueTask FillBufferAsync(CancellationToken cancellationToken)
+    {
+      CompactBuffer();
+      if (length == buffer.Length) GrowBuffer();
       if (bytesRead >= maximumBytes) throw new ResponseByteLimitExceededException();
-      var requested = (int)Math.Min(buffer.Length, maximumBytes - bytesRead);
-      length = await stream.ReadAsync(buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
+
+      var requested = (int)Math.Min(buffer.Length - length, maximumBytes - bytesRead);
+      var read = await stream.ReadAsync(buffer.AsMemory(length, requested), cancellationToken).ConfigureAwait(false);
+      if (read == 0)
+      {
+        isFinalBlock = true;
+        return;
+      }
+
+      length += read;
+      bytesRead += read;
+    }
+
+    private void CompactBuffer()
+    {
+      if (position == 0) return;
+      buffer.AsSpan(position, length - position).CopyTo(buffer);
+      length -= position;
       position = 0;
-      if (length == 0) throw new EndOfStreamException();
-      bytesRead += length;
-      return buffer[position++];
+    }
+
+    private void GrowBuffer()
+    {
+      var maximumCapacity = Math.Min(maximumBytes, int.MaxValue);
+      if (buffer.Length >= maximumCapacity) throw new ResponseByteLimitExceededException();
+      var newLength = (int)Math.Min((long)buffer.Length * 2, maximumCapacity);
+      Array.Resize(ref buffer, newLength);
     }
   }
 

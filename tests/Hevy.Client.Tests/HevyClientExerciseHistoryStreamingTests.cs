@@ -156,6 +156,96 @@ public sealed class HevyClientExerciseHistoryStreamingTests
     Assert.Single(handler.Requests);
   }
 
+  // Break caught: treating the history array terminator as proof that the enclosing response object is complete.
+  [Theory]
+  [InlineData("{\"exercise_history\":[]")]
+  [InlineData("{\"exercise_history\":[]} trailing")]
+  [InlineData("{\"exercise_history\":[]} []")]
+  [InlineData("{\"exercise_history\":[],\"metadata\":[}")]
+  public async Task HistoryWindowRejectsIncompleteOrTrailingEnvelopeContent(string payload)
+  {
+    var handler = HistoryHandler(new ChunkedReadStream(Encoding.UTF8.GetBytes(payload), 2));
+    var client = CreateClient(handler);
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetExerciseHistoryWindowAsync(
+        "template-1",
+        new ExerciseHistoryWindowRequest(0, 10),
+        default));
+
+    Assert.Equal("unexpected_response", exception.Code);
+    Assert.Single(handler.Requests);
+  }
+
+  // Break caught: coupling response parsing to the undocumented assumption that exercise_history is the first property.
+  [Fact]
+  public async Task HistoryWindowAcceptsUnknownMemberBeforeHistoryAcrossTokenBoundaries()
+  {
+    var payload = "{\"metadata\":{\"nested\":[true,{\"label\":\"before\"}]},\"exercise_history\":[" +
+        Entry(1, "2026-07-01T00:00:00Z", null) + "]}";
+    var handler = HistoryHandler(new ChunkedReadStream(Encoding.UTF8.GetBytes(payload), 3));
+    var client = CreateClient(handler);
+
+    var result = await client.GetExerciseHistoryWindowAsync(
+        "template-1",
+        new ExerciseHistoryWindowRequest(0, 10),
+        default);
+
+    Assert.Equal("workout-0001", Assert.Single(result.Items).WorkoutId);
+    Assert.False(result.Truncated);
+    Assert.Equal(1, result.ScannedItemCount);
+  }
+
+  // Break caught: returning before validating an additive member that follows exercise_history.
+  [Fact]
+  public async Task HistoryWindowAcceptsUnknownMemberAfterHistoryAcrossTokenBoundaries()
+  {
+    var payload = "{\"exercise_history\":[" + Entry(1, "2026-07-01T00:00:00Z", null) +
+        "],\"metadata\":{\"nested\":[false,{\"label\":\"after\"}]}}   ";
+    var handler = HistoryHandler(new ChunkedReadStream(Encoding.UTF8.GetBytes(payload), 1));
+    var client = CreateClient(handler);
+
+    var result = await client.GetExerciseHistoryWindowAsync(
+        "template-1",
+        new ExerciseHistoryWindowRequest(0, 10),
+        default);
+
+    Assert.Equal("workout-0001", Assert.Single(result.Items).WorkoutId);
+    Assert.False(result.Truncated);
+    Assert.Equal(1, result.ScannedItemCount);
+  }
+
+  // Break caught: accepting an envelope that cannot populate the non-null OpenAPI response collection.
+  [Fact]
+  public async Task HistoryWindowRejectsMissingHistoryMember()
+  {
+    var handler = HistoryHandler(new ChunkedReadStream(Encoding.UTF8.GetBytes("{\"metadata\":{}}"), 1));
+    var client = CreateClient(handler);
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetExerciseHistoryWindowAsync(
+        "template-1",
+        new ExerciseHistoryWindowRequest(0, 10),
+        default));
+
+    Assert.Equal("unexpected_response", exception.Code);
+  }
+
+  // Break caught: silently choosing one of multiple values for the single OpenAPI exercise_history field.
+  [Fact]
+  public async Task HistoryWindowRejectsDuplicateHistoryMembers()
+  {
+    var payload = "{\"exercise_history\":[],\"exercise_history\":[" +
+        Entry(1, "2026-07-01T00:00:00Z", null) + "]}";
+    var handler = HistoryHandler(new ChunkedReadStream(Encoding.UTF8.GetBytes(payload), 2));
+    var client = CreateClient(handler);
+
+    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetExerciseHistoryWindowAsync(
+        "template-1",
+        new ExerciseHistoryWindowRequest(0, 10),
+        default));
+
+    Assert.Equal("unexpected_response", exception.Code);
+  }
+
   private static HevyClient CreateClient(
       RecordingHttpMessageHandler handler,
       ExerciseHistoryReadLimits? limits = null) =>
@@ -197,6 +287,12 @@ public sealed class HevyClientExerciseHistoryStreamingTests
       IsDisposed = true;
       base.Dispose(disposing);
     }
+  }
+
+  private sealed class ChunkedReadStream(byte[] bytes, int maximumChunkSize) : MemoryStream(bytes)
+  {
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+        base.ReadAsync(buffer[..Math.Min(buffer.Length, maximumChunkSize)], cancellationToken);
   }
 
   private sealed class BlockingReadStream(byte[] prefix) : Stream
