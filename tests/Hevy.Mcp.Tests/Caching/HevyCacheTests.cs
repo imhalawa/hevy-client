@@ -179,6 +179,86 @@ public sealed class HevyCacheTests
     Assert.Equal(1, client.CallCount);
   }
 
+  [Fact]
+  public async Task SoleWaiterCancellationCancelsUnderlyingFillAndNextCallerStartsFresh()
+  {
+    var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var fillCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var attempts = 0;
+    var client = new FakeHevyClient
+    {
+      GetRoutinesHandler = async (page, _, cancellationToken) =>
+      {
+        attempts++;
+        if (attempts == 1)
+        {
+          firstStarted.SetResult();
+          try
+          {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+          }
+          catch (OperationCanceledException)
+          {
+            fillCancelled.SetResult();
+            throw;
+          }
+        }
+        return new PagedResult<Routine>(page, 1, [FakeHevyClient.SampleRoutine()]);
+      },
+    };
+    using var memory = CreateMemoryCache(100);
+    var cache = new HevyCache(client, memory, TimeProvider.System);
+    using var cancellation = new CancellationTokenSource();
+    var abandoned = cache.GetRoutinesAsync(cancellation.Token);
+    await firstStarted.Task;
+
+    cancellation.Cancel();
+
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => abandoned);
+    await fillCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    Assert.Single(await cache.GetRoutinesAsync(default));
+    Assert.Equal(2, client.CallCount);
+  }
+
+  [Fact]
+  public async Task CancellingAllWaitersCancelsTheirOneUnderlyingFill()
+  {
+    var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var fillCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var client = new FakeHevyClient
+    {
+      GetExerciseTemplatesHandler = async (_, _, cancellationToken) =>
+      {
+        started.SetResult();
+        try
+        {
+          await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+          fillCancelled.SetResult();
+          throw;
+        }
+        return new PagedResult<ExerciseTemplate>(1, 0, []);
+      },
+    };
+    using var memory = CreateMemoryCache(100);
+    var cache = new HevyCache(client, memory, TimeProvider.System);
+    using var firstCancellation = new CancellationTokenSource();
+    using var secondCancellation = new CancellationTokenSource();
+    var first = cache.GetExerciseTemplatesAsync(firstCancellation.Token);
+    var second = cache.GetExerciseTemplatesAsync(secondCancellation.Token);
+    await started.Task;
+
+    firstCancellation.Cancel();
+    secondCancellation.Cancel();
+
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => second);
+    await fillCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    Assert.Equal(1, client.CallCount);
+  }
+
   private static MemoryCache CreateMemoryCache(long sizeLimit) => new(new MemoryCacheOptions { SizeLimit = sizeLimit });
 
   private static ExerciseTemplate Template(string id, string title) =>

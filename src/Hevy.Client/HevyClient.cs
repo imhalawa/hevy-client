@@ -103,6 +103,18 @@ public sealed class HevyClient : IHevyClient
   public async Task<PagedResult<ExerciseHistoryEntry>> GetExerciseHistoryAsync(string exerciseTemplateId, int page, int pageSize, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
   {
     ValidatePagination(page, pageSize, 10);
+    var history = await GetAllExerciseHistoryAsync(exerciseTemplateId, startDate, endDate, cancellationToken);
+    var itemCount = history.Count;
+    var pageCount = itemCount == 0 ? 0 : ((itemCount - 1) / pageSize) + 1;
+    var offset = (long)(page - 1) * pageSize;
+    var items = offset >= itemCount
+        ? Array.Empty<ExerciseHistoryEntry>()
+        : history.Skip((int)offset).Take(pageSize).ToArray();
+    return new PagedResult<ExerciseHistoryEntry>(page, pageCount, items);
+  }
+
+  public async Task<IReadOnlyList<ExerciseHistoryEntry>> GetAllExerciseHistoryAsync(string exerciseTemplateId, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
+  {
     if (startDate is not null && endDate is not null && startDate > endDate)
     {
       throw new ArgumentException("The start date cannot be after the end date.", nameof(startDate));
@@ -126,13 +138,7 @@ public sealed class HevyClient : IHevyClient
     }
 
     var response = await GetAsync(path, HevyJsonContext.Default.ExerciseHistoryResponse, cancellationToken);
-    var itemCount = response.ExerciseHistory.Count;
-    var pageCount = itemCount == 0 ? 0 : ((itemCount - 1) / pageSize) + 1;
-    var offset = (long)(page - 1) * pageSize;
-    var items = offset >= itemCount
-        ? Array.Empty<ExerciseHistoryEntry>()
-        : response.ExerciseHistory.Skip((int)offset).Take(pageSize).ToArray();
-    return new PagedResult<ExerciseHistoryEntry>(page, pageCount, items);
+    return response.ExerciseHistory.ToArray();
   }
 
   public async Task<PagedResult<BodyMeasurement>> GetBodyMeasurementsAsync(int page, int pageSize, CancellationToken cancellationToken)

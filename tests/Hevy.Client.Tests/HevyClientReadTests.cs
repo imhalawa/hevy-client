@@ -140,6 +140,25 @@ public sealed class HevyClientReadTests
         Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
   }
 
+  [Fact]
+  public async Task Get_all_exercise_history_returns_the_unpaginated_response_with_one_http_request()
+  {
+    var handler = RespondingWith(Fixture.Read("exercise-history-three.json"));
+    var client = CreateClient(handler);
+
+    var history = await client.GetAllExerciseHistoryAsync(
+        "D04AC939",
+        new DateOnly(2024, 1, 1),
+        new DateOnly(2024, 12, 31),
+        CancellationToken.None);
+
+    Assert.Equal(3, history.Count);
+    Assert.Equal(["workout-history-1", "workout-history-2", "workout-history-3"], history.Select(static entry => entry.WorkoutId));
+    Assert.Equal(
+        "https://api.hevyapp.com/v1/exercise_history/D04AC939?start_date=2024-01-01&end_date=2024-12-31",
+        Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
+  }
+
   // Break caught: options or public diagnostics exposing the API credential.
   [Fact]
   public void Authentication_configuration_never_formats_the_api_key()

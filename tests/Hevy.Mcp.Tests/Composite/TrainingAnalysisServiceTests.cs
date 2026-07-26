@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Hevy.Client;
 using Hevy.Client.Models;
 using Hevy.Mcp.Composite;
 using TestSupport;
@@ -186,15 +187,45 @@ public sealed class TrainingAnalysisServiceTests
   {
     var client = new FakeHevyClient
     {
-      GetExerciseHistoryHandler = (_, page, _, _, _, _) => Task.FromResult(new PagedResult<ExerciseHistoryEntry>(page, 3, [History($"workout-{page}", $"2026-07-{page + 10:D2}T10:00:00Z", 100 + page, 5)])),
+      AllExerciseHistory =
+      [
+        History("workout-1", "2026-07-11T10:00:00Z", 101, 5),
+        History("workout-2", "2026-07-12T10:00:00Z", 102, 5),
+        History("workout-3", "2026-07-13T10:00:00Z", 103, 5),
+      ],
     };
     var service = new TrainingAnalysisService(client, new FixedTimeProvider(Now));
 
-    var result = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 100, null, default);
+    var result = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 2, null, default);
 
     Assert.Equal(1, client.CallCount);
+    Assert.Equal(nameof(IHevyClient.GetAllExerciseHistoryAsync), client.LastOperation);
     Assert.True(result.Truncated);
     Assert.NotNull(result.Continuation);
+  }
+
+  [Theory]
+  [InlineData(100, 150)]
+  [InlineData(1_000, 1_050)]
+  public async Task ExerciseHistoryAggregatesRequestedWindowFromOneAllHistoryFetch(int limit, int entryCount)
+  {
+    var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+    var history = Enumerable.Range(1, entryCount)
+        .Select(index => History($"workout-{index:D3}", start.AddMinutes(index).ToString("O"), 100 + index, 5))
+        .ToArray();
+    var client = new FakeHevyClient { AllExerciseHistory = history };
+    var service = new TrainingAnalysisService(client, new FixedTimeProvider(Now));
+
+    var first = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, limit, null, default);
+    var second = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, limit, first.Continuation, default);
+
+    Assert.Equal(limit, first.ChunkEntryCount);
+    Assert.True(first.Truncated);
+    Assert.NotNull(first.ContinuationInputs);
+    Assert.Equal(entryCount - limit, second.ChunkEntryCount);
+    Assert.False(second.Truncated);
+    Assert.Equal(2, client.CallCount);
+    Assert.Equal(nameof(IHevyClient.GetAllExerciseHistoryAsync), client.LastOperation);
   }
 
   [Fact]

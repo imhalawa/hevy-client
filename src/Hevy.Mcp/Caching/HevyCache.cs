@@ -42,6 +42,7 @@ internal sealed class HevyCache
       where T : class
   {
     CacheEntry<T> entry;
+    Task<IReadOnlyList<T>> load;
     lock (_sync)
     {
       var now = _timeProvider.GetUtcNow();
@@ -62,14 +63,15 @@ internal sealed class HevyCache
       {
         entry = CreateEntry(key, readPage, now);
       }
+      entry.WaiterCount++;
+      load = entry.Load.Value;
     }
 
     try
     {
-      var load = entry.Load.Value;
       return await load.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
-    catch (OperationCanceledException) when (!entry.Load.Value.IsCanceled)
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
       throw;
     }
@@ -84,6 +86,23 @@ internal sealed class HevyCache
       }
       throw;
     }
+    finally
+    {
+      CancellationTokenSource? abandonedFill = null;
+      lock (_sync)
+      {
+        entry.WaiterCount--;
+        if (entry.WaiterCount == 0 && !load.IsCompleted)
+        {
+          if (_memory.TryGetValue(key, out CacheEntry<T>? current) && ReferenceEquals(current, entry))
+          {
+            _memory.Remove(key);
+          }
+          abandonedFill = entry.FillCancellation;
+        }
+      }
+      abandonedFill?.Cancel();
+    }
   }
 
   private CacheEntry<T> CreateEntry<T>(
@@ -92,8 +111,10 @@ internal sealed class HevyCache
       DateTimeOffset now)
       where T : class
   {
+    var fillCancellation = new CancellationTokenSource();
     var entry = new CacheEntry<T>(
-        new Lazy<Task<IReadOnlyList<T>>>(() => LoadCompleteCatalogAsync(readPage, CancellationToken.None), LazyThreadSafetyMode.ExecutionAndPublication),
+        new Lazy<Task<IReadOnlyList<T>>>(() => LoadCompleteCatalogAsync(readPage, fillCancellation.Token), LazyThreadSafetyMode.ExecutionAndPublication),
+        fillCancellation,
         now);
     _memory.Set(key, entry, new MemoryCacheEntryOptions { Size = 1 });
     return entry;
@@ -134,10 +155,15 @@ internal sealed class HevyCache
     }
   }
 
-  private sealed class CacheEntry<T>(Lazy<Task<IReadOnlyList<T>>> load, DateTimeOffset lastAccess)
+  private sealed class CacheEntry<T>(
+      Lazy<Task<IReadOnlyList<T>>> load,
+      CancellationTokenSource fillCancellation,
+      DateTimeOffset lastAccess)
       where T : class
   {
     internal Lazy<Task<IReadOnlyList<T>>> Load { get; } = load;
+    internal CancellationTokenSource FillCancellation { get; } = fillCancellation;
     internal DateTimeOffset LastAccess { get; set; } = lastAccess;
+    internal int WaiterCount { get; set; }
   }
 }

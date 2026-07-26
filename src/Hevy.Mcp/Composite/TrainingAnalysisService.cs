@@ -189,13 +189,23 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
       CancellationToken cancellationToken)
   {
     if (string.IsNullOrWhiteSpace(exerciseTemplateId)) throw new ArgumentException("An exercise template identifier is required.", nameof(exerciseTemplateId));
-    var cursor = ResolveCursor(HistoryEndpoint, HistoryPhase, weeks, rangeEndUtc, limit, continuation, [HistoryPhase], exerciseTemplateId);
+    var cursor = ResolveCursor(
+        HistoryEndpoint,
+        HistoryPhase,
+        weeks,
+        rangeEndUtc,
+        limit,
+        continuation,
+        [HistoryPhase],
+        exerciseTemplateId,
+        Continuation.MaximumItemBudget);
     var startDate = DateOnly.FromDateTime(cursor.Range.Start.UtcDateTime);
     var endDate = DateOnly.FromDateTime(cursor.Range.End.AddTicks(-1).UtcDateTime);
-    var result = await client.GetExerciseHistoryAsync(exerciseTemplateId, cursor.NextPage, cursor.PageSize, startDate, endDate, cancellationToken).ConfigureAwait(false);
-    ValidatePage(result.Page, result.PageCount, cursor.NextPage);
-    var entries = result.Items.Where(entry => entry.WorkoutStartTime >= cursor.Range.Start && entry.WorkoutStartTime < cursor.Range.End)
+    var history = await client.GetAllExerciseHistoryAsync(exerciseTemplateId, startDate, endDate, cancellationToken).ConfigureAwait(false);
+    var eligible = history.Where(entry => entry.WorkoutStartTime >= cursor.Range.Start && entry.WorkoutStartTime < cursor.Range.End)
         .OrderBy(static entry => entry.WorkoutStartTime).ThenBy(static entry => entry.WorkoutId, StringComparer.Ordinal).ToArray();
+    var offset = checked((cursor.NextPage - 1) * cursor.PageSize);
+    var entries = eligible.Skip(offset).Take(cursor.PageSize).ToArray();
     var observations = entries.GroupBy(static entry => entry.WorkoutId, StringComparer.Ordinal)
         .Select(group =>
         {
@@ -204,8 +214,8 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
           return new ExerciseVolumeObservation(group.Key, first.WorkoutStartTime, values.Sum());
         })
         .OrderBy(static observation => observation.StartTime).ThenBy(static observation => observation.WorkoutId, StringComparer.Ordinal).ToArray();
-    var more = result.Page < result.PageCount;
-    var next = more ? Next(cursor, HistoryPhase, result.Page + 1) : null;
+    var more = offset + entries.Length < eligible.Length;
+    var next = more ? Next(cursor, HistoryPhase, cursor.NextPage + 1) : null;
     var firstObservation = observations.FirstOrDefault();
     var lastObservation = observations.LastOrDefault();
     return new ExerciseHistorySummary(
@@ -346,13 +356,14 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
       int limit,
       string? continuation,
       IReadOnlyList<string> allowedPhases,
-      string? exerciseTemplateId = null)
+      string? exerciseTemplateId = null,
+      int maximumPageSize = 10)
   {
     ValidateLimit(limit);
     var selectedWeeks = weeks ?? 4;
     ArgumentOutOfRangeException.ThrowIfLessThan(selectedWeeks, 1);
     ArgumentOutOfRangeException.ThrowIfGreaterThan(selectedWeeks, 52);
-    var pageSize = Math.Min(10, limit);
+    var pageSize = Math.Min(maximumPageSize, limit);
     if (continuation is null)
     {
       var initialRange = ResolveRange(selectedWeeks, rangeEndUtc);
