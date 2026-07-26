@@ -65,7 +65,23 @@ internal static class ToolResults
   }
 
   internal static object PageMeta(int page, int pageCount, int pageSize, string detail) =>
-      new { page, page_count = pageCount, page_size = pageSize, detail };
+      new
+      {
+        page,
+        page_count = pageCount,
+        page_size = pageSize,
+        detail,
+        truncated = page < pageCount,
+        continuation = page < pageCount ? new { page = page + 1, page_size = pageSize, detail } : null,
+      };
+
+  internal static object DryRunMeta(bool force = false, DateTimeOffset? expectedUpdatedAt = null) => new
+  {
+    dry_run = true,
+    forced = force,
+    expected_updated_at = expectedUpdatedAt,
+    validation_warnings = Array.Empty<string>(),
+  };
 }
 
 internal static class ToolValidation

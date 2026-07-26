@@ -36,7 +36,7 @@ internal static class MeasurementWriteTools
   {
     ArgumentNullException.ThrowIfNull(request);
     Validate(request.Date, request.WeightKg, request.LeanMassKg, request.FatPercent, request.NeckCm, request.ShoulderCm, request.ChestCm, request.LeftBicepCm, request.RightBicepCm, request.LeftForearmCm, request.RightForearmCm, request.Abdomen, request.Waist, request.Hips, request.LeftThigh, request.RightThigh, request.LeftCalf, request.RightCalf);
-    if (dry_run) return ToolResults.Success(request, "Body-measurement payload is valid; no request was sent.", new { dry_run = true });
+    if (dry_run) return ToolResults.Success(request, "Body-measurement payload is valid; no request was sent.", ToolResults.DryRunMeta());
     var result = await ToolResults.Client(services).CreateBodyMeasurementAsync(request, cancellationToken);
     return ToolResults.Success(result, $"Created body measurement for {result.Date:yyyy-MM-dd}.", new { dry_run = false });
   });
@@ -48,7 +48,7 @@ internal static class MeasurementWriteTools
     ArgumentNullException.ThrowIfNull(request);
     Validate(date, request.WeightKg, request.LeanMassKg, request.FatPercent, request.NeckCm, request.ShoulderCm, request.ChestCm, request.LeftBicepCm, request.RightBicepCm, request.LeftForearmCm, request.RightForearmCm, request.Abdomen, request.Waist, request.Hips, request.LeftThigh, request.RightThigh, request.LeftCalf, request.RightCalf);
     ToolValidation.Guard(expected_updated_at, force);
-    if (dry_run) return ToolResults.Success(request, "Body-measurement replacement payload is valid; no request was sent.", new { dry_run = true, forced = force, expected_updated_at });
+    if (dry_run) return ToolResults.Success(request, "Body-measurement replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));
     var client = ToolResults.Client(services);
     if (!force)
     {

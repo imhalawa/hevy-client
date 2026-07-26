@@ -69,7 +69,21 @@ internal static class ServiceRegistration
       }
 
       request.MatchedPrimitive = tool;
-      return await tool.InvokeAsync(request, cancellationToken);
+      try
+      {
+        var result = await tool.InvokeAsync(request, cancellationToken);
+        return result.IsError == true && result.StructuredContent is null
+            ? ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.")
+            : result;
+      }
+      catch (OperationCanceledException)
+      {
+        throw;
+      }
+      catch (Exception)
+      {
+        return ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.");
+      }
     });
   }
 }

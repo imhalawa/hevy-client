@@ -42,6 +42,9 @@ public sealed class WorkoutToolTests
     Assert.Equal(2, structured.GetProperty("meta").GetProperty("page").GetInt32());
     Assert.Equal(4, structured.GetProperty("meta").GetProperty("page_count").GetInt32());
     Assert.Equal(3, structured.GetProperty("meta").GetProperty("page_size").GetInt32());
+    Assert.True(structured.GetProperty("meta").GetProperty("truncated").GetBoolean());
+    Assert.Equal(3, structured.GetProperty("meta").GetProperty("continuation").GetProperty("page").GetInt32());
+    Assert.Equal(3, structured.GetProperty("meta").GetProperty("continuation").GetProperty("page_size").GetInt32());
     Assert.NotEmpty(result.Content);
   }
 

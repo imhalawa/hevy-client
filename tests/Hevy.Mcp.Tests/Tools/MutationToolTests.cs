@@ -28,7 +28,10 @@ public sealed class MutationToolTests
     Assert.Equal("weight_reps", template.Structured().GetProperty("data").GetProperty("exercise").GetProperty("exercise_type").GetString());
     Assert.Equal("2024-08-14", measurement.Structured().GetProperty("data").GetProperty("date").GetString());
     Assert.All(new[] { workout, routine, folder, template, measurement }, result =>
-        Assert.True(result.Structured().GetProperty("meta").GetProperty("dry_run").GetBoolean()));
+    {
+      Assert.True(result.Structured().GetProperty("meta").GetProperty("dry_run").GetBoolean());
+      Assert.Empty(result.Structured().GetProperty("meta").GetProperty("validation_warnings").EnumerateArray());
+    });
     Assert.Equal(0, client.CallCount);
   }
 

@@ -95,7 +95,7 @@ internal static class WorkoutWriteTools
       {
         ArgumentNullException.ThrowIfNull(request);
         ToolValidation.Workout(request.Workout);
-        if (dry_run) return ToolResults.Success(request, "Workout payload is valid; no request was sent.", new { dry_run = true });
+        if (dry_run) return ToolResults.Success(request, "Workout payload is valid; no request was sent.", ToolResults.DryRunMeta());
         var result = await ToolResults.Client(services).CreateWorkoutAsync(request, cancellationToken);
         return ToolResults.Success(result, $"Created workout {result.Id}.", new { dry_run = false });
       });
@@ -115,7 +115,7 @@ internal static class WorkoutWriteTools
         ArgumentNullException.ThrowIfNull(request);
         ToolValidation.Workout(request.Workout);
         ToolValidation.Guard(expected_updated_at, force);
-        if (dry_run) return ToolResults.Success(request, "Workout replacement payload is valid; no request was sent.", new { dry_run = true, forced = force, expected_updated_at });
+        if (dry_run) return ToolResults.Success(request, "Workout replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));
         var client = ToolResults.Client(services);
         if (!force)
         {

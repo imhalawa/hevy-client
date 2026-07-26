@@ -49,7 +49,7 @@ internal static class ExerciseWriteTools
   {
     ArgumentNullException.ThrowIfNull(request);
     ToolValidation.Exercise(request.Exercise);
-    if (dry_run) return ToolResults.Success(request, "Exercise-template payload is valid; no request was sent.", new { dry_run = true });
+    if (dry_run) return ToolResults.Success(request, "Exercise-template payload is valid; no request was sent.", ToolResults.DryRunMeta());
     var result = await ToolResults.Client(services).CreateExerciseTemplateAsync(request, cancellationToken);
     return ToolResults.Success(result, $"Created exercise template {result.Id}.", new { dry_run = false });
   });

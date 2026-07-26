@@ -56,7 +56,7 @@ internal static class RoutineWriteTools
   {
     ArgumentNullException.ThrowIfNull(request);
     ToolValidation.Routine(request.Routine);
-    if (dry_run) return ToolResults.Success(request, "Routine payload is valid; no request was sent.", new { dry_run = true });
+    if (dry_run) return ToolResults.Success(request, "Routine payload is valid; no request was sent.", ToolResults.DryRunMeta());
     var result = await ToolResults.Client(services).CreateRoutineAsync(request, cancellationToken);
     return ToolResults.Success(result, $"Created routine {result.Id}.", new { dry_run = false });
   });
@@ -69,7 +69,7 @@ internal static class RoutineWriteTools
     ArgumentNullException.ThrowIfNull(request);
     ToolValidation.Routine(request.Routine);
     ToolValidation.Guard(expected_updated_at, force);
-    if (dry_run) return ToolResults.Success(request, "Routine replacement payload is valid; no request was sent.", new { dry_run = true, forced = force, expected_updated_at });
+    if (dry_run) return ToolResults.Success(request, "Routine replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));
     var client = ToolResults.Client(services);
     if (!force)
     {
@@ -87,7 +87,7 @@ internal static class RoutineWriteTools
     ArgumentNullException.ThrowIfNull(request);
     ArgumentNullException.ThrowIfNull(request.RoutineFolder);
     ToolValidation.Required(request.RoutineFolder.Title, "routine folder title");
-    if (dry_run) return ToolResults.Success(request, "Routine-folder payload is valid; no request was sent.", new { dry_run = true });
+    if (dry_run) return ToolResults.Success(request, "Routine-folder payload is valid; no request was sent.", ToolResults.DryRunMeta());
     var result = await ToolResults.Client(services).CreateRoutineFolderAsync(request, cancellationToken);
     return ToolResults.Success(result, $"Created routine folder {result.Id}.", new { dry_run = false });
   });

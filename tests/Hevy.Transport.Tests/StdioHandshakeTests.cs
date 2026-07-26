@@ -25,6 +25,10 @@ public sealed class StdioHandshakeTests
     await process.StandardInput.WriteLineAsync("""{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_routine_folder","arguments":{"request":{"routine_folder":{"title":"Transport Dry Run"}},"dry_run":true}}}""");
     await process.StandardInput.FlushAsync();
     using var callResponse = await ReadProtocolMessageAsync(process, TimeSpan.FromSeconds(10));
+
+    await process.StandardInput.WriteLineAsync("""{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_workouts","arguments":{"page":"not-an-integer"}}}""");
+    await process.StandardInput.FlushAsync();
+    using var invalidCallResponse = await ReadProtocolMessageAsync(process, TimeSpan.FromSeconds(10));
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
@@ -42,6 +46,10 @@ public sealed class StdioHandshakeTests
     Assert.False(callResult.GetProperty("isError").GetBoolean());
     Assert.Equal("Transport Dry Run", callResult.GetProperty("structuredContent").GetProperty("data").GetProperty("routine_folder").GetProperty("title").GetString());
     Assert.True(callResult.GetProperty("structuredContent").GetProperty("meta").GetProperty("dry_run").GetBoolean());
+    var invalidCallResult = invalidCallResponse.RootElement.GetProperty("result");
+    Assert.True(invalidCallResult.GetProperty("isError").GetBoolean());
+    Assert.Equal("validation_error", invalidCallResult.GetProperty("structuredContent").GetProperty("error").GetProperty("code").GetString());
+    Assert.Equal(32, invalidCallResult.GetProperty("structuredContent").GetProperty("error").GetProperty("correlation_id").GetString()!.Length);
     Assert.Equal(0, process.ExitCode);
     Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
     Assert.Equal(string.Empty, await process.StandardOutput.ReadToEndAsync());
