@@ -291,6 +291,12 @@ public sealed class HevyClient : IHevyClient
     {
       using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
       ThrowIfMutationOutcomeUnknown(response);
+      if (response.IsSuccessStatusCode)
+      {
+        return await ReadCommittedResultAsync(
+            () => HevyResponse.ReadAsync(response, responseTypeInfo, cancellationToken),
+            cancellationToken);
+      }
       return await HevyResponse.ReadAsync(response, responseTypeInfo, cancellationToken);
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -387,7 +393,8 @@ public sealed class HevyClient : IHevyClient
   private static void ValidatePage<T>(int actualPage, int pageCount, IReadOnlyList<T>? items, int requestedPage, int requestedPageSize)
   {
     if (actualPage != requestedPage || pageCount < 0 || (pageCount == 0 && actualPage != 1) ||
-        (pageCount > 0 && actualPage > pageCount) || items is null || items.Count > requestedPageSize)
+        (pageCount > 0 && actualPage > pageCount) || items is null ||
+        (pageCount == 0 && items.Count != 0) || items.Count > requestedPageSize)
     {
       throw HevyResponse.UnexpectedResponse(System.Net.HttpStatusCode.OK);
     }

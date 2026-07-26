@@ -51,6 +51,10 @@ internal static class ToolResults
   internal static PagedResult<T> LocalPage<T>(IReadOnlyList<T> catalog, int page, int pageSize)
   {
     var pageCount = catalog.Count == 0 ? 0 : (catalog.Count + pageSize - 1) / pageSize;
+    if ((pageCount == 0 && page != 1) || (pageCount > 0 && page > pageCount))
+    {
+      throw new ArgumentOutOfRangeException(nameof(page), "page cannot exceed the cached catalog page count.");
+    }
     var skip = (long)(page - 1) * pageSize;
     var items = skip > int.MaxValue ? [] : catalog.Skip((int)skip).Take(pageSize).ToArray();
     return new PagedResult<T>(page, pageCount, items);

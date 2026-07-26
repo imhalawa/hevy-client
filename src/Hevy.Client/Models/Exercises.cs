@@ -4,12 +4,12 @@ namespace Hevy.Client.Models;
 
 public sealed record ExerciseTemplate(
     [property: JsonRequired] string Id,
-    string Title,
-    string Type,
-    string PrimaryMuscleGroup,
+    [property: JsonRequired] string Title,
+    [property: JsonRequired] string Type,
+    [property: JsonRequired] string PrimaryMuscleGroup,
     [property: JsonRequired] IReadOnlyList<string> SecondaryMuscleGroups,
-    EquipmentCategory EquipmentCategory,
-    bool IsCustom);
+    [property: JsonRequired] EquipmentCategory EquipmentCategory,
+    [property: JsonRequired] bool IsCustom);
 
 public sealed record ExerciseTemplatePage(
     [property: JsonRequired] int Page,
@@ -20,7 +20,7 @@ public sealed record CreateExerciseTemplateResponse([property: JsonRequired] int
 
 public sealed record ExerciseHistoryEntry(
     [property: JsonRequired] string WorkoutId,
-    string WorkoutTitle,
+    [property: JsonRequired] string WorkoutTitle,
     [property: JsonRequired] DateTimeOffset WorkoutStartTime,
     [property: JsonRequired] DateTimeOffset WorkoutEndTime,
     [property: JsonRequired] string ExerciseTemplateId,
@@ -30,7 +30,7 @@ public sealed record ExerciseHistoryEntry(
     int? DurationSeconds,
     decimal? Rpe,
     decimal? CustomMetric,
-    string SetType);
+    [property: JsonRequired] string SetType);
 
 public sealed record ExerciseHistoryResponse([property: JsonRequired] IReadOnlyList<ExerciseHistoryEntry> ExerciseHistory);
 

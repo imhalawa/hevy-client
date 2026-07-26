@@ -4,9 +4,9 @@ namespace Hevy.Client.Models;
 
 public sealed record Workout(
     [property: JsonRequired] string Id,
-    string Title,
-    string RoutineId,
-    string Description,
+    [property: JsonRequired] string Title,
+    [property: JsonRequired] string RoutineId,
+    [property: JsonRequired] string Description,
     [property: JsonRequired] DateTimeOffset StartTime,
     [property: JsonRequired] DateTimeOffset EndTime,
     [property: JsonRequired] DateTimeOffset UpdatedAt,
@@ -14,16 +14,16 @@ public sealed record Workout(
     [property: JsonRequired] IReadOnlyList<WorkoutExercise> Exercises);
 
 public sealed record WorkoutExercise(
-    int Index,
-    string Title,
-    string Notes,
+    [property: JsonRequired] int Index,
+    [property: JsonRequired] string Title,
+    [property: JsonRequired] string Notes,
     [property: JsonRequired] string ExerciseTemplateId,
     [property: JsonPropertyName("supersets_id")] long? SupersetId,
     [property: JsonRequired] IReadOnlyList<WorkoutSet> Sets);
 
 public sealed record WorkoutSet(
-    int Index,
-    string Type,
+    [property: JsonRequired] int Index,
+    [property: JsonRequired] string Type,
     decimal? WeightKg,
     decimal? Reps,
     decimal? DistanceMeters,

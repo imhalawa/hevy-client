@@ -65,8 +65,8 @@ internal static class RoutineWriteTools
     ArgumentNullException.ThrowIfNull(request);
     ToolValidation.Routine(request.Routine);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateRoutineRequest, Routine>(request), "Routine payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    var result = await ToolResults.Client(services).CreateRoutineAsync(request, cancellationToken);
     ToolResults.Cache(services)?.InvalidateRoutines();
+    var result = await ToolResults.Client(services).CreateRoutineAsync(request, cancellationToken);
     return ToolResults.Success(ToolResults.MutationResult<CreateRoutineRequest, Routine>(result), $"Created routine {result.Id}.", new MutationMeta(false));
   });
 
@@ -85,8 +85,8 @@ internal static class RoutineWriteTools
       var current = await client.GetRoutineAsync(routine_id, cancellationToken);
       if (current.UpdatedAt != expected_updated_at) return ToolExceptionFilter.Conflict("The routine changed since expected_updated_at; read it again before replacing it.");
     }
-    var result = await client.UpdateRoutineAsync(routine_id, request, cancellationToken);
     ToolResults.Cache(services)?.InvalidateRoutines();
+    var result = await client.UpdateRoutineAsync(routine_id, request, cancellationToken);
     return ToolResults.Success(ToolResults.MutationResult<UpdateRoutineRequest, Routine>(result), $"Updated routine {result.Id}.", new MutationMeta(false, force, expected_updated_at));
   });
 

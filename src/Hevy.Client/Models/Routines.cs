@@ -4,24 +4,24 @@ namespace Hevy.Client.Models;
 
 public sealed record Routine(
     [property: JsonRequired] string Id,
-    string Title,
+    [property: JsonRequired] string Title,
     long? FolderId,
     [property: JsonRequired] DateTimeOffset UpdatedAt,
     [property: JsonRequired] DateTimeOffset CreatedAt,
     [property: JsonRequired] IReadOnlyList<RoutineExercise> Exercises);
 
 public sealed record RoutineExercise(
-    int Index,
-    string Title,
-    string RestSeconds,
-    string Notes,
+    [property: JsonRequired] int Index,
+    [property: JsonRequired] string Title,
+    [property: JsonRequired] string RestSeconds,
+    [property: JsonRequired] string Notes,
     [property: JsonRequired] string ExerciseTemplateId,
     [property: JsonPropertyName("supersets_id")] long? SupersetId,
     [property: JsonRequired] IReadOnlyList<RoutineSet> Sets);
 
 public sealed record RoutineSet(
-    int Index,
-    string Type,
+    [property: JsonRequired] int Index,
+    [property: JsonRequired] string Type,
     decimal? WeightKg,
     decimal? Reps,
     decimal? DistanceMeters,
@@ -40,8 +40,8 @@ public sealed record RoutineResponse([property: JsonRequired] Routine Routine);
 
 public sealed record RoutineFolder(
     [property: JsonRequired] long Id,
-    int Index,
-    string Title,
+    [property: JsonRequired] int Index,
+    [property: JsonRequired] string Title,
     [property: JsonRequired] DateTimeOffset UpdatedAt,
     [property: JsonRequired] DateTimeOffset CreatedAt);
 

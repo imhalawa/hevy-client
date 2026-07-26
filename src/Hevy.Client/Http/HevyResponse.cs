@@ -52,6 +52,10 @@ internal static class HevyResponse
     {
       throw UnexpectedResponse(response.StatusCode);
     }
+    catch (NotSupportedException)
+    {
+      throw UnexpectedResponse(response.StatusCode);
+    }
   }
 
   public static HevyException UnexpectedResponse(HttpStatusCode statusCode) =>
@@ -67,14 +71,24 @@ internal static class HevyResponse
         break;
       case UserInfo user:
         RequiredText(user.Id);
+        Required(user.Name);
+        Required(user.Url);
         break;
       case WorkoutPage page:
         Required(page.Workouts);
-        foreach (var workout in page.Workouts) ValidateContract(workout);
+        foreach (var workout in page.Workouts)
+        {
+          Required(workout);
+          ValidateContract(workout);
+        }
         break;
       case WorkoutEventsPage page:
         Required(page.Events);
-        foreach (var item in page.Events) ValidateContract(item);
+        foreach (var item in page.Events)
+        {
+          Required(item);
+          ValidateContract(item);
+        }
         break;
       case UpdatedWorkoutEvent updated:
         Required(updated.Workout);
@@ -86,20 +100,41 @@ internal static class HevyResponse
         break;
       case Workout workout:
         RequiredText(workout.Id);
+        Required(workout.Title);
+        Required(workout.RoutineId);
+        Required(workout.Description);
         RequiredTimestamp(workout.StartTime);
         RequiredTimestamp(workout.EndTime);
         RequiredTimestamp(workout.UpdatedAt);
         RequiredTimestamp(workout.CreatedAt);
         Required(workout.Exercises);
-        foreach (var exercise in workout.Exercises) ValidateContract(exercise);
+        foreach (var exercise in workout.Exercises)
+        {
+          Required(exercise);
+          ValidateContract(exercise);
+        }
         break;
       case WorkoutExercise exercise:
+        Required(exercise.Title);
+        Required(exercise.Notes);
         RequiredText(exercise.ExerciseTemplateId);
         Required(exercise.Sets);
+        foreach (var set in exercise.Sets)
+        {
+          Required(set);
+          ValidateContract(set);
+        }
+        break;
+      case WorkoutSet set:
+        Required(set.Type);
         break;
       case RoutinePage page:
         Required(page.Routines);
-        foreach (var routine in page.Routines) ValidateContract(routine);
+        foreach (var routine in page.Routines)
+        {
+          Required(routine);
+          ValidateContract(routine);
+        }
         break;
       case RoutineResponse response:
         Required(response.Routine);
@@ -107,43 +142,78 @@ internal static class HevyResponse
         break;
       case Routine routine:
         RequiredText(routine.Id);
+        Required(routine.Title);
         RequiredTimestamp(routine.UpdatedAt);
         RequiredTimestamp(routine.CreatedAt);
         Required(routine.Exercises);
-        foreach (var exercise in routine.Exercises) ValidateContract(exercise);
+        foreach (var exercise in routine.Exercises)
+        {
+          Required(exercise);
+          ValidateContract(exercise);
+        }
         break;
       case RoutineExercise exercise:
+        Required(exercise.Title);
+        Required(exercise.RestSeconds);
+        Required(exercise.Notes);
         RequiredText(exercise.ExerciseTemplateId);
         Required(exercise.Sets);
+        foreach (var set in exercise.Sets)
+        {
+          Required(set);
+          ValidateContract(set);
+        }
+        break;
+      case RoutineSet set:
+        Required(set.Type);
         break;
       case RoutineFolderPage page:
         Required(page.RoutineFolders);
-        foreach (var folder in page.RoutineFolders) ValidateContract(folder);
+        foreach (var folder in page.RoutineFolders)
+        {
+          Required(folder);
+          ValidateContract(folder);
+        }
         break;
       case RoutineFolder folder:
         if (folder.Id <= 0) throw new JsonException();
+        Required(folder.Title);
         RequiredTimestamp(folder.UpdatedAt);
         RequiredTimestamp(folder.CreatedAt);
         break;
       case ExerciseTemplatePage page:
         Required(page.ExerciseTemplates);
-        foreach (var template in page.ExerciseTemplates) ValidateContract(template);
+        foreach (var template in page.ExerciseTemplates)
+        {
+          Required(template);
+          ValidateContract(template);
+        }
         break;
       case ExerciseTemplate template:
         RequiredText(template.Id);
+        Required(template.Title);
+        Required(template.Type);
+        Required(template.PrimaryMuscleGroup);
         Required(template.SecondaryMuscleGroups);
+        foreach (var muscle in template.SecondaryMuscleGroups) Required(muscle);
         break;
       case CreateExerciseTemplateResponse response when response.Id <= 0:
         throw new JsonException();
       case ExerciseHistoryEntry entry:
         RequiredText(entry.WorkoutId);
+        Required(entry.WorkoutTitle);
         RequiredText(entry.ExerciseTemplateId);
         RequiredTimestamp(entry.WorkoutStartTime);
         RequiredTimestamp(entry.WorkoutEndTime);
+        Required(entry.SetType);
         break;
       case BodyMeasurementPage page:
         Required(page.BodyMeasurements);
-        foreach (var measurement in page.BodyMeasurements) ValidateContract(measurement);
+        foreach (var measurement in page.BodyMeasurements)
+        {
+          Required(measurement);
+          ValidateContract(measurement);
+        }
         break;
       case BodyMeasurement measurement when measurement.Date == default:
         throw new JsonException();

@@ -10,6 +10,21 @@ namespace Hevy.Client.Tests;
 
 public sealed class HevyClientMutationTests
 {
+  public static TheoryData<string, string> DirectMutationResponseFailures
+  {
+    get
+    {
+      var cases = new TheoryData<string, string>();
+      foreach (var operation in new[] { "create_workout", "update_workout", "create_routine", "update_routine", "create_folder", "create_template" })
+      {
+        cases.Add(operation, "malformed");
+        cases.Add(operation, "missing_required");
+        cases.Add(operation, "oversized");
+      }
+      return cases;
+    }
+  }
+
   // Break caught: malformed mutation payloads crossing the network boundary instead of failing locally.
   [Fact]
   public async Task Mutation_methods_reject_invalid_bodies_before_sending_a_request()
@@ -151,6 +166,64 @@ public sealed class HevyClientMutationTests
     Assert.Contains("do not replay", exception.Message, StringComparison.OrdinalIgnoreCase);
   }
 
+  // Break caught: a confirmed 2xx write whose direct body fails decoding being reported as safe to replay.
+  [Theory]
+  [MemberData(nameof(DirectMutationResponseFailures))]
+  public async Task Every_direct_response_mutation_reports_post_commit_body_failures_as_non_replayable(string operation, string failure)
+  {
+    var validResponse = operation switch
+    {
+      "create_workout" or "update_workout" => Fixture.Read("workout.json"),
+      "create_routine" or "update_routine" => Fixture.Read("routine.json"),
+      "create_folder" => Fixture.Read("routine-folder.json"),
+      "create_template" => Fixture.Read("exercise-template-create.json"),
+      _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+    };
+    var response = failure switch
+    {
+      "malformed" => "{",
+      "missing_required" => "{}",
+      "oversized" => validResponse[..^1] + ",\"future\":\"" + new string('x', 4_194_304) + "\"}",
+      _ => throw new ArgumentOutOfRangeException(nameof(failure)),
+    };
+    var client = CreateClient(new RecordingHttpMessageHandler((_, _) =>
+        RecordingHttpMessageHandler.Json(HttpStatusCode.Created, response)));
+
+    var exception = await Assert.ThrowsAsync<HevyCommittedReadbackException>(() => InvokeDirectMutationAsync(client, operation));
+
+    Assert.Equal("committed_readback_failed", exception.Code);
+    Assert.False(exception.IsRetryable);
+    Assert.Contains("do not replay", exception.Message, StringComparison.OrdinalIgnoreCase);
+  }
+
+  // Break caught: caller cancellation during a post-commit follow-up read being converted into a replayable write failure.
+  [Theory]
+  [InlineData("create_template")]
+  [InlineData("create_measurement")]
+  [InlineData("update_measurement")]
+  public async Task Follow_up_readback_preserves_genuine_caller_cancellation_after_the_write_is_committed(string operation)
+  {
+    using var cancellation = new CancellationTokenSource();
+    var responses = 0;
+    var handler = new RecordingHttpMessageHandler((_, cancellationToken) =>
+    {
+      if (responses++ == 0)
+      {
+        var body = operation == "create_template" ? Fixture.Read("exercise-template-create.json") : "{}";
+        return RecordingHttpMessageHandler.Json(HttpStatusCode.Created, body);
+      }
+
+      cancellation.Cancel();
+      cancellationToken.ThrowIfCancellationRequested();
+      throw new InvalidOperationException("Unreachable.");
+    });
+    var client = CreateClient(handler);
+
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => InvokeFollowUpMutationAsync(client, operation, cancellation.Token));
+
+    Assert.Equal(2, handler.Requests.Count);
+  }
+
   // Break caught: injected test transports labelling a write connection failure retryable even though the remote outcome is ambiguous.
   [Fact]
   public async Task Mutation_transport_failures_are_unknown_without_a_retry_handler()
@@ -210,6 +283,25 @@ public sealed class HevyClientMutationTests
 
   private static HevyClient CreateClient(RecordingHttpMessageHandler handler) =>
       new(new HttpClient(handler), new HevyClientOptions("test-api-key"));
+
+  private static Task InvokeDirectMutationAsync(HevyClient client, string operation) => operation switch
+  {
+    "create_workout" => client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), default),
+    "update_workout" => client.UpdateWorkoutAsync("workout-1", FixtureFactory.UpdateWorkoutRequest(), default),
+    "create_routine" => client.CreateRoutineAsync(FixtureFactory.CreateRoutineRequest(), default),
+    "update_routine" => client.UpdateRoutineAsync("routine-1", FixtureFactory.UpdateRoutineRequest(), default),
+    "create_folder" => client.CreateRoutineFolderAsync(FixtureFactory.CreateRoutineFolderRequest(), default),
+    "create_template" => client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), default),
+    _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+  };
+
+  private static Task InvokeFollowUpMutationAsync(HevyClient client, string operation, CancellationToken cancellationToken) => operation switch
+  {
+    "create_template" => client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), cancellationToken),
+    "create_measurement" => client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), cancellationToken),
+    "update_measurement" => client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), cancellationToken),
+    _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+  };
 
   private static RecordingHttpMessageHandler RespondingWith(string response) =>
       new((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));

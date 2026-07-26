@@ -59,17 +59,8 @@ internal static class ExerciseWriteTools
     ArgumentNullException.ThrowIfNull(request);
     ToolValidation.Exercise(request.Exercise);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateExerciseTemplateRequest, ExerciseTemplate>(request), "Exercise-template payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    ExerciseTemplate result;
-    try
-    {
-      result = await ToolResults.Client(services).CreateExerciseTemplateAsync(request, cancellationToken);
-    }
-    catch (Hevy.Client.Errors.HevyCommittedReadbackException)
-    {
-      ToolResults.Cache(services)?.InvalidateExerciseTemplates();
-      throw;
-    }
     ToolResults.Cache(services)?.InvalidateExerciseTemplates();
+    var result = await ToolResults.Client(services).CreateExerciseTemplateAsync(request, cancellationToken);
     return ToolResults.Success(ToolResults.MutationResult<CreateExerciseTemplateRequest, ExerciseTemplate>(result), $"Created exercise template {result.Id}.", new MutationMeta(false));
   });
 }

@@ -136,6 +136,12 @@ internal sealed class HevyCache
         throw new InvalidOperationException("Hevy returned inconsistent catalog pagination; the partial catalog was not cached.");
       }
 
+      if ((result.PageCount == 0 && (result.Page != 1 || result.Items.Count != 0)) ||
+          (result.PageCount > 0 && result.Page > result.PageCount))
+      {
+        throw new InvalidOperationException("Hevy returned an impossible catalog page; the partial catalog was not cached.");
+      }
+
       expectedPageCount = result.PageCount;
       if ((long)expectedPageCount * PageSize > MaximumCatalogItems)
       {

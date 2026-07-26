@@ -20,6 +20,8 @@ public sealed class FakeHevyClient : IHevyClient
   public Func<int, int, CancellationToken, Task<PagedResult<BodyMeasurement>>>? GetBodyMeasurementsHandler { get; set; }
   public Func<DateOnly, CancellationToken, Task<BodyMeasurement>>? GetBodyMeasurementHandler { get; set; }
   public Func<CreateExerciseTemplateRequest, CancellationToken, Task<ExerciseTemplate>>? CreateExerciseTemplateHandler { get; set; }
+  public Func<CreateRoutineRequest, CancellationToken, Task<Routine>>? CreateRoutineHandler { get; set; }
+  public Func<string, UpdateRoutineRequest, CancellationToken, Task<Routine>>? UpdateRoutineHandler { get; set; }
 
   public PagedResult<Workout> Workouts { get; set; } = new(1, 0, []);
   public int WorkoutCount { get; set; }
@@ -116,8 +118,16 @@ public sealed class FakeHevyClient : IHevyClient
 
   public Task<Workout> CreateWorkoutAsync(CreateWorkoutRequest request, CancellationToken cancellationToken) => Return(nameof(CreateWorkoutAsync), Workout, cancellationToken, request);
   public Task<Workout> UpdateWorkoutAsync(string workoutId, UpdateWorkoutRequest request, CancellationToken cancellationToken) => Return(nameof(UpdateWorkoutAsync), Workout, cancellationToken, new { workoutId, request });
-  public Task<Routine> CreateRoutineAsync(CreateRoutineRequest request, CancellationToken cancellationToken) => Return(nameof(CreateRoutineAsync), Routine, cancellationToken, request);
-  public Task<Routine> UpdateRoutineAsync(string routineId, UpdateRoutineRequest request, CancellationToken cancellationToken) => Return(nameof(UpdateRoutineAsync), Routine, cancellationToken, new { routineId, request });
+  public Task<Routine> CreateRoutineAsync(CreateRoutineRequest request, CancellationToken cancellationToken)
+  {
+    Record(nameof(CreateRoutineAsync), request, cancellationToken);
+    return CreateRoutineHandler?.Invoke(request, cancellationToken) ?? Task.FromResult(Routine);
+  }
+  public Task<Routine> UpdateRoutineAsync(string routineId, UpdateRoutineRequest request, CancellationToken cancellationToken)
+  {
+    Record(nameof(UpdateRoutineAsync), new { routineId, request }, cancellationToken);
+    return UpdateRoutineHandler?.Invoke(routineId, request, cancellationToken) ?? Task.FromResult(Routine);
+  }
   public Task<RoutineFolder> CreateRoutineFolderAsync(CreateRoutineFolderRequest request, CancellationToken cancellationToken) => Return(nameof(CreateRoutineFolderAsync), RoutineFolder, cancellationToken, request);
   public Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateRequest request, CancellationToken cancellationToken)
   {

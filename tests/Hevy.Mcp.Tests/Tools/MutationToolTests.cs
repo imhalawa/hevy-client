@@ -241,7 +241,65 @@ public sealed class MutationToolTests
     Assert.Equal(3, client.CallCount);
   }
 
+  // Break caught: a confirmed routine write whose response cannot be read leaving a stale pre-write catalog in memory.
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Every_routine_mutation_invalidates_before_a_possible_post_commit_failure(bool update)
+  {
+    var client = new FakeHevyClient
+    {
+      Routines = new(1, 1, [FakeHevyClient.SampleRoutine()]),
+      CreateRoutineHandler = (_, _) => Task.FromException<Routine>(new HevyCommittedReadbackException()),
+      UpdateRoutineHandler = (_, _, _) => Task.FromException<Routine>(new HevyCommittedReadbackException()),
+    };
+    using var services = CachedServices(client);
+    var cache = services.GetRequiredService<HevyCache>();
+    await cache.GetRoutinesAsync(default);
+
+    var result = update
+        ? await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.UpdateRoutineRequest(), null, true, false, default)
+        : await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), false, default);
+    await cache.GetRoutinesAsync(default);
+
+    Assert.True(result.IsError);
+    Assert.Equal("committed_readback_failed", result.Structured().GetProperty("error").GetProperty("code").GetString());
+    Assert.Equal(3, client.CallCount);
+  }
+
+  // Break caught: caller cancellation after a committed custom-exercise write retaining a stale template catalog.
+  [Fact]
+  public async Task Template_mutation_invalidates_before_a_cancelled_post_commit_readback()
+  {
+    using var cancellation = new CancellationTokenSource();
+    var client = new FakeHevyClient
+    {
+      ExerciseTemplates = new(1, 1, [new ExerciseTemplate("template-1", "Squat", "weight_reps", "quadriceps", ["glutes"], EquipmentCategory.Barbell, false)]),
+      CreateExerciseTemplateHandler = (_, token) =>
+      {
+        cancellation.Cancel();
+        return Task.FromCanceled<ExerciseTemplate>(token);
+      },
+    };
+    using var services = CachedServices(client);
+    var cache = services.GetRequiredService<HevyCache>();
+    await cache.GetExerciseTemplatesAsync(default);
+
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+        ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, cancellation.Token));
+    await cache.GetExerciseTemplatesAsync(default);
+
+    Assert.Equal(3, client.CallCount);
+  }
+
   private static IServiceProvider Services(IHevyClient client) => new ServiceCollection()
       .AddSingleton(client)
+      .BuildServiceProvider();
+
+  private static ServiceProvider CachedServices(IHevyClient client) => new ServiceCollection()
+      .AddSingleton(client)
+      .AddMemoryCache(memory => memory.SizeLimit = 2)
+      .AddSingleton(TimeProvider.System)
+      .AddSingleton<HevyCache>()
       .BuildServiceProvider();
 }

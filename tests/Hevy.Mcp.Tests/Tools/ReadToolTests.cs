@@ -85,6 +85,26 @@ public sealed class ReadToolTests
     Assert.Equal([10, 10], upstreamPageSizes);
   }
 
+  [Theory]
+  [InlineData(false)]
+  [InlineData(true)]
+  public async Task Cached_catalog_paging_rejects_pages_beyond_the_computed_page_count(bool templates)
+  {
+    var client = new FakeHevyClient
+    {
+      Routines = new(1, 1, [FakeHevyClient.SampleRoutine()]),
+      ExerciseTemplates = new(1, 1, [new ExerciseTemplate("template-1", "Squat", "weight_reps", "quadriceps", [], EquipmentCategory.Barbell, false)]),
+    };
+    using var services = CachedServices(client);
+
+    var result = templates
+        ? await ExerciseReadTools.GetExerciseTemplates(services, 2, 10, "compact", default)
+        : await RoutineReadTools.GetRoutines(services, 2, 10, "compact", default);
+
+    Assert.True(result.IsError);
+    Assert.Equal("validation_error", result.Structured().GetProperty("error").GetProperty("code").GetString());
+  }
+
   [Fact]
   public async Task LowLevelCatalogReadsExpireAndReloadAfterSuccessfulRelatedMutations()
   {
