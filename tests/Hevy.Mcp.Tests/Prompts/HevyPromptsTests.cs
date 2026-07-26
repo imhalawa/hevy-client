@@ -70,6 +70,7 @@ public sealed class HevyPromptsTests
     start.Environment["HEVY_API_KEY"] = "prompt-contract-test";
     start.Environment.Remove("HEVY_MCP_TRANSPORT");
     start.Environment.Remove("HEVY_READ_ONLY");
+    start.Environment.Remove("HEVY_LOG_LEVEL");
     start.Environment.Remove("MCP_AUTH_TOKEN");
     return Process.Start(start) ?? throw new InvalidOperationException("Failed to start Hevy.Mcp.");
   }

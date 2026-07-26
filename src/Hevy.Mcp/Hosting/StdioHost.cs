@@ -1,4 +1,5 @@
 using Hevy.Mcp.Configuration;
+using Hevy.Mcp.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,12 @@ internal static class StdioHost
 
     var builder = Host.CreateApplicationBuilder(args);
     builder.Logging.ClearProviders();
-    builder.Services.AddHevyMcpServer(options).WithStdioServerTransport();
+    var diagnostics = RedactingLoggerProvider.Create(options, Console.Error);
+    if (diagnostics is not null)
+    {
+      builder.Logging.AddProvider(diagnostics);
+    }
+    builder.Services.AddHevyMcpServer(options, diagnostics).WithStdioServerTransport();
 
     using var host = builder.Build();
     await host.RunAsync(cancellationToken);

@@ -4,6 +4,7 @@ using Hevy.Client;
 using Hevy.Client.Models;
 using Hevy.Mcp.Caching;
 using Hevy.Mcp.Composite;
+using Hevy.Mcp.Diagnostics;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -26,6 +27,7 @@ public sealed class ToolOutputSchemaTests
         .AddSingleton<HevyCache>()
         .AddSingleton<SearchService>()
         .AddSingleton<TrainingAnalysisService>()
+        .AddSingleton(new DiagnosticSnapshot("test-version", "test-runtime", "stdio", false, false, "ready"))
         .BuildServiceProvider();
     var since = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
     var start = new DateOnly(2026, 7, 1);
@@ -72,6 +74,7 @@ public sealed class ToolOutputSchemaTests
       (typeof(CompositeTools), nameof(CompositeTools.GetWorkoutEvidence), await CompositeTools.GetWorkoutEvidence(services, 4, DateTimeOffset.Parse("2026-07-27T00:00:00Z"), 100, null, default)),
       (typeof(CompositeTools), nameof(CompositeTools.SummarizeTraining), await CompositeTools.SummarizeTraining(services, 4, DateTimeOffset.Parse("2026-07-27T00:00:00Z"), 100, null, default)),
       (typeof(CompositeTools), nameof(CompositeTools.SummarizeExerciseHistory), await CompositeTools.SummarizeExerciseHistory(services, "template-1", 4, DateTimeOffset.Parse("2026-07-27T00:00:00Z"), 100, null, default)),
+      (typeof(DiagnosticTools), nameof(DiagnosticTools.GetDiagnostics), DiagnosticTools.GetDiagnostics(services)),
     };
 
     foreach (var testCase in cases)

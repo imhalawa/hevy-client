@@ -16,6 +16,8 @@ public sealed class ToolInventoryTests
     "summarize_training",
   ];
 
+  private const string DiagnosticName = "get_diagnostics";
+
   private static readonly IReadOnlyDictionary<(string Method, string Path), string> ExpectedNames =
       new Dictionary<(string, string), string>
       {
@@ -67,6 +69,7 @@ public sealed class ToolInventoryTests
         .Where(pair => !readOnly || pair.Key.Method == "get")
         .Select(pair => pair.Value)
         .Concat(CompositeNames)
+        .Append(DiagnosticName)
         .Order().ToArray();
 
     Assert.Equal(expected, names.Order());
@@ -82,7 +85,7 @@ public sealed class ToolInventoryTests
       Assert.True(outputData.TryGetProperty("properties", out var outputDataProperties) && outputDataProperties.EnumerateObject().Any(), $"{name} data schema is not operation-specific.");
       Assert.False(input.GetProperty("properties").TryGetProperty("services", out _));
       Assert.False(input.GetProperty("properties").TryGetProperty("cancellation_token", out _));
-      Assert.True(Hint(annotations, "openWorldHint", defaultValue: true));
+      Assert.Equal(name != DiagnosticName, Hint(annotations, "openWorldHint", defaultValue: true));
 
       if (name.StartsWith("get_", StringComparison.Ordinal) || CompositeNames.Contains(name, StringComparer.Ordinal))
       {
@@ -118,6 +121,7 @@ public sealed class ToolInventoryTests
     AssertOutputShape(tools, "get_routines", "items", "page", "continuation");
     AssertOutputShape(tools, "get_exercise_history", "items", "page", "continuation");
     AssertOutputShape(tools, "get_body_measurement", "date");
+    AssertOutputShape(tools, DiagnosticName, "server_version", "runtime_version", "transport", "read_only", "diagnostics_enabled", "health");
     if (!readOnly)
     {
       AssertOutputShape(tools, "create_workout", "payload", "result", "dry_run", "validation_warnings");
@@ -178,6 +182,7 @@ public sealed class ToolInventoryTests
     startInfo.Environment["HEVY_API_KEY"] = "inventory-test-api-key";
     startInfo.Environment["HEVY_MCP_TRANSPORT"] = "stdio";
     startInfo.Environment["HEVY_READ_ONLY"] = readOnly ? "true" : "false";
+    startInfo.Environment.Remove("HEVY_LOG_LEVEL");
     startInfo.Environment.Remove("MCP_AUTH_TOKEN");
     return Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start Hevy.Mcp.");
   }

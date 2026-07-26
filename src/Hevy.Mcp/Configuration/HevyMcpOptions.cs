@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Hevy.Mcp.Configuration;
 
@@ -17,10 +18,13 @@ public sealed class HevyMcpOptions
 
   public bool ReadOnly { get; }
 
-  private HevyMcpOptions(HevyMcpTransport transport, bool readOnly, string? mcpAuthToken)
+  public LogLevel LogLevel { get; }
+
+  private HevyMcpOptions(HevyMcpTransport transport, bool readOnly, LogLevel logLevel, string? mcpAuthToken)
   {
     Transport = transport;
     ReadOnly = readOnly;
+    LogLevel = logLevel;
     McpAuthToken = mcpAuthToken;
   }
 
@@ -38,6 +42,7 @@ public sealed class HevyMcpOptions
 
     var transport = ParseTransport(getEnvironmentVariable("HEVY_MCP_TRANSPORT"));
     var readOnly = ParseReadOnly(getEnvironmentVariable("HEVY_READ_ONLY"));
+    var logLevel = ParseLogLevel(getEnvironmentVariable("HEVY_LOG_LEVEL"));
     var authToken = getEnvironmentVariable("MCP_AUTH_TOKEN");
 
     if (transport is HevyMcpTransport.Http)
@@ -58,10 +63,10 @@ public sealed class HevyMcpOptions
       }
     }
 
-    return new HevyMcpOptions(transport, readOnly, transport is HevyMcpTransport.Http ? authToken : null);
+    return new HevyMcpOptions(transport, readOnly, logLevel, transport is HevyMcpTransport.Http ? authToken : null);
   }
 
-  public override string ToString() => $"HevyMcpOptions {{ Transport = {Transport}, ReadOnly = {ReadOnly} }}";
+  public override string ToString() => $"HevyMcpOptions {{ Transport = {Transport}, ReadOnly = {ReadOnly}, LogLevel = {LogLevel} }}";
 
   private static HevyMcpTransport ParseTransport(string? value) => value switch
   {
@@ -77,6 +82,19 @@ public sealed class HevyMcpOptions
     "true" => true,
     "false" => false,
     _ => throw new InvalidOperationException("HEVY_READ_ONLY must be either 'true' or 'false'."),
+  };
+
+  private static LogLevel ParseLogLevel(string? value) => value switch
+  {
+    null => LogLevel.None,
+    "Trace" => LogLevel.Trace,
+    "Debug" => LogLevel.Debug,
+    "Information" => LogLevel.Information,
+    "Warning" => LogLevel.Warning,
+    "Error" => LogLevel.Error,
+    "Critical" => LogLevel.Critical,
+    "None" => LogLevel.None,
+    _ => throw new InvalidOperationException("HEVY_LOG_LEVEL must be one of Trace, Debug, Information, Warning, Error, Critical, or None."),
   };
 
   private static bool FixedTimeEquals(string left, string right) =>

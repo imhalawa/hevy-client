@@ -41,7 +41,7 @@ public sealed class StdioHandshakeTests
     Assert.Equal("hevy-client", initializeResponse.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
     Assert.Equal(2, toolsResponse.RootElement.GetProperty("id").GetInt32());
     var tools = toolsResponse.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray().ToArray();
-    Assert.Equal(27, tools.Length);
+    Assert.Equal(28, tools.Length);
     Assert.All(tools, tool =>
     {
       Assert.Equal("object", tool.GetProperty("inputSchema").GetProperty("type").GetString());
@@ -115,7 +115,33 @@ public sealed class StdioHandshakeTests
     Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
   }
 
-  private static Process StartServer(string? apiKey)
+  [Fact]
+  public async Task OptInDiagnosticsKeepStdoutProtocolOnlyAndWriteSafeRecordsToStderr()
+  {
+    using var process = StartServer("transport-fixture-secret-key", "Information");
+    await InitializeAsync(process);
+    await process.StandardInput.WriteLineAsync("""{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_diagnostics","arguments":{}}}""");
+    await process.StandardInput.FlushAsync();
+    using var response = await ReadProtocolMessageAsync(process, TimeSpan.FromSeconds(10));
+    process.StandardInput.Close();
+    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+    var result = response.RootElement.GetProperty("result");
+    Assert.False(result.GetProperty("isError").GetBoolean(), response.RootElement.GetRawText());
+    var snapshot = result.GetProperty("structuredContent").GetProperty("data");
+    Assert.Equal("stdio", snapshot.GetProperty("transport").GetString());
+    Assert.True(snapshot.GetProperty("diagnostics_enabled").GetBoolean());
+    Assert.DoesNotContain("transport-fixture-secret-key", response.RootElement.GetRawText(), StringComparison.Ordinal);
+    Assert.Equal(string.Empty, await process.StandardOutput.ReadToEndAsync());
+
+    var line = Assert.Single((await process.StandardError.ReadToEndAsync()).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+    using var diagnostic = JsonDocument.Parse(line);
+    Assert.Equal("diagnostics", diagnostic.RootElement.GetProperty("operation_category").GetString());
+    Assert.Equal("succeeded", diagnostic.RootElement.GetProperty("status").GetString());
+    Assert.DoesNotContain("transport-fixture-secret-key", line, StringComparison.Ordinal);
+  }
+
+  private static Process StartServer(string? apiKey, string? logLevel = null)
   {
     var startInfo = new ProcessStartInfo
     {
@@ -130,9 +156,14 @@ public sealed class StdioHandshakeTests
     startInfo.Environment.Remove("HEVY_MCP_TRANSPORT");
     startInfo.Environment.Remove("HEVY_READ_ONLY");
     startInfo.Environment.Remove("MCP_AUTH_TOKEN");
+    startInfo.Environment.Remove("HEVY_LOG_LEVEL");
     if (apiKey is not null)
     {
       startInfo.Environment["HEVY_API_KEY"] = apiKey;
+    }
+    if (logLevel is not null)
+    {
+      startInfo.Environment["HEVY_LOG_LEVEL"] = logLevel;
     }
 
     var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start Hevy.Mcp.");

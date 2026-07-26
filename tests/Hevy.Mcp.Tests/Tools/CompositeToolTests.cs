@@ -37,7 +37,7 @@ public sealed class CompositeToolTests
       Assert.Equal("object", tool.GetProperty("inputSchema").GetProperty("type").GetString());
       Assert.Equal("object", tool.GetProperty("outputSchema").GetProperty("type").GetString());
     });
-    Assert.Equal(readOnly ? 19 : 27, tools.Length);
+    Assert.Equal(readOnly ? 20 : 28, tools.Length);
   }
 
   [Fact]
@@ -119,6 +119,7 @@ public sealed class CompositeToolTests
     start.ArgumentList.Add(typeof(HevyMcpOptions).Assembly.Location);
     start.Environment["HEVY_API_KEY"] = "composite-contract-test";
     start.Environment["HEVY_READ_ONLY"] = readOnly.ToString().ToLowerInvariant();
+    start.Environment.Remove("HEVY_LOG_LEVEL");
     start.Environment.Remove("HEVY_MCP_TRANSPORT");
     start.Environment.Remove("MCP_AUTH_TOKEN");
     return Process.Start(start) ?? throw new InvalidOperationException("Failed to start Hevy.Mcp.");

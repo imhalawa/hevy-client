@@ -1,4 +1,5 @@
 using Hevy.Mcp.Configuration;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Hevy.Mcp.Tests.Configuration;
@@ -26,6 +27,40 @@ public sealed class HevyMcpOptionsTests
 
     Assert.Equal(HevyMcpTransport.Stdio, options.Transport);
     Assert.False(options.ReadOnly);
+    Assert.Equal(LogLevel.None, options.LogLevel);
+  }
+
+  [Theory]
+  [InlineData("Trace", LogLevel.Trace)]
+  [InlineData("Debug", LogLevel.Debug)]
+  [InlineData("Information", LogLevel.Information)]
+  [InlineData("Warning", LogLevel.Warning)]
+  [InlineData("Error", LogLevel.Error)]
+  [InlineData("Critical", LogLevel.Critical)]
+  [InlineData("None", LogLevel.None)]
+  public void FromEnvironmentAcceptsDocumentedLogLevels(string value, LogLevel expected)
+  {
+    var environment = ValidEnvironment();
+    environment["HEVY_LOG_LEVEL"] = value;
+
+    var options = HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault);
+
+    Assert.Equal(expected, options.LogLevel);
+  }
+
+  [Theory]
+  [InlineData("")]
+  [InlineData("information")]
+  [InlineData("Info")]
+  [InlineData("7")]
+  public void FromEnvironmentRejectsUndocumentedLogLevels(string value)
+  {
+    var environment = ValidEnvironment();
+    environment["HEVY_LOG_LEVEL"] = value;
+
+    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+
+    Assert.Contains("HEVY_LOG_LEVEL", exception.Message, StringComparison.Ordinal);
   }
 
   [Theory]
@@ -163,7 +198,7 @@ public sealed class HevyMcpOptionsTests
 
     Assert.DoesNotContain("hevy-key-secret", text, StringComparison.Ordinal);
     Assert.DoesNotContain("mcp-token-secret", text, StringComparison.Ordinal);
-    Assert.Equal("HevyMcpOptions { Transport = Http, ReadOnly = False }", text);
+    Assert.Equal("HevyMcpOptions { Transport = Http, ReadOnly = False, LogLevel = None }", text);
   }
 
   private static Dictionary<string, string?> ValidEnvironment() => new(StringComparer.Ordinal)

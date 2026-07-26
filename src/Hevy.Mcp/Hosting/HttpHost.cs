@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Hevy.Mcp.Configuration;
+using Hevy.Mcp.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,11 @@ internal static class HttpHost
         throw new InvalidOperationException("MCP_AUTH_TOKEN is required for HTTP transport.");
     var builder = WebApplication.CreateBuilder(args);
     builder.Logging.ClearProviders();
+    var diagnostics = RedactingLoggerProvider.Create(options, Console.Error);
+    if (diagnostics is not null)
+    {
+      builder.Logging.AddProvider(diagnostics);
+    }
 
     var allowedHosts = ParseAllowedHosts(builder.Configuration["AllowedHosts"]);
     builder.Services.AddHostFiltering(hostOptions =>
@@ -36,7 +42,7 @@ internal static class HttpHost
       hostOptions.AllowEmptyHosts = false;
       hostOptions.IncludeFailureMessage = false;
     });
-    builder.Services.AddHevyMcpServer(options).WithHttpTransport(transportOptions =>
+    builder.Services.AddHevyMcpServer(options, diagnostics).WithHttpTransport(transportOptions =>
         transportOptions.Stateless = true);
 
     var app = builder.Build();
