@@ -127,6 +127,20 @@ public sealed class HevyRetryHandlerTests
     Assert.Empty(delays);
   }
 
+  // Break caught: returning an unselected 5xx for a transmitted mutation, which invites the caller to replay an ambiguous write.
+  [Fact]
+  public async Task Post_maps_an_unselected_5xx_response_to_an_unknown_outcome_without_retrying()
+  {
+    var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.NotImplemented, "{}"));
+    using var client = CreateClient(handler, []);
+    using var request = JsonPost("v1/workouts");
+
+    var exception = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() => client.SendAsync(request, CancellationToken.None));
+
+    Assert.Equal(HttpStatusCode.NotImplemented, exception.StatusCode);
+    Assert.Single(handler.Requests);
+  }
+
   // Break caught: a non-idempotent POST being silently replayed after the server may have received its body.
   [Fact]
   public async Task Post_does_not_retry_and_reports_an_unknown_outcome_after_a_transient_response()

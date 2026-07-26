@@ -49,6 +49,13 @@ internal sealed class HevyRetryHandler : DelegatingHandler
         try
         {
           var response = await base.SendAsync(attemptRequest, cancellationToken);
+          if (mutation && (int)response.StatusCode >= 500 && !IsTransient(response.StatusCode))
+          {
+            var statusCode = response.StatusCode;
+            response.Dispose();
+            throw new HevyOutcomeUnknownException(statusCode);
+          }
+
           if (!IsTransient(response.StatusCode))
           {
             return response;

@@ -99,6 +99,21 @@ public sealed class HevyClientMutationTests
     Assert.True(Assert.Single(handler.Requests).CancellationToken.IsCancellationRequested);
   }
 
+  // Break caught: injected test transports labelling a write connection failure retryable even though the remote outcome is ambiguous.
+  [Fact]
+  public async Task Mutation_transport_failures_are_unknown_without_a_retry_handler()
+  {
+    var handler = new RecordingHttpMessageHandler((_, _) => throw new HttpRequestException("transient"));
+    var client = CreateClient(handler);
+
+    await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None));
+    await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
+        client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None));
+
+    Assert.Equal(2, handler.Requests.Count);
+  }
+
   // Break caught: update endpoints being treated as retry-safe without an endpoint-specific idempotency proof.
   [Fact]
   public async Task Only_the_documented_full_replacement_measurement_update_is_retried()

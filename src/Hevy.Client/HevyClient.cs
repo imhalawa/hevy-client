@@ -244,7 +244,7 @@ public sealed class HevyClient : IHevyClient
     }
     catch (HttpRequestException)
     {
-      throw new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, null);
+      throw new HevyOutcomeUnknownException();
     }
   }
 
@@ -262,7 +262,7 @@ public sealed class HevyClient : IHevyClient
     }
     catch (HttpRequestException)
     {
-      throw new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, null);
+      throw new HevyOutcomeUnknownException();
     }
   }
 
