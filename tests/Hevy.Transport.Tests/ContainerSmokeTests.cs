@@ -63,14 +63,18 @@ public static class DockerAvailabilityPolicy
       return DockerAvailabilityDecision.Skip;
     }
 
-    var hasConfiguredContext = !string.IsNullOrEmpty(configuredDockerContext);
+    // Compatibility: pinned Docker CLI v29.5.2 resolves a nonempty DOCKER_HOST before
+    // DOCKER_CONTEXT, despite the Docker CLI docs claiming the inverse. Re-audit this
+    // on every Docker client bump:
+    // https://github.com/docker/cli/blob/v29.5.2/cli/command/cli.go#L439-L456
+    // https://docs.docker.com/engine/reference/commandline/cli/#environment-variables
     var effectiveEndpoint = configuredDockerHost;
-    if (hasConfiguredContext || string.IsNullOrEmpty(effectiveEndpoint))
+    if (string.IsNullOrEmpty(effectiveEndpoint))
     {
       try
       {
-        var effectiveContext = hasConfiguredContext ? configuredDockerContext : null;
-        if (effectiveContext is null)
+        var effectiveContext = configuredDockerContext;
+        if (string.IsNullOrEmpty(effectiveContext))
         {
           var activeContext = await runner(
               ["context", "show"],
@@ -1216,14 +1220,35 @@ public sealed class ContainerSmokeInfrastructureTests
   }
 
   [Theory]
-  [InlineData("local", "unix:///var/run/docker.sock", "tcp://build-host:2375", DockerAvailabilityDecision.Skip)]
-  [InlineData("production", "tcp://build-host:2375", "unix:///var/run/docker.sock", DockerAvailabilityDecision.Fail)]
-  public async Task NonemptyDockerContextOverridesDockerHost(
+  [InlineData("local", "tcp://build-host:2375", DockerAvailabilityDecision.Fail)]
+  [InlineData("production", "unix:///var/run/docker.sock", DockerAvailabilityDecision.Skip)]
+  public async Task NonemptyDockerHostOverridesDockerContext(
       string configuredDockerContext,
-      string contextEndpoint,
       string configuredDockerHost,
       DockerAvailabilityDecision expected)
   {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Assert.Equal(
+        expected,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            UnexpectedDocker,
+            configuredDockerHost,
+            configuredDockerContext));
+  }
+
+  [Theory]
+  [InlineData(null)]
+  [InlineData("")]
+  public async Task BlankDockerHostFallsThroughToConfiguredContext(string? configuredDockerHost)
+  {
+    const string configuredDockerContext = "local";
     var probe = new DockerProbeResult(
         1,
         string.Empty,
@@ -1239,11 +1264,11 @@ public sealed class ContainerSmokeInfrastructureTests
           ["context", "inspect", "--format", "{{(index .Endpoints \"docker\").Host}}", "--", configuredDockerContext],
           arguments);
       return Task.FromResult(
-          new DockerCommandResult(0, $"{contextEndpoint}\n", string.Empty, ExecutableMissing: false));
+          new DockerCommandResult(0, "unix:///var/run/docker.sock\n", string.Empty, ExecutableMissing: false));
     }
 
     Assert.Equal(
-        expected,
+        DockerAvailabilityDecision.Skip,
         await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
@@ -1313,7 +1338,7 @@ public sealed class ContainerSmokeInfrastructureTests
             probe,
             isCi: false,
             UnexpectedDocker,
-            configuredDockerHost: "unix:///var/run/docker.sock",
+            configuredDockerHost: null,
             configuredDockerContext));
   }
 
