@@ -114,6 +114,23 @@ public sealed class HevyClientMutationTests
     Assert.Equal(2, handler.Requests.Count);
   }
 
+  // Break caught: injected transports returning an unselected mutation 5xx as retryable instead of acknowledging an ambiguous write.
+  [Fact]
+  public async Task Mutation_5xx_responses_are_unknown_without_a_retry_handler()
+  {
+    var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.NotImplemented, "{}"));
+    var client = CreateClient(handler);
+
+    var workoutException = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None));
+    var measurementException = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
+        client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None));
+
+    Assert.Equal(HttpStatusCode.NotImplemented, workoutException.StatusCode);
+    Assert.Equal(HttpStatusCode.NotImplemented, measurementException.StatusCode);
+    Assert.Equal(2, handler.Requests.Count);
+  }
+
   // Break caught: update endpoints being treated as retry-safe without an endpoint-specific idempotency proof.
   [Fact]
   public async Task Only_the_documented_full_replacement_measurement_update_is_retried()

@@ -236,6 +236,7 @@ public sealed class HevyClient : IHevyClient
     try
     {
       using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+      ThrowIfMutationOutcomeUnknown(response);
       return await HevyResponse.ReadAsync(response, responseTypeInfo, cancellationToken);
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -254,6 +255,7 @@ public sealed class HevyClient : IHevyClient
     try
     {
       using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+      ThrowIfMutationOutcomeUnknown(response);
       HevyResponse.EnsureSuccess(response);
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -283,6 +285,14 @@ public sealed class HevyClient : IHevyClient
     SetRetryDeadline(request);
 
     return request;
+  }
+
+  private static void ThrowIfMutationOutcomeUnknown(HttpResponseMessage response)
+  {
+    if ((int)response.StatusCode >= 500)
+    {
+      throw new HevyOutcomeUnknownException(response.StatusCode);
+    }
   }
 
   private void SetRetryDeadline(HttpRequestMessage request)
