@@ -91,12 +91,14 @@ internal sealed record ExerciseHistorySummary(
     DateTimeOffset RangeStartUtc,
     DateTimeOffset RangeEndUtc,
     int ChunkEntryCount,
+    int ScannedEntryCount,
     decimal ChunkVolumeKgReps,
     decimal? ChunkProgressionKgReps,
     ExerciseVolumeObservation? FirstObservation,
     ExerciseVolumeObservation? LastObservation,
     IReadOnlyList<ExerciseHistoryEvidence> Evidence,
     bool Truncated,
+    string? TruncationReason,
     string? Continuation,
     CompositeContinuationInputs? ContinuationInputs);
 
@@ -199,13 +201,15 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
         [HistoryPhase],
         exerciseTemplateId,
         Continuation.MaximumItemBudget);
+    var offset = ExerciseHistoryWindowRequest.PageOffset(cursor.NextPage, cursor.PageSize);
     var startDate = DateOnly.FromDateTime(cursor.Range.Start.UtcDateTime);
     var endDate = DateOnly.FromDateTime(cursor.Range.End.AddTicks(-1).UtcDateTime);
-    var history = await client.GetAllExerciseHistoryAsync(exerciseTemplateId, startDate, endDate, cancellationToken).ConfigureAwait(false);
-    var eligible = history.Where(entry => entry.WorkoutStartTime >= cursor.Range.Start && entry.WorkoutStartTime < cursor.Range.End)
-        .OrderBy(static entry => entry.WorkoutStartTime).ThenBy(static entry => entry.WorkoutId, StringComparer.Ordinal).ToArray();
-    var offset = checked((cursor.NextPage - 1) * cursor.PageSize);
-    var entries = eligible.Skip(offset).Take(cursor.PageSize).ToArray();
+    var result = await client.GetExerciseHistoryWindowAsync(
+        exerciseTemplateId,
+        new ExerciseHistoryWindowRequest(offset, cursor.PageSize, startDate, endDate, cursor.Range.Start, cursor.Range.End),
+        cancellationToken).ConfigureAwait(false);
+    var entries = result.Items.OrderBy(static entry => entry.WorkoutStartTime)
+        .ThenBy(static entry => entry.WorkoutId, StringComparer.Ordinal).ToArray();
     var observations = entries.GroupBy(static entry => entry.WorkoutId, StringComparer.Ordinal)
         .Select(group =>
         {
@@ -214,8 +218,8 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
           return new ExerciseVolumeObservation(group.Key, first.WorkoutStartTime, values.Sum());
         })
         .OrderBy(static observation => observation.StartTime).ThenBy(static observation => observation.WorkoutId, StringComparer.Ordinal).ToArray();
-    var more = offset + entries.Length < eligible.Length;
-    var next = more ? Next(cursor, HistoryPhase, cursor.NextPage + 1) : null;
+    var more = result.Truncated;
+    var next = more && result.TruncationReason is null ? Next(cursor, HistoryPhase, cursor.NextPage + 1) : null;
     var firstObservation = observations.FirstOrDefault();
     var lastObservation = observations.LastOrDefault();
     return new ExerciseHistorySummary(
@@ -225,12 +229,14 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
         cursor.Range.Start,
         cursor.Range.End,
         entries.Length,
+        result.ScannedItemCount,
         observations.Sum(static observation => observation.VolumeKgReps),
         observations.Length < 2 ? null : observations[^1].VolumeKgReps - observations[0].VolumeKgReps,
         firstObservation,
         lastObservation,
         observations.Select(static observation => new ExerciseHistoryEvidence(observation.WorkoutId, observation.StartTime, observation.VolumeKgReps)).ToArray(),
         more,
+        result.TruncationReason,
         next,
         Inputs(cursor, next));
   }

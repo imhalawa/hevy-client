@@ -91,15 +91,17 @@ internal static class ToolResults
       string detail) => new(page, pageCount, pageSize, detail, page < pageCount,
           page < pageCount ? new WorkoutEventContinuation(page + 1, pageSize, since, detail) : null);
 
-  internal static PageMeta<ExerciseHistoryContinuation> ExerciseHistoryPageMeta(
+  internal static ExerciseHistoryPageMeta ExerciseHistoryPageMeta(
       string exerciseTemplateId,
       int page,
-      int pageCount,
       int pageSize,
       DateOnly? startDate,
       DateOnly? endDate,
-      string detail) => new(page, pageCount, pageSize, detail, page < pageCount,
-          page < pageCount ? new ExerciseHistoryContinuation(exerciseTemplateId, page + 1, pageSize, startDate, endDate, detail) : null);
+      string detail,
+      int scannedItemCount,
+      bool truncated,
+      string? truncationReason) => new(page, pageSize, detail, scannedItemCount, truncated, truncationReason,
+          truncated && truncationReason is null ? new ExerciseHistoryContinuation(exerciseTemplateId, page + 1, pageSize, startDate, endDate, detail) : null);
 
   internal static MutationMeta DryRunMeta(bool force = false, DateTimeOffset? expectedUpdatedAt = null) =>
       new(true, force, expectedUpdatedAt, []);

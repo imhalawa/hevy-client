@@ -16,8 +16,7 @@ public sealed class FakeHevyClient : IHevyClient
   public Func<string, CancellationToken, Task<Routine>>? GetRoutineHandler { get; set; }
   public Func<int, int, CancellationToken, Task<PagedResult<Routine>>>? GetRoutinesHandler { get; set; }
   public Func<int, int, CancellationToken, Task<PagedResult<ExerciseTemplate>>>? GetExerciseTemplatesHandler { get; set; }
-  public Func<string, int, int, DateOnly?, DateOnly?, CancellationToken, Task<PagedResult<ExerciseHistoryEntry>>>? GetExerciseHistoryHandler { get; set; }
-  public Func<string, DateOnly?, DateOnly?, CancellationToken, Task<IReadOnlyList<ExerciseHistoryEntry>>>? GetAllExerciseHistoryHandler { get; set; }
+  public Func<string, ExerciseHistoryWindowRequest, CancellationToken, Task<ExerciseHistoryWindow>>? GetExerciseHistoryWindowHandler { get; set; }
   public Func<int, int, CancellationToken, Task<PagedResult<BodyMeasurement>>>? GetBodyMeasurementsHandler { get; set; }
   public Func<DateOnly, CancellationToken, Task<BodyMeasurement>>? GetBodyMeasurementHandler { get; set; }
 
@@ -76,17 +75,31 @@ public sealed class FakeHevyClient : IHevyClient
   public Task<ExerciseTemplate> GetExerciseTemplateAsync(string exerciseTemplateId, CancellationToken cancellationToken) => Return(nameof(GetExerciseTemplateAsync), ExerciseTemplate, cancellationToken, exerciseTemplateId);
   public Task<PagedResult<RoutineFolder>> GetRoutineFoldersAsync(int page, int pageSize, CancellationToken cancellationToken) => Return(nameof(GetRoutineFoldersAsync), RoutineFolders, cancellationToken, new { page, pageSize });
   public Task<RoutineFolder> GetRoutineFolderAsync(long folderId, CancellationToken cancellationToken) => Return(nameof(GetRoutineFolderAsync), RoutineFolder, cancellationToken, folderId);
-  public Task<PagedResult<ExerciseHistoryEntry>> GetExerciseHistoryAsync(string exerciseTemplateId, int page, int pageSize, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
+  public Task<ExerciseHistoryWindow> GetExerciseHistoryAsync(string exerciseTemplateId, int page, int pageSize, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
   {
     Record(nameof(GetExerciseHistoryAsync), new { exerciseTemplateId, page, pageSize, startDate, endDate }, cancellationToken);
-    return GetExerciseHistoryHandler?.Invoke(exerciseTemplateId, page, pageSize, startDate, endDate, cancellationToken) ?? Task.FromResult(ExerciseHistory);
+    var request = new ExerciseHistoryWindowRequest(ExerciseHistoryWindowRequest.PageOffset(page, pageSize), pageSize, startDate, endDate);
+    return GetExerciseHistoryWindowHandler?.Invoke(exerciseTemplateId, request, cancellationToken) ?? Task.FromResult(Window(request));
   }
 
-  public Task<IReadOnlyList<ExerciseHistoryEntry>> GetAllExerciseHistoryAsync(string exerciseTemplateId, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
+  public Task<ExerciseHistoryWindow> GetExerciseHistoryWindowAsync(string exerciseTemplateId, ExerciseHistoryWindowRequest request, CancellationToken cancellationToken)
   {
-    Record(nameof(GetAllExerciseHistoryAsync), new { exerciseTemplateId, startDate, endDate }, cancellationToken);
-    return GetAllExerciseHistoryHandler?.Invoke(exerciseTemplateId, startDate, endDate, cancellationToken)
-        ?? Task.FromResult(AllExerciseHistory ?? ExerciseHistory.Items);
+    Record(nameof(GetExerciseHistoryWindowAsync), new { exerciseTemplateId, request }, cancellationToken);
+    return GetExerciseHistoryWindowHandler?.Invoke(exerciseTemplateId, request, cancellationToken) ?? Task.FromResult(Window(request));
+  }
+
+  private ExerciseHistoryWindow Window(ExerciseHistoryWindowRequest request)
+  {
+    var source = (AllExerciseHistory ?? ExerciseHistory.Items)
+        .Where(entry => (request.EligibleStartTime is null || entry.WorkoutStartTime >= request.EligibleStartTime) &&
+                        (request.EligibleEndTime is null || entry.WorkoutStartTime < request.EligibleEndTime))
+        .ToArray();
+    var items = source.Skip(request.Offset).Take(request.Limit).ToArray();
+    var truncated = request.Offset + items.Length < source.Length;
+    var terminal = truncated && request.Offset + request.Limit >= ExerciseHistoryWindowRequest.MaximumScannedItems
+        ? ExerciseHistoryWindow.ItemSafetyCap
+        : null;
+    return new ExerciseHistoryWindow(items, truncated, Math.Min(source.Length, ExerciseHistoryWindowRequest.MaximumScannedItems), terminal);
   }
 
   public Task<PagedResult<BodyMeasurement>> GetBodyMeasurementsAsync(int page, int pageSize, CancellationToken cancellationToken)

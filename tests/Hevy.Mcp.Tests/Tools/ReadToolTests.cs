@@ -102,6 +102,19 @@ public sealed class ReadToolTests
   }
 
   [Fact]
+  public async Task ExerciseHistoryRejectsAPageBeyondTheStreamingScanBudgetBeforeClientIo()
+  {
+    var client = new FakeHevyClient();
+
+    var result = await ExerciseReadTools.GetExerciseHistory(
+        Services(client), "template-1", 101, 10, null, null, "full", CancellationToken.None);
+
+    Assert.True(result.IsError);
+    Assert.Equal("validation_error", result.Structured().GetProperty("error").GetProperty("code").GetString());
+    Assert.Equal(0, client.CallCount);
+  }
+
+  [Fact]
   public async Task UpstreamErrorsUseTheStableSafeEnvelope()
   {
     var client = new FakeHevyClient
@@ -137,7 +150,10 @@ public sealed class ReadToolTests
   [Fact]
   public async Task ExerciseHistoryContinuationPreservesIdentityAndDateFilters()
   {
-    var client = new FakeHevyClient { ExerciseHistory = new PagedResult<ExerciseHistoryEntry>(1, 2, []) };
+    var client = new FakeHevyClient
+    {
+      GetExerciseHistoryWindowHandler = (_, request, _) => Task.FromResult(new ExerciseHistoryWindow([], true, request.Offset + request.Limit)),
+    };
 
     var result = await ExerciseReadTools.GetExerciseHistory(
         Services(client), "template-1", 1, 7, new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 25), "compact", CancellationToken.None);
@@ -149,6 +165,7 @@ public sealed class ReadToolTests
     Assert.Equal("2026-07-01", next.GetProperty("start_date").GetString());
     Assert.Equal("2026-07-25", next.GetProperty("end_date").GetString());
     Assert.Equal("compact", next.GetProperty("detail").GetString());
+    Assert.InRange(result.Structured().GetProperty("meta").GetProperty("scanned_item_count").GetInt32(), 1, 1_000);
   }
 
   private static IServiceProvider Services(IHevyClient client) => new ServiceCollection()

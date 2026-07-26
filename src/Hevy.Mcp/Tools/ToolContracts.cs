@@ -41,6 +41,15 @@ internal sealed record ExerciseHistoryContinuation(
     DateOnly? EndDate,
     string Detail);
 
+internal sealed record ExerciseHistoryPageMeta(
+    int Page,
+    int PageSize,
+    string Detail,
+    int ScannedItemCount,
+    bool Truncated,
+    string? TruncationReason,
+    ExerciseHistoryContinuation? Continuation = null);
+
 internal sealed record MutationData<TPayload, TResult>(
     TPayload? Payload = default,
     TResult? Result = default)

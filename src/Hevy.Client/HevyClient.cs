@@ -14,6 +14,7 @@ public sealed class HevyClient : IHevyClient
 {
   private readonly HttpClient httpClient;
   private readonly string apiKey;
+  private readonly ExerciseHistoryReadLimits exerciseHistoryReadLimits;
 
   public HevyClient(HevyClientOptions options)
       : this(new HttpClient(CreateProductionPipeline(options), disposeHandler: true), options)
@@ -21,14 +22,22 @@ public sealed class HevyClient : IHevyClient
   }
 
   internal HevyClient(HttpClient httpClient, HevyClientOptions options)
+      : this(httpClient, options, ExerciseHistoryReadLimits.Default)
+  {
+  }
+
+  internal HevyClient(HttpClient httpClient, HevyClientOptions options, ExerciseHistoryReadLimits exerciseHistoryReadLimits)
   {
     ArgumentNullException.ThrowIfNull(httpClient);
     ArgumentNullException.ThrowIfNull(options);
+    ArgumentNullException.ThrowIfNull(exerciseHistoryReadLimits);
+    exerciseHistoryReadLimits.Validate();
 
     httpClient.BaseAddress = HevyAuthenticationHandler.ApiOrigin;
     httpClient.DefaultRequestHeaders.Remove("api-key");
     this.httpClient = httpClient;
     apiKey = options.ApiKey;
+    this.exerciseHistoryReadLimits = exerciseHistoryReadLimits;
   }
 
   internal static HevyRetryHandler CreateProductionPipeline(HevyClientOptions options)
@@ -100,35 +109,33 @@ public sealed class HevyClient : IHevyClient
   public Task<RoutineFolder> GetRoutineFolderAsync(long folderId, CancellationToken cancellationToken) =>
       GetAsync($"v1/routine_folders/{folderId.ToString(CultureInfo.InvariantCulture)}", HevyJsonContext.Default.RoutineFolder, cancellationToken);
 
-  public async Task<PagedResult<ExerciseHistoryEntry>> GetExerciseHistoryAsync(string exerciseTemplateId, int page, int pageSize, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
+  public Task<ExerciseHistoryWindow> GetExerciseHistoryAsync(string exerciseTemplateId, int page, int pageSize, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
   {
     ValidatePagination(page, pageSize, 10);
-    var history = await GetAllExerciseHistoryAsync(exerciseTemplateId, startDate, endDate, cancellationToken);
-    var itemCount = history.Count;
-    var pageCount = itemCount == 0 ? 0 : ((itemCount - 1) / pageSize) + 1;
-    var offset = (long)(page - 1) * pageSize;
-    var items = offset >= itemCount
-        ? Array.Empty<ExerciseHistoryEntry>()
-        : history.Skip((int)offset).Take(pageSize).ToArray();
-    return new PagedResult<ExerciseHistoryEntry>(page, pageCount, items);
+    var offset = ExerciseHistoryWindowRequest.PageOffset(page, pageSize);
+    return GetExerciseHistoryWindowAsync(
+        exerciseTemplateId,
+        new ExerciseHistoryWindowRequest(offset, pageSize, startDate, endDate),
+        cancellationToken);
   }
 
-  public async Task<IReadOnlyList<ExerciseHistoryEntry>> GetAllExerciseHistoryAsync(string exerciseTemplateId, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
+  public async Task<ExerciseHistoryWindow> GetExerciseHistoryWindowAsync(
+      string exerciseTemplateId,
+      ExerciseHistoryWindowRequest request,
+      CancellationToken cancellationToken)
   {
-    if (startDate is not null && endDate is not null && startDate > endDate)
-    {
-      throw new ArgumentException("The start date cannot be after the end date.", nameof(startDate));
-    }
+    ArgumentNullException.ThrowIfNull(request);
+    request.Validate();
 
     var query = new List<string>();
-    if (startDate is not null)
+    if (request.StartDate is not null)
     {
-      query.Add($"start_date={startDate.Value:yyyy-MM-dd}");
+      query.Add($"start_date={request.StartDate.Value:yyyy-MM-dd}");
     }
 
-    if (endDate is not null)
+    if (request.EndDate is not null)
     {
-      query.Add($"end_date={endDate.Value:yyyy-MM-dd}");
+      query.Add($"end_date={request.EndDate.Value:yyyy-MM-dd}");
     }
 
     var path = $"v1/exercise_history/{EscapeIdentifier(exerciseTemplateId, nameof(exerciseTemplateId))}";
@@ -137,8 +144,33 @@ public sealed class HevyClient : IHevyClient
       path += $"?{string.Join("&", query)}";
     }
 
-    var response = await GetAsync(path, HevyJsonContext.Default.ExerciseHistoryResponse, cancellationToken);
-    return response.ExerciseHistory.ToArray();
+    var finalUri = httpClient.BaseAddress is null ? null : new Uri(httpClient.BaseAddress, path);
+    HevyAuthenticationHandler.EnsureSafeTarget(finalUri);
+    using var httpRequest = new HttpRequestMessage(HttpMethod.Get, path);
+    httpRequest.Headers.TryAddWithoutValidation("api-key", apiKey);
+    SetRetryDeadline(httpRequest);
+
+    try
+    {
+      using var response = await httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+      HevyResponse.EnsureSuccess(response);
+      await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+      return await ExerciseHistoryStreamReader.ReadAsync(
+          stream,
+          request,
+          HevyJsonContext.Default.ExerciseHistoryEntry,
+          exerciseHistoryReadLimits.MaximumResponseBytes,
+          response.StatusCode,
+          cancellationToken);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+      throw;
+    }
+    catch (HttpRequestException)
+    {
+      throw new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, null);
+    }
   }
 
   public async Task<PagedResult<BodyMeasurement>> GetBodyMeasurementsAsync(int page, int pageSize, CancellationToken cancellationToken)

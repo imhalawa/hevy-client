@@ -199,33 +199,85 @@ public sealed class TrainingAnalysisServiceTests
     var result = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 2, null, default);
 
     Assert.Equal(1, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.GetAllExerciseHistoryAsync), client.LastOperation);
+    Assert.Equal(nameof(IHevyClient.GetExerciseHistoryWindowAsync), client.LastOperation);
     Assert.True(result.Truncated);
     Assert.NotNull(result.Continuation);
   }
 
-  [Theory]
-  [InlineData(100, 150)]
-  [InlineData(1_000, 1_050)]
-  public async Task ExerciseHistoryAggregatesRequestedWindowFromOneAllHistoryFetch(int limit, int entryCount)
+  [Fact]
+  public async Task ExerciseHistoryAggregatesRequestedWindowFromOneStreamingFetch()
   {
     var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
-    var history = Enumerable.Range(1, entryCount)
+    var history = Enumerable.Range(1, 150)
         .Select(index => History($"workout-{index:D3}", start.AddMinutes(index).ToString("O"), 100 + index, 5))
         .ToArray();
     var client = new FakeHevyClient { AllExerciseHistory = history };
     var service = new TrainingAnalysisService(client, new FixedTimeProvider(Now));
 
-    var first = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, limit, null, default);
-    var second = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, limit, first.Continuation, default);
+    var first = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 100, null, default);
+    var second = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 100, first.Continuation, default);
 
-    Assert.Equal(limit, first.ChunkEntryCount);
+    Assert.Equal(100, first.ChunkEntryCount);
+    Assert.InRange(first.ScannedEntryCount, 1, ExerciseHistoryWindowRequest.MaximumScannedItems);
     Assert.True(first.Truncated);
+    Assert.Null(first.TruncationReason);
     Assert.NotNull(first.ContinuationInputs);
-    Assert.Equal(entryCount - limit, second.ChunkEntryCount);
+    Assert.Equal(50, second.ChunkEntryCount);
     Assert.False(second.Truncated);
     Assert.Equal(2, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.GetAllExerciseHistoryAsync), client.LastOperation);
+    Assert.Equal(nameof(IHevyClient.GetExerciseHistoryWindowAsync), client.LastOperation);
+  }
+
+  [Fact]
+  public async Task ExerciseHistoryLimitOneThousandReturnsAnExplicitTerminalSafetyTruncation()
+  {
+    var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+    var history = Enumerable.Range(1, 1_050)
+        .Select(index => History($"workout-{index:D4}", start.AddMinutes(index).ToString("O"), 100 + index, 5))
+        .ToArray();
+    var client = new FakeHevyClient { AllExerciseHistory = history };
+    var service = new TrainingAnalysisService(client, new FixedTimeProvider(Now));
+
+    var result = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 1_000, null, default);
+
+    Assert.Equal(1_000, result.ChunkEntryCount);
+    Assert.Equal(1_000, result.ScannedEntryCount);
+    Assert.True(result.Truncated);
+    Assert.Equal(ExerciseHistoryWindow.ItemSafetyCap, result.TruncationReason);
+    Assert.Null(result.Continuation);
+    Assert.Null(result.ContinuationInputs);
+    Assert.Equal(1, client.CallCount);
+  }
+
+  [Fact]
+  public async Task ExerciseHistoryRejectsAnUnrepresentableContinuationOffsetBeforeClientIo()
+  {
+    var client = new FakeHevyClient();
+    var service = new TrainingAnalysisService(client, new FixedTimeProvider(Now));
+    var continuation = Continuation.Create(
+        "exercise-history-summary",
+        int.MaxValue,
+        new SortedDictionary<string, string?>(StringComparer.Ordinal)
+        {
+          ["end_utc"] = "2026-07-27T00:00:00.0000000+00:00",
+          ["exercise_template_id"] = "template-1",
+          ["limit"] = "100",
+          ["page_size"] = "100",
+          ["phase"] = "history",
+          ["start_utc"] = "2026-06-29T00:00:00.0000000+00:00",
+          ["weeks"] = "4",
+        },
+        Continuation.MaximumItemBudget);
+
+    await Assert.ThrowsAnyAsync<ArgumentException>(() => service.SummarizeExerciseHistoryAsync(
+        "template-1",
+        4,
+        DateTimeOffset.Parse("2026-07-27T00:00:00Z"),
+        100,
+        continuation,
+        default));
+
+    Assert.Equal(0, client.CallCount);
   }
 
   [Fact]

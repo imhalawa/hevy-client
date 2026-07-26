@@ -65,7 +65,7 @@ internal static class CompositeTools
   });
 
   [McpServerTool(Name = "summarize_exercise_history", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ExerciseHistorySummary, NoMeta>))]
-  [Description("Calculate deterministic bounded exercise-history volume and progression with supporting workout identifiers and UTC timestamps. No coaching is generated.")]
+  [Description("Calculate deterministic bounded exercise-history volume and progression with supporting workout identifiers and UTC timestamps. One official response is streamed with 1,000-item and 16 MiB safety limits; no coaching is generated.")]
   internal static Task<CallToolResult> SummarizeExerciseHistory(
       IServiceProvider services,
       string exercise_template_id,

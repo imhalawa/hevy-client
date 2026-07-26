@@ -56,6 +56,56 @@ public sealed class CompositeToolTests
     Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
   }
 
+  [Fact]
+  public async Task RealCompositeProtocolRejectsExtremeHistoryContinuationAsValidationError()
+  {
+    var token = Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(new
+    {
+      endpoint = "exercise-history-summary",
+      filters = new Dictionary<string, string?>
+      {
+        ["end_utc"] = "2026-07-27T00:00:00.0000000+00:00",
+        ["exercise_template_id"] = "template-1",
+        ["limit"] = "100",
+        ["page_size"] = "100",
+        ["phase"] = "history",
+        ["start_utc"] = "2026-06-29T00:00:00.0000000+00:00",
+        ["weeks"] = "4",
+      },
+      next_page = int.MaxValue,
+      remaining_item_budget = 1_000,
+    })).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    var request = JsonSerializer.Serialize(new
+    {
+      jsonrpc = "2.0",
+      id = 4,
+      method = "tools/call",
+      @params = new
+      {
+        name = "summarize_exercise_history",
+        arguments = new
+        {
+          exercise_template_id = "template-1",
+          weeks = 4,
+          range_end_utc = "2026-07-27T00:00:00Z",
+          limit = 100,
+          continuation = token,
+        },
+      },
+    });
+    using var process = StartServer(false);
+    await InitializeAsync(process);
+    await SendAsync(process, request);
+    using var response = await ReadAsync(process);
+    process.StandardInput.Close();
+    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+    var result = response.RootElement.GetProperty("result");
+    Assert.True(result.GetProperty("isError").GetBoolean());
+    Assert.Equal("validation_error", result.GetProperty("structuredContent").GetProperty("error").GetProperty("code").GetString());
+    Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
+  }
+
   private static Process StartServer(bool readOnly)
   {
     var start = new ProcessStartInfo

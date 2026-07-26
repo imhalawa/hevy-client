@@ -1,6 +1,7 @@
 using System.Net;
 using Hevy.Client;
 using Hevy.Client.Http;
+using Hevy.Client.Models;
 using TestSupport;
 using Xunit;
 
@@ -132,28 +133,27 @@ public sealed class HevyClientReadTests
 
     var page = await client.GetExerciseHistoryAsync("D04AC939", 2, 2, null, null, CancellationToken.None);
 
-    Assert.Equal(2, page.Page);
-    Assert.Equal(2, page.PageCount);
     Assert.Equal("workout-history-3", Assert.Single(page.Items).WorkoutId);
+    Assert.False(page.Truncated);
     Assert.Equal(
         "https://api.hevyapp.com/v1/exercise_history/D04AC939",
         Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
   }
 
   [Fact]
-  public async Task Get_all_exercise_history_returns_the_unpaginated_response_with_one_http_request()
+  public async Task Get_exercise_history_window_returns_a_bounded_response_with_one_http_request()
   {
     var handler = RespondingWith(Fixture.Read("exercise-history-three.json"));
     var client = CreateClient(handler);
 
-    var history = await client.GetAllExerciseHistoryAsync(
+    var history = await client.GetExerciseHistoryWindowAsync(
         "D04AC939",
-        new DateOnly(2024, 1, 1),
-        new DateOnly(2024, 12, 31),
+        new ExerciseHistoryWindowRequest(0, 3, new DateOnly(2024, 1, 1), new DateOnly(2024, 12, 31)),
         CancellationToken.None);
 
-    Assert.Equal(3, history.Count);
-    Assert.Equal(["workout-history-1", "workout-history-2", "workout-history-3"], history.Select(static entry => entry.WorkoutId));
+    Assert.Equal(3, history.Items.Count);
+    Assert.False(history.Truncated);
+    Assert.Equal(["workout-history-1", "workout-history-2", "workout-history-3"], history.Items.Select(static entry => entry.WorkoutId));
     Assert.Equal(
         "https://api.hevyapp.com/v1/exercise_history/D04AC939?start_date=2024-01-01&end_date=2024-12-31",
         Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
