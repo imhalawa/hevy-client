@@ -63,13 +63,14 @@ public static class DockerAvailabilityPolicy
       return DockerAvailabilityDecision.Skip;
     }
 
+    var hasConfiguredContext = !string.IsNullOrEmpty(configuredDockerContext);
     var effectiveEndpoint = configuredDockerHost;
-    if (string.IsNullOrEmpty(effectiveEndpoint))
+    if (hasConfiguredContext || string.IsNullOrEmpty(effectiveEndpoint))
     {
       try
       {
-        var effectiveContext = configuredDockerContext;
-        if (string.IsNullOrEmpty(effectiveContext))
+        var effectiveContext = hasConfiguredContext ? configuredDockerContext : null;
+        if (effectiveContext is null)
         {
           var activeContext = await runner(
               ["context", "show"],
@@ -81,13 +82,13 @@ public static class DockerAvailabilityPolicy
           }
         }
 
-        if (!IsSafeBoundedText(effectiveContext, maximumLength: 256))
+        if (!IsValidDockerContextName(effectiveContext))
         {
           return DockerAvailabilityDecision.Fail;
         }
 
         var inspection = await runner(
-            ["context", "inspect", "--format", DockerEndpointFormat, effectiveContext],
+            ["context", "inspect", "--format", DockerEndpointFormat, "--", effectiveContext],
             workingDirectory: null,
             timeout: TimeSpan.FromSeconds(10));
         if (!TryReadCommandValue(inspection, out effectiveEndpoint))
@@ -396,6 +397,25 @@ public static class DockerAvailabilityPolicy
 
   private static bool IsAsciiLetterOrDigit(char character) =>
       character is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9';
+
+  private static bool IsValidDockerContextName(string value)
+  {
+    const int maximumContextNameLength = 256;
+    if (value.Length is < 2 or > maximumContextNameLength || !IsAsciiLetterOrDigit(value[0]))
+    {
+      return false;
+    }
+
+    foreach (var character in value.AsSpan(1))
+    {
+      if (!IsAsciiLetterOrDigit(character) && character is not '_' and not '.' and not '+' and not '-')
+      {
+        return false;
+      }
+    }
+
+    return true;
+  }
 
   private static bool IsSafeBoundedText(string value, int maximumLength)
   {
@@ -1063,7 +1083,7 @@ public sealed class ContainerSmokeInfrastructureTests
         {
           ["context", "show"] => Task.FromResult(
               new DockerCommandResult(0, "production\n", string.Empty, ExecutableMissing: false)),
-          ["context", "inspect", "--format", _, "production"] => Task.FromResult(
+          ["context", "inspect", "--format", _, "--", "production"] => Task.FromResult(
               new DockerCommandResult(0, "tcp://build-host:2375\n", string.Empty, ExecutableMissing: false)),
           _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
         };
@@ -1099,7 +1119,7 @@ public sealed class ContainerSmokeInfrastructureTests
         string? workingDirectory,
         TimeSpan? timeout) => arguments switch
         {
-          ["context", "inspect", "--format", _, var inspectedContext]
+          ["context", "inspect", "--format", _, "--", var inspectedContext]
               when inspectedContext == contextName => Task.FromResult(
                   new DockerCommandResult(0, $"{endpoint}\n", string.Empty, ExecutableMissing: false)),
           _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
@@ -1131,7 +1151,7 @@ public sealed class ContainerSmokeInfrastructureTests
         {
           ["context", "show"] => Task.FromResult(
               new DockerCommandResult(0, "default\n", string.Empty, ExecutableMissing: false)),
-          ["context", "inspect", "--format", _, "default"] => Task.FromResult(
+          ["context", "inspect", "--format", _, "--", "default"] => Task.FromResult(
               new DockerCommandResult(1, string.Empty, "context inspection failed", ExecutableMissing: false)),
           _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
         };
@@ -1196,9 +1216,11 @@ public sealed class ContainerSmokeInfrastructureTests
   }
 
   [Theory]
-  [InlineData("unix:///var/run/docker.sock", DockerAvailabilityDecision.Skip)]
-  [InlineData("tcp://build-host:2375", DockerAvailabilityDecision.Fail)]
-  public async Task DockerHostOverridesPersistedAndNamedContexts(
+  [InlineData("local", "unix:///var/run/docker.sock", "tcp://build-host:2375", DockerAvailabilityDecision.Skip)]
+  [InlineData("production", "tcp://build-host:2375", "unix:///var/run/docker.sock", DockerAvailabilityDecision.Fail)]
+  public async Task NonemptyDockerContextOverridesDockerHost(
+      string configuredDockerContext,
+      string contextEndpoint,
       string configuredDockerHost,
       DockerAvailabilityDecision expected)
   {
@@ -1208,20 +1230,156 @@ public sealed class ContainerSmokeInfrastructureTests
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
-    Task<DockerCommandResult> UnexpectedDocker(
+    Task<DockerCommandResult> FakeDocker(
         IReadOnlyList<string> arguments,
         string? workingDirectory,
-        TimeSpan? timeout) => throw new InvalidOperationException(
-            $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
+        TimeSpan? timeout)
+    {
+      Assert.Equal(
+          ["context", "inspect", "--format", "{{(index .Endpoints \"docker\").Host}}", "--", configuredDockerContext],
+          arguments);
+      return Task.FromResult(
+          new DockerCommandResult(0, $"{contextEndpoint}\n", string.Empty, ExecutableMissing: false));
+    }
 
     Assert.Equal(
         expected,
         await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
-            UnexpectedDocker,
+            FakeDocker,
             configuredDockerHost,
-            configuredDockerContext: "default"));
+            configuredDockerContext));
+  }
+
+  [Theory]
+  [InlineData(null)]
+  [InlineData("")]
+  public async Task DockerHostIsUsedWhenDockerContextIsAbsent(string? configuredDockerContext)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Skip,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            UnexpectedDocker,
+            configuredDockerHost: LocalDockerEndpoint,
+            configuredDockerContext));
+  }
+
+  public static TheoryData<string> InvalidDockerContextNames => new()
+  {
+    "--format=unix:///var/run/docker.sock",
+    "-f=unix:///var/run/docker.sock",
+    " ",
+    "default remote",
+    "default;remote",
+    "default|remote",
+    "../default",
+    "default/../remote",
+    "C:\\docker",
+    "a",
+    "caf\u00e9",
+    new string('a', 257),
+  };
+
+  public static TheoryData<string> ValidDockerContextNames => new()
+  {
+    "default",
+    "desktop-linux",
+    "prod_eu.v2+blue",
+    new string('a', 256),
+  };
+
+  [Theory]
+  [MemberData(nameof(InvalidDockerContextNames))]
+  public async Task ConfiguredContextNamesOutsideDockerGrammarFailBeforeInspection(string configuredDockerContext)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            UnexpectedDocker,
+            configuredDockerHost: "unix:///var/run/docker.sock",
+            configuredDockerContext));
+  }
+
+  [Theory]
+  [MemberData(nameof(InvalidDockerContextNames))]
+  public async Task PersistedContextNamesOutsideDockerGrammarFailBeforeInspection(string activeContext)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    var commandCount = 0;
+    Task<DockerCommandResult> FakeDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout)
+    {
+      commandCount++;
+      Assert.Equal(["context", "show"], arguments);
+      return Task.FromResult(
+          new DockerCommandResult(0, $"{activeContext}\n", string.Empty, ExecutableMissing: false));
+    }
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            FakeDocker,
+            configuredDockerHost: null,
+            configuredDockerContext: null));
+    Assert.Equal(1, commandCount);
+  }
+
+  [Theory]
+  [MemberData(nameof(ValidDockerContextNames))]
+  public async Task ValidDockerContextNamesAreInspectedAsProtectedPositionals(string configuredDockerContext)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Task<DockerCommandResult> FakeDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout)
+    {
+      Assert.Equal(
+          ["context", "inspect", "--format", "{{(index .Endpoints \"docker\").Host}}", "--", configuredDockerContext],
+          arguments);
+      return Task.FromResult(
+          new DockerCommandResult(0, "unix:///var/run/docker.sock\n", string.Empty, ExecutableMissing: false));
+    }
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Skip,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            FakeDocker,
+            configuredDockerHost: null,
+            configuredDockerContext));
   }
 
   [Theory]
