@@ -12,6 +12,7 @@ internal sealed class HevyPrompts
       [Description("Number of UTC weeks to analyze, from 1 through 52.")] int weeks = 4) =>
       new(ChatRole.User,
           $"Call summarize_training with weeks={weeks}. If its result is truncated, follow its continuation before drawing conclusions. " +
+          "Compose partial chunks by summing chunk frequency and volume, retaining the earliest and latest timestamped observations for progression, and deriving missing periods only after all workout chunks are collected. " +
           "Use get_workout_evidence when more detail is needed. Clearly separate deterministic returned facts from interpretation. " +
           "Cite the returned evidence workout or exercise identifiers and UTC timestamps for every factual claim; do not invent evidence.");
 

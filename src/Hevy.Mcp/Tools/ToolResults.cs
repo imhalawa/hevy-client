@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Protocol;
 using Hevy.Client;
+using Hevy.Client.Models;
 using Hevy.Mcp.Caching;
 
 namespace Hevy.Mcp.Tools;
@@ -46,6 +47,14 @@ internal static class ToolResults
       services.GetService(typeof(T)) as T ?? throw new InvalidOperationException($"{typeof(T).Name} is unavailable.");
 
   internal static HevyCache? Cache(IServiceProvider services) => services.GetService(typeof(HevyCache)) as HevyCache;
+
+  internal static PagedResult<T> LocalPage<T>(IReadOnlyList<T> catalog, int page, int pageSize)
+  {
+    var pageCount = catalog.Count == 0 ? 0 : (catalog.Count + pageSize - 1) / pageSize;
+    var skip = (long)(page - 1) * pageSize;
+    var items = skip > int.MaxValue ? [] : catalog.Skip((int)skip).Take(pageSize).ToArray();
+    return new PagedResult<T>(page, pageCount, items);
+  }
 
   internal static void ValidatePagination(int page, int pageSize)
   {

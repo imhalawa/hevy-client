@@ -26,6 +26,8 @@ public sealed class HevyPromptsTests
     Assert.Contains("cite", text, StringComparison.OrdinalIgnoreCase);
     Assert.Contains("identifier", text, StringComparison.OrdinalIgnoreCase);
     Assert.Contains("timestamp", text, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains("summing chunk frequency and volume", text, StringComparison.OrdinalIgnoreCase);
+    Assert.Contains("earliest and latest", text, StringComparison.OrdinalIgnoreCase);
 
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));

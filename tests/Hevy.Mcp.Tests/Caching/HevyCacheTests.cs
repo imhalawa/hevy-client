@@ -120,6 +120,65 @@ public sealed class HevyCacheTests
     Assert.True(client.CallCount >= 3);
   }
 
+  [Fact]
+  public async Task CreatorCancellationCancelsOnlyItsWaitAndSharedLoadCompletesForAnotherWaiter()
+  {
+    var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var client = new FakeHevyClient
+    {
+      GetRoutinesHandler = async (page, _, _) =>
+      {
+        started.SetResult();
+        await release.Task;
+        return new PagedResult<Routine>(page, 1, [FakeHevyClient.SampleRoutine()]);
+      },
+    };
+    using var memory = CreateMemoryCache(100);
+    var cache = new HevyCache(client, memory, TimeProvider.System);
+    using var creatorCancellation = new CancellationTokenSource();
+
+    var creator = cache.GetRoutinesAsync(creatorCancellation.Token);
+    await started.Task;
+    var survivor = cache.GetRoutinesAsync(default);
+    creatorCancellation.Cancel();
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => creator);
+    release.SetResult();
+
+    Assert.Single(await survivor);
+    Assert.Equal(1, client.CallCount);
+    Assert.Single(await cache.GetRoutinesAsync(default));
+    Assert.Equal(1, client.CallCount);
+  }
+
+  [Fact]
+  public async Task LaterWaiterCancellationDoesNotCancelCreatorOrEvictSharedLoad()
+  {
+    var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var client = new FakeHevyClient
+    {
+      GetExerciseTemplatesHandler = async (page, _, _) =>
+      {
+        started.SetResult();
+        await release.Task;
+        return new PagedResult<ExerciseTemplate>(page, 1, [Template("template-1", "Squat")]);
+      },
+    };
+    using var memory = CreateMemoryCache(100);
+    var cache = new HevyCache(client, memory, TimeProvider.System);
+    var creator = cache.GetExerciseTemplatesAsync(default);
+    await started.Task;
+    using var waiterCancellation = new CancellationTokenSource();
+    var cancelledWaiter = cache.GetExerciseTemplatesAsync(waiterCancellation.Token);
+    waiterCancellation.Cancel();
+    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelledWaiter);
+    release.SetResult();
+
+    Assert.Single(await creator);
+    Assert.Equal(1, client.CallCount);
+  }
+
   private static MemoryCache CreateMemoryCache(long sizeLimit) => new(new MemoryCacheOptions { SizeLimit = sizeLimit });
 
   private static ExerciseTemplate Template(string id, string title) =>

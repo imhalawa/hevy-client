@@ -51,7 +51,7 @@ internal static class CompositeTools
   });
 
   [McpServerTool(Name = "summarize_training", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<TrainingSummary, NoMeta>))]
-  [Description("Calculate deterministic UTC-week frequency, weight-times-repetition volume, progression, missing-week gaps, and body-measurement deltas with evidence identifiers. No coaching is generated.")]
+  [Description("Calculate deterministic UTC-period frequency, weight-times-repetition volume, progression observations, missing-period gaps, and body-measurement deltas with evidence identifiers. Partial chunks are explicitly scoped and composable; no coaching is generated.")]
   internal static Task<CallToolResult> SummarizeTraining(
       IServiceProvider services,
       [Range(1, 52)] int weeks = 4,
@@ -61,7 +61,7 @@ internal static class CompositeTools
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
     var result = await ToolResults.Service<TrainingAnalysisService>(services).SummarizeTrainingAsync(weeks, range_end_utc, limit, continuation, cancellationToken);
-    return ToolResults.Success(result, $"Calculated a deterministic {result.Weeks}-week training summary from {result.WorkoutFrequency} workouts.");
+    return ToolResults.Success(result, $"Calculated a deterministic {result.Weeks}-week {result.MetricScope} training summary chunk from {result.ChunkWorkoutFrequency} workouts.");
   });
 
   [McpServerTool(Name = "summarize_exercise_history", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ExerciseHistorySummary, NoMeta>))]
@@ -76,6 +76,6 @@ internal static class CompositeTools
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
     var result = await ToolResults.Service<TrainingAnalysisService>(services).SummarizeExerciseHistoryAsync(exercise_template_id, weeks, range_end_utc, limit, continuation, cancellationToken);
-    return ToolResults.Success(result, $"Calculated exercise history from {result.EntryCount} entries.");
+    return ToolResults.Success(result, $"Calculated {result.MetricScope} exercise history from {result.ChunkEntryCount} entries.");
   });
 }

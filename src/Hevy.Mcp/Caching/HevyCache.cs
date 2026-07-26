@@ -55,18 +55,23 @@ internal sealed class HevyCache
         else
         {
           _memory.Remove(key);
-          entry = CreateEntry(key, readPage, now, cancellationToken);
+          entry = CreateEntry(key, readPage, now);
         }
       }
       else
       {
-        entry = CreateEntry(key, readPage, now, cancellationToken);
+        entry = CreateEntry(key, readPage, now);
       }
     }
 
     try
     {
-      return await entry.Load.Value.ConfigureAwait(false);
+      var load = entry.Load.Value;
+      return await load.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+    catch (OperationCanceledException) when (!entry.Load.Value.IsCanceled)
+    {
+      throw;
     }
     catch
     {
@@ -84,12 +89,11 @@ internal sealed class HevyCache
   private CacheEntry<T> CreateEntry<T>(
       string key,
       Func<int, int, CancellationToken, Task<PagedResult<T>>> readPage,
-      DateTimeOffset now,
-      CancellationToken cancellationToken)
+      DateTimeOffset now)
       where T : class
   {
     var entry = new CacheEntry<T>(
-        new Lazy<Task<IReadOnlyList<T>>>(() => LoadCompleteCatalogAsync(readPage, cancellationToken), LazyThreadSafetyMode.ExecutionAndPublication),
+        new Lazy<Task<IReadOnlyList<T>>>(() => LoadCompleteCatalogAsync(readPage, CancellationToken.None), LazyThreadSafetyMode.ExecutionAndPublication),
         now);
     _memory.Set(key, entry, new MemoryCacheEntryOptions { Size = 1 });
     return entry;

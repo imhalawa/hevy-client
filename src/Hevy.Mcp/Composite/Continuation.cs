@@ -38,11 +38,21 @@ internal static class Continuation
       string expectedEndpoint,
       IReadOnlyDictionary<string, string?> expectedFilters)
   {
+    ArgumentNullException.ThrowIfNull(expectedFilters);
+    var state = Parse(token, expectedEndpoint);
+    if (!FiltersEqual(state.Filters, expectedFilters))
+    {
+      throw new ArgumentException("The continuation does not match this endpoint and its original filters.", nameof(token));
+    }
+    return state;
+  }
+
+  internal static ContinuationState Parse(string token, string expectedEndpoint)
+  {
     if (string.IsNullOrWhiteSpace(token) || token.Length > 8_192)
     {
       throw new ArgumentException("The continuation is malformed.", nameof(token));
     }
-    ArgumentNullException.ThrowIfNull(expectedFilters);
 
     JsonDocument document;
     try
@@ -71,8 +81,7 @@ internal static class Continuation
         var remaining = root.GetProperty("remaining_item_budget").GetInt32();
         var filters = ReadFilters(root.GetProperty("filters"));
         Validate(endpoint, nextPage, remaining);
-        if (!string.Equals(endpoint, expectedEndpoint, StringComparison.Ordinal) ||
-            !FiltersEqual(filters, expectedFilters))
+        if (!string.Equals(endpoint, expectedEndpoint, StringComparison.Ordinal))
         {
           throw new ArgumentException("The continuation does not match this endpoint and its original filters.", nameof(token));
         }

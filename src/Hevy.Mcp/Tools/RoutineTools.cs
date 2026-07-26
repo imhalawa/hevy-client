@@ -14,7 +14,10 @@ internal static class RoutineReadTools
   {
     ToolResults.ValidatePagination(page, page_size);
     ToolResults.ValidateDetail(detail);
-    var result = await ToolResults.Client(services).GetRoutinesAsync(page, page_size, cancellationToken);
+    var cache = ToolResults.Cache(services);
+    var result = cache is null
+        ? await ToolResults.Client(services).GetRoutinesAsync(page, page_size, cancellationToken)
+        : ToolResults.LocalPage(await cache.GetRoutinesAsync(cancellationToken), page, page_size);
     object items = detail == "full" ? result.Items : result.Items.Select(static routine => new { routine.Id, routine.Title, routine.FolderId, routine.UpdatedAt, routine.CreatedAt }).ToArray();
     return ToolResults.Success(new { items }, $"Returned {result.Items.Count} routines.", ToolResults.PageMeta(result.Page, result.PageCount, page_size, detail));
   });
@@ -24,7 +27,12 @@ internal static class RoutineReadTools
   internal static Task<CallToolResult> GetRoutine(IServiceProvider services, string routine_id, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
     ToolResults.ValidateIdentifier(routine_id, nameof(routine_id));
-    var item = await ToolResults.Client(services).GetRoutineAsync(routine_id, cancellationToken);
+    var client = ToolResults.Client(services);
+    var cache = ToolResults.Cache(services);
+    var item = cache is null
+        ? await client.GetRoutineAsync(routine_id, cancellationToken)
+        : (await cache.GetRoutinesAsync(cancellationToken)).SingleOrDefault(routine => string.Equals(routine.Id, routine_id, StringComparison.Ordinal))
+            ?? await client.GetRoutineAsync(routine_id, cancellationToken);
     return ToolResults.Success(item, $"Returned routine {item.Id}.");
   });
 

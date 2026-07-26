@@ -14,7 +14,10 @@ internal static class ExerciseReadTools
   {
     ToolResults.ValidatePagination(page, page_size);
     ToolResults.ValidateDetail(detail);
-    var result = await ToolResults.Client(services).GetExerciseTemplatesAsync(page, page_size, cancellationToken);
+    var cache = ToolResults.Cache(services);
+    var result = cache is null
+        ? await ToolResults.Client(services).GetExerciseTemplatesAsync(page, page_size, cancellationToken)
+        : ToolResults.LocalPage(await cache.GetExerciseTemplatesAsync(cancellationToken), page, page_size);
     return ToolResults.Success(new { items = result.Items }, $"Returned {result.Items.Count} exercise templates.", ToolResults.PageMeta(result.Page, result.PageCount, page_size, detail));
   });
 
@@ -23,7 +26,12 @@ internal static class ExerciseReadTools
   internal static Task<CallToolResult> GetExerciseTemplate(IServiceProvider services, string exercise_template_id, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
     ToolResults.ValidateIdentifier(exercise_template_id, nameof(exercise_template_id));
-    var item = await ToolResults.Client(services).GetExerciseTemplateAsync(exercise_template_id, cancellationToken);
+    var client = ToolResults.Client(services);
+    var cache = ToolResults.Cache(services);
+    var item = cache is null
+        ? await client.GetExerciseTemplateAsync(exercise_template_id, cancellationToken)
+        : (await cache.GetExerciseTemplatesAsync(cancellationToken)).SingleOrDefault(template => string.Equals(template.Id, exercise_template_id, StringComparison.Ordinal))
+            ?? await client.GetExerciseTemplateAsync(exercise_template_id, cancellationToken);
     return ToolResults.Success(item, $"Returned exercise template {item.Id}.");
   });
 
