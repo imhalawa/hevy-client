@@ -2,6 +2,8 @@ using System.Reflection;
 using System.Text.Json;
 using Hevy.Client;
 using Hevy.Client.Models;
+using Hevy.Mcp.Caching;
+using Hevy.Mcp.Composite;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -17,7 +19,14 @@ public sealed class ToolOutputSchemaTests
   public async Task EveryOperationStructuredContentMatchesItsAdvertisedOutputSchema()
   {
     var client = CompleteClient();
-    var services = new ServiceCollection().AddSingleton<IHevyClient>(client).BuildServiceProvider();
+    var services = new ServiceCollection()
+        .AddSingleton<IHevyClient>(client)
+        .AddMemoryCache(memory => memory.SizeLimit = 2)
+        .AddSingleton(TimeProvider.System)
+        .AddSingleton<HevyCache>()
+        .AddSingleton<SearchService>()
+        .AddSingleton<TrainingAnalysisService>()
+        .BuildServiceProvider();
     var since = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
     var start = new DateOnly(2026, 7, 1);
     var end = new DateOnly(2026, 7, 25);
@@ -58,6 +67,11 @@ public sealed class ToolOutputSchemaTests
       (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.CreateBodyMeasurement), await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.CreateBodyMeasurementRequest(), false, default)),
       (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.UpdateBodyMeasurement), await MeasurementWriteTools.UpdateBodyMeasurement(services, end, FixtureFactory.UpdateBodyMeasurementRequest(), null, true, false, default)),
       (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.UpdateBodyMeasurement), await MeasurementWriteTools.UpdateBodyMeasurement(services, end, FixtureFactory.UpdateBodyMeasurementRequest(), since, false, false, default)),
+      (typeof(CompositeTools), nameof(CompositeTools.SearchRoutines), await CompositeTools.SearchRoutines(services, "leg", 100, null, default)),
+      (typeof(CompositeTools), nameof(CompositeTools.SearchExerciseTemplates), await CompositeTools.SearchExerciseTemplates(services, "squat", "barbell", "quadriceps", 100, null, default)),
+      (typeof(CompositeTools), nameof(CompositeTools.GetWorkoutEvidence), await CompositeTools.GetWorkoutEvidence(services, 4, DateTimeOffset.Parse("2026-07-27T00:00:00Z"), 100, null, default)),
+      (typeof(CompositeTools), nameof(CompositeTools.SummarizeTraining), await CompositeTools.SummarizeTraining(services, 4, DateTimeOffset.Parse("2026-07-27T00:00:00Z"), 100, null, default)),
+      (typeof(CompositeTools), nameof(CompositeTools.SummarizeExerciseHistory), await CompositeTools.SummarizeExerciseHistory(services, "template-1", 4, DateTimeOffset.Parse("2026-07-27T00:00:00Z"), 100, null, default)),
     };
 
     foreach (var testCase in cases)

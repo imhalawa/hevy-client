@@ -51,6 +51,7 @@ internal static class ExerciseWriteTools
     ToolValidation.Exercise(request.Exercise);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateExerciseTemplateRequest, ExerciseTemplate>(request), "Exercise-template payload is valid; no request was sent.", ToolResults.DryRunMeta());
     var result = await ToolResults.Client(services).CreateExerciseTemplateAsync(request, cancellationToken);
+    ToolResults.Cache(services)?.InvalidateExerciseTemplates();
     return ToolResults.Success(ToolResults.MutationResult<CreateExerciseTemplateRequest, ExerciseTemplate>(result), $"Created exercise template {result.Id}.", new MutationMeta(false));
   });
 }

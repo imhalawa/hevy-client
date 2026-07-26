@@ -1,5 +1,6 @@
 using Hevy.Client;
 using Hevy.Client.Models;
+using Hevy.Mcp.Caching;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using TestSupport;
@@ -178,6 +179,38 @@ public sealed class MutationToolTests
     Assert.Contains("do not expose updated_at", result.Structured().GetProperty("meta").GetProperty("guard_limitation").GetString(), StringComparison.Ordinal);
     Assert.Equal(1, client.CallCount);
     Assert.Equal(nameof(IHevyClient.GetBodyMeasurementAsync), client.LastOperation);
+  }
+
+  [Fact]
+  public async Task SuccessfulRelatedMutationsInvalidateCatalogsButDryRunsDoNot()
+  {
+    var client = new FakeHevyClient
+    {
+      Routines = new(1, 1, [FakeHevyClient.SampleRoutine()]),
+      ExerciseTemplates = new(1, 1, [new ExerciseTemplate("template-1", "Squat", "weight_reps", "quadriceps", ["glutes"], EquipmentCategory.Barbell, false)]),
+    };
+    var collection = new ServiceCollection()
+        .AddSingleton<IHevyClient>(client)
+        .AddMemoryCache(memory => memory.SizeLimit = 2)
+        .AddSingleton(TimeProvider.System)
+        .AddSingleton<HevyCache>();
+    using var services = collection.BuildServiceProvider();
+    var cache = services.GetRequiredService<HevyCache>();
+    await cache.GetRoutinesAsync(default);
+    await cache.GetExerciseTemplatesAsync(default);
+
+    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), true, default);
+    await cache.GetRoutinesAsync(default);
+    Assert.Equal(2, client.CallCount);
+
+    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), false, default);
+    await cache.GetRoutinesAsync(default);
+    await cache.GetExerciseTemplatesAsync(default);
+    Assert.Equal(4, client.CallCount);
+
+    await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, default);
+    await cache.GetExerciseTemplatesAsync(default);
+    Assert.Equal(6, client.CallCount);
   }
 
   private static IServiceProvider Services(IHevyClient client) => new ServiceCollection()

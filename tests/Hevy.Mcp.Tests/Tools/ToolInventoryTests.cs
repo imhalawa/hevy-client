@@ -7,6 +7,15 @@ namespace Hevy.Mcp.Tests.Tools;
 
 public sealed class ToolInventoryTests
 {
+  private static readonly string[] CompositeNames =
+  [
+    "get_workout_evidence",
+    "search_exercise_templates",
+    "search_routines",
+    "summarize_exercise_history",
+    "summarize_training",
+  ];
+
   private static readonly IReadOnlyDictionary<(string Method, string Path), string> ExpectedNames =
       new Dictionary<(string, string), string>
       {
@@ -56,7 +65,9 @@ public sealed class ToolInventoryTests
     var names = tools.Select(tool => tool.GetProperty("name").GetString()).ToArray();
     var expected = ExpectedNames
         .Where(pair => !readOnly || pair.Key.Method == "get")
-        .Select(pair => pair.Value).Order().ToArray();
+        .Select(pair => pair.Value)
+        .Concat(CompositeNames)
+        .Order().ToArray();
 
     Assert.Equal(expected, names.Order());
     Assert.Equal(names.Length, names.Distinct(StringComparer.Ordinal).Count());
@@ -73,7 +84,7 @@ public sealed class ToolInventoryTests
       Assert.False(input.GetProperty("properties").TryGetProperty("cancellation_token", out _));
       Assert.True(Hint(annotations, "openWorldHint", defaultValue: true));
 
-      if (name.StartsWith("get_", StringComparison.Ordinal))
+      if (name.StartsWith("get_", StringComparison.Ordinal) || CompositeNames.Contains(name, StringComparer.Ordinal))
       {
         Assert.True(Hint(annotations, "readOnlyHint", defaultValue: false));
       }

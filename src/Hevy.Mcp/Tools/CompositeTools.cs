@@ -1,0 +1,81 @@
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using Hevy.Mcp.Composite;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+
+namespace Hevy.Mcp.Tools;
+
+internal static class CompositeTools
+{
+  [McpServerTool(Name = "search_routines", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<CompositeResult<RoutineSearchItem>, NoMeta>))]
+  [Description("Search the complete bounded routine catalog by invariant case-folded, whitespace-normalized title. Returns compact identifiers and titles.")]
+  internal static Task<CallToolResult> SearchRoutines(
+      IServiceProvider services,
+      string query,
+      [Range(1, 1_000)] int limit = 100,
+      string? continuation = null,
+      CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
+  {
+    var result = await ToolResults.Service<SearchService>(services).SearchRoutinesAsync(query, limit, continuation, cancellationToken);
+    return ToolResults.Success(result, $"Returned {result.Items.Count} matching routines.");
+  });
+
+  [McpServerTool(Name = "search_exercise_templates", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<CompositeResult<ExerciseTemplateSearchItem>, NoMeta>))]
+  [Description("Search the complete bounded exercise-template catalog by normalized title and optional exact equipment or primary/secondary muscle filters.")]
+  internal static Task<CallToolResult> SearchExerciseTemplates(
+      IServiceProvider services,
+      string query,
+      string? equipment = null,
+      string? muscle = null,
+      [Range(1, 1_000)] int limit = 100,
+      string? continuation = null,
+      CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
+  {
+    var result = await ToolResults.Service<SearchService>(services).SearchExerciseTemplatesAsync(query, equipment, muscle, limit, continuation, cancellationToken);
+    return ToolResults.Success(result, $"Returned {result.Items.Count} matching exercise templates.");
+  });
+
+  [McpServerTool(Name = "get_workout_evidence", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<WorkoutEvidenceResult, NoMeta>))]
+  [Description("Get bounded workout identifiers, UTC timestamps, exercise identifiers, and counted weight-times-repetition evidence. Defaults to four UTC weeks.")]
+  internal static Task<CallToolResult> GetWorkoutEvidence(
+      IServiceProvider services,
+      [Range(1, 52)] int weeks = 4,
+      DateTimeOffset? range_end_utc = null,
+      [Range(1, 1_000)] int limit = 100,
+      string? continuation = null,
+      CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
+  {
+    var result = await ToolResults.Service<TrainingAnalysisService>(services).GetWorkoutEvidenceAsync(weeks, range_end_utc, limit, continuation, cancellationToken);
+    return ToolResults.Success(result, $"Returned {result.Items.Count} workout evidence records.");
+  });
+
+  [McpServerTool(Name = "summarize_training", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<TrainingSummary, NoMeta>))]
+  [Description("Calculate deterministic UTC-week frequency, weight-times-repetition volume, progression, missing-week gaps, and body-measurement deltas with evidence identifiers. No coaching is generated.")]
+  internal static Task<CallToolResult> SummarizeTraining(
+      IServiceProvider services,
+      [Range(1, 52)] int weeks = 4,
+      DateTimeOffset? range_end_utc = null,
+      [Range(1, 1_000)] int limit = 100,
+      string? continuation = null,
+      CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
+  {
+    var result = await ToolResults.Service<TrainingAnalysisService>(services).SummarizeTrainingAsync(weeks, range_end_utc, limit, continuation, cancellationToken);
+    return ToolResults.Success(result, $"Calculated a deterministic {result.Weeks}-week training summary from {result.WorkoutFrequency} workouts.");
+  });
+
+  [McpServerTool(Name = "summarize_exercise_history", ReadOnly = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<ExerciseHistorySummary, NoMeta>))]
+  [Description("Calculate deterministic bounded exercise-history volume and progression with supporting workout identifiers and UTC timestamps. No coaching is generated.")]
+  internal static Task<CallToolResult> SummarizeExerciseHistory(
+      IServiceProvider services,
+      string exercise_template_id,
+      [Range(1, 52)] int weeks = 4,
+      DateTimeOffset? range_end_utc = null,
+      [Range(1, 1_000)] int limit = 100,
+      string? continuation = null,
+      CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
+  {
+    var result = await ToolResults.Service<TrainingAnalysisService>(services).SummarizeExerciseHistoryAsync(exercise_template_id, weeks, range_end_utc, limit, continuation, cancellationToken);
+    return ToolResults.Success(result, $"Calculated exercise history from {result.EntryCount} entries.");
+  });
+}

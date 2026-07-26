@@ -1,5 +1,8 @@
 using Hevy.Client;
 using Hevy.Mcp.Configuration;
+using Hevy.Mcp.Caching;
+using Hevy.Mcp.Composite;
+using Hevy.Mcp.Prompts;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -19,6 +22,11 @@ internal static class ServiceRegistration
     services.AddSingleton(HevyClientOptions.FromEnvironment());
     services.AddSingleton<IHevyClient>(serviceProvider =>
         new HevyClient(serviceProvider.GetRequiredService<HevyClientOptions>()));
+    services.AddMemoryCache(memory => memory.SizeLimit = 2);
+    services.AddSingleton(TimeProvider.System);
+    services.AddSingleton<HevyCache>();
+    services.AddSingleton<SearchService>();
+    services.AddSingleton<TrainingAnalysisService>();
 
     var builder = services.AddMcpServer(serverOptions => serverOptions.ServerInfo = new Implementation
     {
@@ -33,6 +41,7 @@ internal static class ServiceRegistration
       typeof(ExerciseReadTools),
       typeof(MeasurementReadTools),
       typeof(UserTools),
+      typeof(CompositeTools),
     };
 
     if (!options.ReadOnly)
@@ -62,6 +71,7 @@ internal static class ServiceRegistration
         tool.ProtocolTool.OutputSchema = ToolSchemas.NormalizeWireValues(outputSchema);
       }
     }
+    builder.WithPrompts<HevyPrompts>(ToolResults.JsonOptions);
     builder.WithListToolsHandler((request, _) =>
     {
       var protocolTools = tools.Select(static tool => tool.ProtocolTool).ToList();

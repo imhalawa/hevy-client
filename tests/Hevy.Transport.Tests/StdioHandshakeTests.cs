@@ -41,7 +41,7 @@ public sealed class StdioHandshakeTests
     Assert.Equal("hevy-client", initializeResponse.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
     Assert.Equal(2, toolsResponse.RootElement.GetProperty("id").GetInt32());
     var tools = toolsResponse.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray().ToArray();
-    Assert.Equal(22, tools.Length);
+    Assert.Equal(27, tools.Length);
     Assert.All(tools, tool =>
     {
       Assert.Equal("object", tool.GetProperty("inputSchema").GetProperty("type").GetString());

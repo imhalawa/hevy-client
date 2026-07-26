@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Protocol;
 using Hevy.Client;
+using Hevy.Mcp.Caching;
 
 namespace Hevy.Mcp.Tools;
 
@@ -40,6 +41,11 @@ internal static class ToolResults
   internal static IHevyClient Client(IServiceProvider services) =>
       services.GetService(typeof(IHevyClient)) as IHevyClient ??
       throw new InvalidOperationException("IHevyClient is unavailable.");
+
+  internal static T Service<T>(IServiceProvider services) where T : class =>
+      services.GetService(typeof(T)) as T ?? throw new InvalidOperationException($"{typeof(T).Name} is unavailable.");
+
+  internal static HevyCache? Cache(IServiceProvider services) => services.GetService(typeof(HevyCache)) as HevyCache;
 
   internal static void ValidatePagination(int page, int pageSize)
   {

@@ -6,8 +6,8 @@
 
 - Design: approved and committed at `16fe62c`.
 - Implementation plan: complete and committed at `06b5bc3`.
-- Active task: Task 6 complete in this commit.
-- Next task: Task 7 — cache, continuations, search, deterministic analysis, and prompts.
+- Active task: Task 7 complete in this commit.
+- Next task: Task 8 — privacy-safe diagnostics and live-test guards.
 - Execution mode: subagent-driven with specification-compliance and code-quality review gates after each task.
 
 ## Non-negotiable constraints
@@ -37,6 +37,7 @@
 | Task 6 | Complete | `feat: expose complete Hevy MCP tool surface` | RED: empty real inventory, missing read/mutation handlers, and stale transport expectation. GREEN: MCP (65), transport (2), and full Release solution (144) suites pass with zero warnings | Exactly 22 snapshot-derived snake_case tools are exposed (14 GET tools in read-only mode). Results use authoritative structured content plus short text; inputs validate before I/O; reads propagate cancellation; writes support exact dry runs and safe guards. Since body measurements expose no `updated_at`, their replacement is conservatively force-only after current-state review. |
 | Task 6, self-review fix | Complete with concern | `fix: harden MCP tool result contracts` | RED: malformed binding returned no stable structured envelope, partial pages omitted continuation metadata, and dry runs omitted validation warnings. GREEN: full Release solution 144/144, zero warnings | Binding failures now return safe correlated validation envelopes; list metadata has `truncated` and explicit continuation inputs; dry runs return `validation_warnings`. Remaining concern: output schemas advertise a typed envelope with broad `object` data/meta slots, not payload-specific per-operation schemas. |
 | Task 6, fix round 1 | Complete | `fix: align MCP schemas with wire contracts` | RED: real stdio schema access failed because set type was boolean `true`; typed-output inventory and conformance failed; filtered continuations omitted required fields. GREEN: MCP 68/68, transport 3/3, full Release 148/148; zero warnings | Explicit schema normalization matches numeric RPE and official enum wires; every operation advertises typed output data/meta and actual structured content is recursively validated; event/history continuations preserve identity and filters. Body-measurement update remains force-only because upstream exposes no `updated_at`; schema, description, and results state that accepted limitation. |
+| Task 7 | Complete | `feat: add agent-oriented Hevy workflows` | RED: missing cache/continuation/search/analysis types; empty composite/prompt inventories; unbounded empty-page scan; incomplete measurement-delta coverage. GREEN: cache 5/5, continuation 8/8, search 6/6, analysis 8/8, real composite/prompt contracts 5/5, MCP 101/101, transport 3/3, full Release solution 181/181; zero warnings | Two complete immutable catalogs use a process-local, size-bounded 15-minute sliding cache with coalesced loads and post-write invalidation. Five named read-only composite tools expose normalized search and deterministic UTC evidence/analysis with opaque filter-bound continuations; two MCP prompts require evidence citations and actual completed-set/end-time collection. The parent instruction's “six” composite count was clarified as a typo because the approved spec and plan name exactly five; no unnamed write operation was invented, and Task 6 guarded replacements remain authoritative. |
 
 ## Resume instructions
 
