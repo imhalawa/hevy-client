@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -35,13 +36,17 @@ public delegate Task<DockerCommandResult> DockerCommandRunner(
 
 public static class DockerAvailabilityPolicy
 {
-  public static DockerAvailabilityDecision Evaluate(
+  private const string DockerEndpointFormat = "{{(index .Endpoints \"docker\").Host}}";
+
+  public static async Task<DockerAvailabilityDecision> EvaluateAsync(
       DockerProbeResult probe,
       bool isCi,
+      DockerCommandRunner runner,
       string? configuredDockerHost = null,
       string? configuredDockerContext = null)
   {
     ArgumentNullException.ThrowIfNull(probe);
+    ArgumentNullException.ThrowIfNull(runner);
 
     if (probe.ExitCode == 0)
     {
@@ -58,33 +63,85 @@ public static class DockerAvailabilityPolicy
       return DockerAvailabilityDecision.Skip;
     }
 
-    return DockerConfigurationAllowsLocalSkip(configuredDockerHost, configuredDockerContext) &&
-        IsRecognizedStoppedLocalDaemon(probe.StandardError)
-          ? DockerAvailabilityDecision.Skip
-          : DockerAvailabilityDecision.Fail;
+    var effectiveEndpoint = configuredDockerHost;
+    if (string.IsNullOrEmpty(effectiveEndpoint))
+    {
+      try
+      {
+        var effectiveContext = configuredDockerContext;
+        if (string.IsNullOrEmpty(effectiveContext))
+        {
+          var activeContext = await runner(
+              ["context", "show"],
+              workingDirectory: null,
+              timeout: TimeSpan.FromSeconds(10));
+          if (!TryReadCommandValue(activeContext, out effectiveContext))
+          {
+            return DockerAvailabilityDecision.Fail;
+          }
+        }
+
+        if (!IsSafeBoundedText(effectiveContext, maximumLength: 256))
+        {
+          return DockerAvailabilityDecision.Fail;
+        }
+
+        var inspection = await runner(
+            ["context", "inspect", "--format", DockerEndpointFormat, effectiveContext],
+            workingDirectory: null,
+            timeout: TimeSpan.FromSeconds(10));
+        if (!TryReadCommandValue(inspection, out effectiveEndpoint))
+        {
+          return DockerAvailabilityDecision.Fail;
+        }
+      }
+      catch (TimeoutException)
+      {
+        return DockerAvailabilityDecision.Fail;
+      }
+    }
+
+    return IsLocalEndpoint(effectiveEndpoint) && IsRecognizedStoppedLocalDaemon(probe.StandardError)
+        ? DockerAvailabilityDecision.Skip
+        : DockerAvailabilityDecision.Fail;
   }
 
-  private static bool DockerConfigurationAllowsLocalSkip(
-      string? configuredDockerHost,
-      string? configuredDockerContext)
+  private static bool TryReadCommandValue(DockerCommandResult result, out string value)
   {
-    if (!string.IsNullOrEmpty(configuredDockerHost) && !IsLocalEndpoint(configuredDockerHost))
+    value = string.Empty;
+    if (result.ExitCode != 0 || result.ExecutableMissing)
     {
       return false;
     }
 
-    return string.IsNullOrEmpty(configuredDockerContext) ||
-        string.Equals(configuredDockerContext, "default", StringComparison.Ordinal) ||
-        string.Equals(configuredDockerContext, "desktop-linux", StringComparison.Ordinal);
+    var output = result.StandardOutput;
+    if (output.EndsWith("\r\n", StringComparison.Ordinal))
+    {
+      output = output[..^2];
+    }
+    else if (output.EndsWith('\n'))
+    {
+      output = output[..^1];
+    }
+
+    if (!IsSafeBoundedText(output, maximumLength: 2048))
+    {
+      return false;
+    }
+
+    value = output;
+    return true;
   }
 
   private static bool IsRecognizedStoppedLocalDaemon(string error)
   {
-    var diagnostic = error.TrimEnd('\r', '\n');
-    if (diagnostic.Contains('\r', StringComparison.Ordinal) || diagnostic.Contains('\n', StringComparison.Ordinal))
+    const int maximumDiagnosticLength = 4096;
+    if (!IsSafeBoundedText(error, maximumDiagnosticLength))
     {
       return false;
     }
+
+    var diagnostic = error;
 
     const string daemonPrefix = "Cannot connect to the Docker daemon at ";
     const string daemonSuffix = ". Is the docker daemon running?";
@@ -170,43 +227,193 @@ public static class DockerAvailabilityPolicy
 
   private static bool IsLocalEndpoint(string endpoint)
   {
+    const int maximumEndpointLength = 2048;
+    if (!IsSafeBoundedText(endpoint, maximumEndpointLength))
+    {
+      return false;
+    }
+
     if (string.Equals(endpoint, "npipe:////./pipe/docker_engine", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(endpoint, "npipe:////./pipe/dockerDesktopLinuxEngine", StringComparison.OrdinalIgnoreCase))
     {
       return true;
     }
 
-    if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+    const string unixPrefix = "unix:///";
+    if (endpoint.StartsWith(unixPrefix, StringComparison.Ordinal))
+    {
+      return IsExactAbsoluteUnixSocketPath(endpoint.AsSpan(unixPrefix.Length));
+    }
+
+    ReadOnlySpan<char> authority;
+    if (endpoint.StartsWith("tcp://", StringComparison.Ordinal))
+    {
+      authority = endpoint.AsSpan("tcp://".Length);
+    }
+    else if (endpoint.StartsWith("http://", StringComparison.Ordinal))
+    {
+      authority = endpoint.AsSpan("http://".Length);
+    }
+    else if (endpoint.StartsWith("https://", StringComparison.Ordinal))
+    {
+      authority = endpoint.AsSpan("https://".Length);
+    }
+    else
     {
       return false;
     }
 
-    if (string.Equals(uri.Scheme, "unix", StringComparison.OrdinalIgnoreCase))
-    {
-      return endpoint.StartsWith("unix:///", StringComparison.OrdinalIgnoreCase) &&
-          string.IsNullOrEmpty(uri.Host) &&
-          string.IsNullOrEmpty(uri.UserInfo) &&
-          string.IsNullOrEmpty(uri.Query) &&
-          string.IsNullOrEmpty(uri.Fragment) &&
-          uri.AbsolutePath.Length > 1;
-    }
+    return IsExactLoopbackAuthority(authority);
+  }
 
-    if (!string.Equals(uri.Scheme, "tcp", StringComparison.OrdinalIgnoreCase) &&
-        !string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase) &&
-        !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+  private static bool IsExactAbsoluteUnixSocketPath(ReadOnlySpan<char> path)
+  {
+    if (path.IsEmpty || path[0] == '/' || path[^1] == '/')
     {
       return false;
     }
 
-    var pathIsEmpty = string.IsNullOrEmpty(uri.AbsolutePath) || string.Equals(uri.AbsolutePath, "/", StringComparison.Ordinal);
-    var hostIsLoopback = string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-        (IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address));
-    return string.IsNullOrEmpty(uri.UserInfo) &&
-        string.IsNullOrEmpty(uri.Query) &&
-        string.IsNullOrEmpty(uri.Fragment) &&
-        pathIsEmpty &&
-        uri.Port > 0 &&
-        hostIsLoopback;
+    var segmentStart = 0;
+    for (var index = 0; index <= path.Length; index++)
+    {
+      if (index < path.Length && path[index] != '/')
+      {
+        var character = path[index];
+        if (!IsAsciiLetterOrDigit(character) && character is not '.' and not '_' and not '-')
+        {
+          return false;
+        }
+
+        continue;
+      }
+
+      var segment = path[segmentStart..index];
+      if (segment.IsEmpty || segment.SequenceEqual(".") || segment.SequenceEqual(".."))
+      {
+        return false;
+      }
+
+      segmentStart = index + 1;
+    }
+
+    return true;
+  }
+
+  private static bool IsExactLoopbackAuthority(ReadOnlySpan<char> authority)
+  {
+    if (authority.IsEmpty)
+    {
+      return false;
+    }
+
+    ReadOnlySpan<char> host;
+    ReadOnlySpan<char> port;
+    if (authority[0] == '[')
+    {
+      var closingBracket = authority.IndexOf(']');
+      if (closingBracket <= 1 || closingBracket + 1 >= authority.Length || authority[closingBracket + 1] != ':')
+      {
+        return false;
+      }
+
+      host = authority[1..closingBracket];
+      port = authority[(closingBracket + 2)..];
+      if (host.Contains('%') || !IPAddress.TryParse(host, out var address) || !IPAddress.IsLoopback(address))
+      {
+        return false;
+      }
+    }
+    else
+    {
+      var separator = authority.LastIndexOf(':');
+      if (separator <= 0 || authority[..separator].Contains(':'))
+      {
+        return false;
+      }
+
+      host = authority[..separator];
+      port = authority[(separator + 1)..];
+      if (!host.Equals("localhost", StringComparison.OrdinalIgnoreCase) && !IsExactIpv4Loopback(host))
+      {
+        return false;
+      }
+    }
+
+    return IsValidPort(port);
+  }
+
+  private static bool IsExactIpv4Loopback(ReadOnlySpan<char> host)
+  {
+    Span<int> octets = stackalloc int[4];
+    var octetIndex = 0;
+    var segmentStart = 0;
+    for (var index = 0; index <= host.Length; index++)
+    {
+      if (index < host.Length && host[index] != '.')
+      {
+        continue;
+      }
+
+      if (octetIndex >= octets.Length || !TryParseDecimal(host[segmentStart..index], 255, out octets[octetIndex]))
+      {
+        return false;
+      }
+
+      octetIndex++;
+      segmentStart = index + 1;
+    }
+
+    return octetIndex == octets.Length && octets[0] == 127;
+  }
+
+  private static bool IsValidPort(ReadOnlySpan<char> port) =>
+      TryParseDecimal(port, ushort.MaxValue, out var value) && value > 0;
+
+  private static bool TryParseDecimal(ReadOnlySpan<char> value, int maximum, out int parsed)
+  {
+    parsed = 0;
+    if (value.IsEmpty || value.Length > 5 || (value.Length > 1 && value[0] == '0'))
+    {
+      return false;
+    }
+
+    foreach (var character in value)
+    {
+      if (character is < '0' or > '9')
+      {
+        return false;
+      }
+
+      parsed = (parsed * 10) + (character - '0');
+      if (parsed > maximum)
+      {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private static bool IsAsciiLetterOrDigit(char character) =>
+      character is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9';
+
+  private static bool IsSafeBoundedText(string value, int maximumLength)
+  {
+    if (string.IsNullOrEmpty(value) || value.Length > maximumLength)
+    {
+      return false;
+    }
+
+    foreach (var character in value)
+    {
+      if (char.IsControl(character) ||
+          char.GetUnicodeCategory(character) is UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator)
+      {
+        return false;
+      }
+    }
+
+    return true;
   }
 }
 
@@ -315,13 +522,14 @@ public sealed class ContainerSmokeFixture : IAsyncLifetime
         ["info", "--format", "{{json .ServerVersion}}"],
         workingDirectory: null,
         timeout: TimeSpan.FromSeconds(30));
-    var decision = DockerAvailabilityPolicy.Evaluate(
+    var decision = await DockerAvailabilityPolicy.EvaluateAsync(
         new DockerProbeResult(
             availability.ExitCode,
             availability.StandardOutput,
             availability.StandardError,
             availability.ExecutableMissing),
         isCi: !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CI")),
+        DockerProcess.RunAsync,
         configuredDockerHost: Environment.GetEnvironmentVariable("DOCKER_HOST"),
         configuredDockerContext: Environment.GetEnvironmentVariable("DOCKER_CONTEXT"));
     if (decision is DockerAvailabilityDecision.Skip)
@@ -699,18 +907,36 @@ public sealed class ContainerSmokeTests
 
 public sealed class ContainerSmokeInfrastructureTests
 {
+  private const string LocalDockerEndpoint = "unix:///var/run/docker.sock";
+
+  private static Task<DockerAvailabilityDecision> EvaluateWithLocalEndpointAsync(
+      DockerProbeResult probe,
+      bool isCi) => DockerAvailabilityPolicy.EvaluateAsync(
+          probe,
+          isCi,
+          UnexpectedDocker,
+          configuredDockerHost: LocalDockerEndpoint,
+          configuredDockerContext: null);
+
+  private static Task<DockerCommandResult> UnexpectedDocker(
+      IReadOnlyList<string> arguments,
+      string? workingDirectory,
+      TimeSpan? timeout) => throw new InvalidOperationException(
+          $"Configured DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
+
   [Theory]
   [InlineData(false, DockerAvailabilityDecision.Skip)]
   [InlineData(true, DockerAvailabilityDecision.Fail)]
-  public void MissingDockerExecutableSkipsOnlyOutsideCi(bool isCi, DockerAvailabilityDecision expected)
+  public async Task MissingDockerExecutableSkipsOnlyOutsideCi(bool isCi, DockerAvailabilityDecision expected)
   {
     var probe = new DockerProbeResult(127, string.Empty, "docker executable was not found", ExecutableMissing: true);
 
     Assert.Equal(
         expected,
-        DockerAvailabilityPolicy.Evaluate(
+        await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi,
+            UnexpectedDocker,
             configuredDockerHost: "ssh://builder@build-host",
             configuredDockerContext: "production"));
   }
@@ -726,7 +952,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("failed to connect to the docker API at tcp://[::1]:2375: dial tcp [::1]:2375: connect: connection refused")]
   [InlineData("failed to connect to the docker API at tcp://localhost:2375; check if the path is correct and if the daemon is running: dial tcp [::1]:2375: connect: connection refused")]
   [InlineData("failed to connect to the docker API at tcp://127.0.0.1:2375: connection refused")]
-  public void RecognizedStoppedLocalDaemonSkipsOnlyOutsideCi(string error)
+  public async Task RecognizedStoppedLocalDaemonSkipsOnlyOutsideCi(string error)
   {
     var probe = new DockerProbeResult(
         1,
@@ -734,8 +960,8 @@ public sealed class ContainerSmokeInfrastructureTests
         error,
         ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Skip, DockerAvailabilityPolicy.Evaluate(probe, isCi: false));
-    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: true));
+    Assert.Equal(DockerAvailabilityDecision.Skip, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
+    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: true));
   }
 
   [Theory]
@@ -744,12 +970,12 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("failed to connect to the docker API at tcp://[2001:db8::40]:2375: dial tcp [2001:db8::40]:2375: connect: connection refused")]
   [InlineData("Cannot connect to the Docker daemon at ssh://build-host. Is the docker daemon running?")]
   [InlineData("failed to connect to the docker API at ssh://builder@build-host:22: connection refused")]
-  public void RemoteDockerEndpointsNeverSkip(string error)
+  public async Task RemoteDockerEndpointsNeverSkip(string error)
   {
     var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: false));
-    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: true));
+    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
+    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: true));
   }
 
   [Theory]
@@ -764,22 +990,194 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("error during connect: Get http://%2F%2F.%2Fpipe%2Fdocker_engine-evil/v1.24/info: open //./pipe/docker_engine-evil: The system cannot find the file specified")]
   [InlineData("error during connect: Get \"http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/info: open //./pipe/docker_engine: The system cannot find the file specified")]
   [InlineData("error during connect: Get http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/info\": open //./pipe/docker_engine: The system cannot find the file specified")]
-  public void AdversarialDaemonDiagnosticsFailClosed(string error)
+  [InlineData("failed to connect to the docker API at tcp://localhost:2375/path/..: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://localhost:2375/.: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://localhost:2375/%2e: connection refused")]
+  [InlineData("failed to connect to the docker API at tcp://[::1]:2375/path/..: connection refused")]
+  [InlineData("Cannot connect to the Docker daemon at unix:////. Is the docker daemon running?")]
+  public async Task AdversarialDaemonDiagnosticsFailClosed(string error)
   {
     var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: false));
-    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: true));
+    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
+    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: true));
   }
 
   [Theory]
-  [InlineData("tcp://build-host:2375", null)]
-  [InlineData("ssh://builder@build-host", null)]
-  [InlineData(null, "production")]
-  [InlineData("tcp://127.0.0.1:2375", "production")]
-  public void ExplicitRemoteDockerConfigurationPreventsLocalAbsenceSkip(
-      string? configuredDockerHost,
-      string? configuredDockerContext)
+  [InlineData("\r")]
+  [InlineData("\n")]
+  [InlineData("\r\n")]
+  public async Task EvenTrailingDiagnosticLineControlsFailClosed(string separator)
+  {
+    var error =
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" +
+        separator;
+    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+
+    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
+  }
+
+  [Theory]
+  [InlineData("\0")]
+  [InlineData("\u0001")]
+  [InlineData("\u000b")]
+  [InlineData("\u001b")]
+  [InlineData("\u0085")]
+  [InlineData("\u2028")]
+  [InlineData("\u2029")]
+  public async Task UnicodeLineAndControlCharactersAnywhereInDiagnosticsFailClosed(string separator)
+  {
+    const string diagnostic =
+        "error during connect: Get http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/info: open //./pipe/docker_engine: The system cannot find the file specified";
+    var positions = new[]
+    {
+      0,
+      diagnostic.IndexOf("/info", StringComparison.Ordinal),
+      diagnostic.Length,
+    };
+
+    foreach (var position in positions)
+    {
+      var probe = new DockerProbeResult(
+          1,
+          string.Empty,
+          diagnostic.Insert(position, separator),
+          ExecutableMissing: false);
+      Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
+    }
+  }
+
+  [Fact]
+  public async Task PersistedActiveRemoteContextPreventsLocalAbsenceSkip()
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Task<DockerCommandResult> FakeDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout) => arguments switch
+        {
+          ["context", "show"] => Task.FromResult(
+              new DockerCommandResult(0, "production\n", string.Empty, ExecutableMissing: false)),
+          ["context", "inspect", "--format", _, "production"] => Task.FromResult(
+              new DockerCommandResult(0, "tcp://build-host:2375\n", string.Empty, ExecutableMissing: false)),
+          _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
+        };
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            FakeDocker,
+            configuredDockerHost: null,
+            configuredDockerContext: null));
+  }
+
+  [Theory]
+  [InlineData("default", "tcp://build-host:2375", DockerAvailabilityDecision.Fail)]
+  [InlineData("desktop-linux", "ssh://builder@build-host", DockerAvailabilityDecision.Fail)]
+  [InlineData("default", "unix:///var/run/docker.sock", DockerAvailabilityDecision.Skip)]
+  [InlineData("desktop-linux", "unix:///home/user/.docker/desktop/docker.sock", DockerAvailabilityDecision.Skip)]
+  public async Task NamedContextIsClassifiedByItsInspectedEndpoint(
+      string contextName,
+      string endpoint,
+      DockerAvailabilityDecision expected)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Task<DockerCommandResult> FakeDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout) => arguments switch
+        {
+          ["context", "inspect", "--format", _, var inspectedContext]
+              when inspectedContext == contextName => Task.FromResult(
+                  new DockerCommandResult(0, $"{endpoint}\n", string.Empty, ExecutableMissing: false)),
+          _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
+        };
+
+    Assert.Equal(
+        expected,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            FakeDocker,
+            configuredDockerHost: null,
+            configuredDockerContext: contextName));
+  }
+
+  [Fact]
+  public async Task FailedContextInspectionFailsClosed()
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Task<DockerCommandResult> FakeDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout) => arguments switch
+        {
+          ["context", "show"] => Task.FromResult(
+              new DockerCommandResult(0, "default\n", string.Empty, ExecutableMissing: false)),
+          ["context", "inspect", "--format", _, "default"] => Task.FromResult(
+              new DockerCommandResult(1, string.Empty, "context inspection failed", ExecutableMissing: false)),
+          _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
+        };
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            FakeDocker,
+            configuredDockerHost: null,
+            configuredDockerContext: null));
+  }
+
+  [Fact]
+  public async Task ContextResolutionRunnerFailureFailsClosed()
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Task<DockerCommandResult> FailingDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout) => throw new TimeoutException("context command timed out");
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            FailingDocker,
+            configuredDockerHost: null,
+            configuredDockerContext: null));
+  }
+
+  [Theory]
+  [InlineData("\0")]
+  [InlineData("\r")]
+  [InlineData("\n")]
+  [InlineData("\u0085")]
+  [InlineData("\u2028")]
+  [InlineData("\u2029")]
+  public async Task UnsafeConfiguredContextNameFailsBeforeInspection(string separator)
   {
     var probe = new DockerProbeResult(
         1,
@@ -789,34 +1187,148 @@ public sealed class ContainerSmokeInfrastructureTests
 
     Assert.Equal(
         DockerAvailabilityDecision.Fail,
-        DockerAvailabilityPolicy.Evaluate(probe, isCi: false, configuredDockerHost, configuredDockerContext));
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        DockerAvailabilityPolicy.Evaluate(probe, isCi: true, configuredDockerHost, configuredDockerContext));
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            UnexpectedDocker,
+            configuredDockerHost: null,
+            configuredDockerContext: $"default{separator}"));
   }
 
   [Theory]
-  [InlineData("unix:///var/run/docker.sock", null)]
-  [InlineData("tcp://127.0.0.1:2375", null)]
-  [InlineData("npipe:////./pipe/docker_engine", null)]
-  [InlineData(null, "default")]
-  [InlineData(null, "desktop-linux")]
-  public void ExplicitLocalDockerConfigurationPreservesLocalAbsenceSkip(
-      string? configuredDockerHost,
-      string? configuredDockerContext)
+  [InlineData("unix:///var/run/docker.sock", DockerAvailabilityDecision.Skip)]
+  [InlineData("tcp://build-host:2375", DockerAvailabilityDecision.Fail)]
+  public async Task DockerHostOverridesPersistedAndNamedContexts(
+      string configuredDockerHost,
+      DockerAvailabilityDecision expected)
   {
     var probe = new DockerProbeResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
+
+    Task<DockerCommandResult> UnexpectedDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout) => throw new InvalidOperationException(
+            $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
+
+    Assert.Equal(
+        expected,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            UnexpectedDocker,
+            configuredDockerHost,
+            configuredDockerContext: "default"));
+  }
+
+  [Theory]
+  [InlineData("tcp://localhost:2375/path/..")]
+  [InlineData("tcp://localhost:2375/.")]
+  [InlineData("tcp://localhost:2375/%2e")]
+  [InlineData("tcp://[::1]:2375/path/..")]
+  [InlineData("tcp://localhost:2375/")]
+  [InlineData("tcp://user@localhost:2375")]
+  [InlineData("tcp://localhost:2375?mode=local")]
+  [InlineData("tcp://localhost:2375#local")]
+  [InlineData("unix:////")]
+  [InlineData("unix:///var/run/../docker.sock")]
+  [InlineData("unix:///var/run/%64ocker.sock")]
+  [InlineData("npipe:////./pipe/docker_engine/extra")]
+  public async Task EffectiveEndpointRejectsNonCanonicalRawGrammar(string configuredDockerHost)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Task<DockerCommandResult> UnexpectedDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout) => throw new InvalidOperationException(
+            $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
+
+    Assert.Equal(
+        DockerAvailabilityDecision.Fail,
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            UnexpectedDocker,
+            configuredDockerHost,
+            configuredDockerContext: null));
+  }
+
+  [Theory]
+  [InlineData("\0")]
+  [InlineData("\u0001")]
+  [InlineData("\r")]
+  [InlineData("\n")]
+  [InlineData("\u0085")]
+  [InlineData("\u2028")]
+  [InlineData("\u2029")]
+  public async Task UnicodeLineAndControlCharactersAnywhereInEndpointsFailClosed(string separator)
+  {
+    const string endpoint = "tcp://localhost:2375";
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Task<DockerCommandResult> UnexpectedDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout) => throw new InvalidOperationException(
+            $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
+
+    foreach (var position in new[] { 0, endpoint.Length / 2, endpoint.Length })
+    {
+      Assert.Equal(
+          DockerAvailabilityDecision.Fail,
+          await DockerAvailabilityPolicy.EvaluateAsync(
+              probe,
+              isCi: false,
+              UnexpectedDocker,
+              endpoint.Insert(position, separator),
+              configuredDockerContext: null));
+    }
+  }
+
+  [Theory]
+  [InlineData("tcp://localhost:2375")]
+  [InlineData("tcp://127.0.0.1:2375")]
+  [InlineData("tcp://[::1]:2375")]
+  [InlineData("http://localhost:2375")]
+  [InlineData("https://127.0.0.1:2376")]
+  [InlineData("unix:///var/run/docker.sock")]
+  [InlineData("unix:///home/user/.docker/desktop/docker.sock")]
+  [InlineData("npipe:////./pipe/docker_engine")]
+  [InlineData("npipe:////./pipe/dockerDesktopLinuxEngine")]
+  public async Task EffectiveEndpointAcceptsExactLocalGrammar(string configuredDockerHost)
+  {
+    var probe = new DockerProbeResult(
+        1,
+        string.Empty,
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ExecutableMissing: false);
+
+    Task<DockerCommandResult> UnexpectedDocker(
+        IReadOnlyList<string> arguments,
+        string? workingDirectory,
+        TimeSpan? timeout) => throw new InvalidOperationException(
+            $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
 
     Assert.Equal(
         DockerAvailabilityDecision.Skip,
-        DockerAvailabilityPolicy.Evaluate(probe, isCi: false, configuredDockerHost, configuredDockerContext));
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        DockerAvailabilityPolicy.Evaluate(probe, isCi: true, configuredDockerHost, configuredDockerContext));
+        await DockerAvailabilityPolicy.EvaluateAsync(
+            probe,
+            isCi: false,
+            UnexpectedDocker,
+            configuredDockerHost,
+            configuredDockerContext: null));
   }
 
   [Theory]
@@ -825,12 +1337,12 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("context named production does not exist")]
   [InlineData("client API version is too old")]
   [InlineData("arbitrary exit one")]
-  public void ArbitraryDockerFailuresNeverSkip(string error)
+  public async Task ArbitraryDockerFailuresNeverSkip(string error)
   {
     var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: false));
-    Assert.Equal(DockerAvailabilityDecision.Fail, DockerAvailabilityPolicy.Evaluate(probe, isCi: true));
+    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
+    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: true));
   }
 
   [Fact]
