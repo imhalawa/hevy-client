@@ -33,14 +33,15 @@ internal sealed class SearchService(HevyCache cache)
   {
     ValidateLimit(limit);
     var filters = Filters(("query", Normalize(query)), ("limit", limit.ToString(CultureInfo.InvariantCulture)));
-    var catalog = await cache.GetRoutinesAsync(cancellationToken).ConfigureAwait(false);
-    var matches = catalog
-        .Where(routine => Normalize(routine.Title).Contains(filters["query"]!, StringComparison.Ordinal))
-        .Select(static routine => new RoutineSearchItem(routine.Id, CollapseWhitespace(routine.Title), routine.FolderId))
-        .OrderBy(static routine => routine.Title, StringComparer.OrdinalIgnoreCase)
-        .ThenBy(static routine => routine.Id, StringComparer.Ordinal)
-        .ToArray();
-    return Page("routines", matches, filters, limit, continuation);
+    return await ScanAsync(
+        "routines",
+        filters,
+        limit,
+        continuation,
+        cache.GetRoutinePageAsync,
+        routine => Normalize(routine.Title).Contains(filters["query"]!, StringComparison.Ordinal),
+        static routine => new RoutineSearchItem(routine.Id, CollapseWhitespace(routine.Title), routine.FolderId),
+        cancellationToken).ConfigureAwait(false);
   }
 
   internal async Task<CompositeResult<ExerciseTemplateSearchItem>> SearchExerciseTemplatesAsync(
@@ -59,25 +60,26 @@ internal sealed class SearchService(HevyCache cache)
         ("limit", limit.ToString(CultureInfo.InvariantCulture)),
         ("muscle", normalizedMuscle),
         ("query", Normalize(query)));
-    var catalog = await cache.GetExerciseTemplatesAsync(cancellationToken).ConfigureAwait(false);
-    var matches = catalog
-        .Where(template => Normalize(template.Title).Contains(filters["query"]!, StringComparison.Ordinal))
-        .Where(template => normalizedEquipment is null || string.Equals(EnumWire(template.EquipmentCategory), normalizedEquipment, StringComparison.Ordinal))
-        .Where(template => normalizedMuscle is null ||
+    return await ScanAsync(
+        "exercise-templates",
+        filters,
+        limit,
+        continuation,
+        cache.GetExerciseTemplatePageAsync,
+        template => Normalize(template.Title).Contains(filters["query"]!, StringComparison.Ordinal) &&
+            (normalizedEquipment is null || string.Equals(EnumWire(template.EquipmentCategory), normalizedEquipment, StringComparison.Ordinal)) &&
+            (normalizedMuscle is null ||
             string.Equals(Normalize(template.PrimaryMuscleGroup), normalizedMuscle, StringComparison.Ordinal) ||
-            template.SecondaryMuscleGroups.Any(group => string.Equals(Normalize(group), normalizedMuscle, StringComparison.Ordinal)))
-        .Select(static template => new ExerciseTemplateSearchItem(
+            template.SecondaryMuscleGroups.Any(group => string.Equals(Normalize(group), normalizedMuscle, StringComparison.Ordinal))),
+        static template => new ExerciseTemplateSearchItem(
             template.Id,
             CollapseWhitespace(template.Title),
             template.Type,
             template.PrimaryMuscleGroup,
             template.SecondaryMuscleGroups,
             template.EquipmentCategory,
-            template.IsCustom))
-        .OrderBy(static template => template.Title, StringComparer.OrdinalIgnoreCase)
-        .ThenBy(static template => template.Id, StringComparer.Ordinal)
-        .ToArray();
-    return Page("exercise-templates", matches, filters, limit, continuation);
+            template.IsCustom),
+        cancellationToken).ConfigureAwait(false);
   }
 
   internal static string Normalize(string? value) => CollapseWhitespace(value).ToUpperInvariant();
@@ -85,31 +87,69 @@ internal sealed class SearchService(HevyCache cache)
   internal static string CollapseWhitespace(string? value) =>
       string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
-  private static CompositeResult<T> Page<T>(
+  private static async Task<CompositeResult<TResult>> ScanAsync<TSource, TResult>(
       string endpoint,
-      IReadOnlyList<T> matches,
       IReadOnlyDictionary<string, string?> filters,
       int limit,
-      string? continuation)
-      where T : class
+      string? continuation,
+      Func<int, CancellationToken, Task<PagedResult<TSource>>> readPage,
+      Func<TSource, bool> matches,
+      Func<TSource, TResult> project,
+      CancellationToken cancellationToken)
+      where TSource : class
+      where TResult : class
   {
     var state = continuation is null
         ? new ContinuationState(endpoint, 1, filters, Continuation.MaximumItemBudget)
         : Continuation.Parse(continuation, endpoint, filters);
-    var take = Math.Min(limit, state.RemainingItemBudget);
-    var offset = checked((state.NextPage - 1) * limit);
-    if (offset > matches.Count)
+    var sourceOffset = state.NextPage - 1;
+    var page = sourceOffset / 10 + 1;
+    var skip = sourceOffset % 10;
+    var scanned = 0;
+    var complete = false;
+    var results = new List<TResult>(limit);
+    var expectedPageCount = -1;
+
+    while (results.Count < limit && scanned < Continuation.MaximumItemBudget)
     {
-      throw new ArgumentException("The continuation points beyond the available search results.", nameof(continuation));
+      var result = await readPage(page, cancellationToken).ConfigureAwait(false);
+      if (result.Page != page || result.PageCount < 0 || (expectedPageCount >= 0 && result.PageCount != expectedPageCount))
+      {
+        throw new InvalidOperationException("Hevy returned inconsistent catalog pagination.");
+      }
+      expectedPageCount = result.PageCount;
+      if (page > Math.Max(1, result.PageCount) || result.Items.Count > 10 || (result.PageCount > 0 && result.Items.Count == 0))
+      {
+        throw new InvalidOperationException("Hevy returned an impossible catalog page.");
+      }
+
+      var processedOnPage = 0;
+      foreach (var item in result.Items.Skip(skip))
+      {
+        processedOnPage++;
+        scanned++;
+        sourceOffset = checked(sourceOffset + 1);
+        if (matches(item)) results.Add(project(item));
+        if (results.Count == limit || scanned == Continuation.MaximumItemBudget) break;
+      }
+
+      var consumedPage = skip + processedOnPage >= result.Items.Count;
+      if (sourceOffset >= (long)result.PageCount * 10 || (page == result.PageCount && consumedPage))
+      {
+        complete = true;
+        break;
+      }
+      if (!consumedPage) break;
+      sourceOffset = checked(page * 10);
+      page++;
+      skip = 0;
     }
 
-    var items = matches.Skip(offset).Take(take).ToArray();
-    var more = offset + items.Length < matches.Count;
-    var remaining = state.RemainingItemBudget - items.Length;
-    var next = more && remaining > 0
-        ? Continuation.Create(endpoint, state.NextPage + 1, filters, remaining)
+    var more = !complete;
+    var next = more
+        ? Continuation.Create(endpoint, checked(sourceOffset + 1), filters, Continuation.MaximumItemBudget)
         : null;
-    return new CompositeResult<T>(items, filters, limit, more, next);
+    return new CompositeResult<TResult>(results.AsReadOnly(), filters, limit, more, next);
   }
 
   private static IReadOnlyDictionary<string, string?> Filters(params (string Key, string? Value)[] filters) =>

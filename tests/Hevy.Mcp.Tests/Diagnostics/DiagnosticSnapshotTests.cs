@@ -26,16 +26,16 @@ public sealed class DiagnosticSnapshotTests
     var snapshot = DiagnosticSnapshot.Create(options);
     var json = JsonSerializer.Serialize(snapshot, ToolResults.JsonOptions);
 
-    Assert.False(string.IsNullOrWhiteSpace(snapshot.ServerVersion));
-    Assert.False(string.IsNullOrWhiteSpace(snapshot.RuntimeVersion));
-    Assert.Equal(transport, snapshot.Transport);
-    Assert.Equal(readOnly, snapshot.ReadOnly);
-    Assert.True(snapshot.DiagnosticsEnabled);
-    Assert.Equal("ready", snapshot.Health);
-    Assert.DoesNotContain("fixture-api-key-never-output", json, StringComparison.Ordinal);
-    Assert.DoesNotContain("fixture-mcp-token-never-output", json, StringComparison.Ordinal);
-    Assert.DoesNotContain("header", json, StringComparison.OrdinalIgnoreCase);
-    Assert.DoesNotContain("query", json, StringComparison.OrdinalIgnoreCase);
-    Assert.DoesNotContain("measurement", json, StringComparison.OrdinalIgnoreCase);
+    (string.IsNullOrWhiteSpace(snapshot.ServerVersion)).Should().BeFalse();
+    (string.IsNullOrWhiteSpace(snapshot.RuntimeVersion)).Should().BeFalse();
+    (snapshot.Transport).Should().Be(transport);
+    (snapshot.ReadOnly).Should().Be(readOnly);
+    (snapshot.DiagnosticsEnabled).Should().BeTrue();
+    (snapshot.Health).Should().Be("ready");
+    (json).Should().NotContain("fixture-api-key-never-output");
+    (json).Should().NotContain("fixture-mcp-token-never-output");
+    (json).Should().NotContainEquivalentOf("header");
+    (json).Should().NotContainEquivalentOf("query");
+    (json).Should().NotContainEquivalentOf("measurement");
   }
 }

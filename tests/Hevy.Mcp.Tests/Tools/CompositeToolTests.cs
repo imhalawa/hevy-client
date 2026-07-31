@@ -30,14 +30,14 @@ public sealed class CompositeToolTests
 
     var tools = response.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray().ToArray();
     var composites = tools.Where(tool => ExpectedCompositeTools.Contains(tool.GetProperty("name").GetString(), StringComparer.Ordinal)).ToArray();
-    Assert.Equal(ExpectedCompositeTools, composites.Select(tool => tool.GetProperty("name").GetString()!).Order());
-    Assert.All(composites, tool =>
+    (composites.Select(tool => tool.GetProperty("name").GetString()!).Order()).Should().Equal(ExpectedCompositeTools);
+    (composites).Should().AllSatisfy(tool =>
     {
-      Assert.True(tool.GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean());
-      Assert.Equal("object", tool.GetProperty("inputSchema").GetProperty("type").GetString());
-      Assert.Equal("object", tool.GetProperty("outputSchema").GetProperty("type").GetString());
+      (tool.GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean()).Should().BeTrue();
+      (tool.GetProperty("inputSchema").GetProperty("type").GetString()).Should().Be("object");
+      (tool.GetProperty("outputSchema").GetProperty("type").GetString()).Should().Be("object");
     });
-    Assert.Equal(readOnly ? 20 : 28, tools.Length);
+    (tools.Length).Should().Be(readOnly ? 20 : 28);
   }
 
   [Fact]
@@ -51,9 +51,9 @@ public sealed class CompositeToolTests
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
     var result = response.RootElement.GetProperty("result");
-    Assert.True(result.GetProperty("isError").GetBoolean());
-    Assert.Equal("validation_error", result.GetProperty("structuredContent").GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
+    (result.GetProperty("isError").GetBoolean()).Should().BeTrue();
+    (result.GetProperty("structuredContent").GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
+    (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
   [Fact]
@@ -101,9 +101,9 @@ public sealed class CompositeToolTests
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
     var result = response.RootElement.GetProperty("result");
-    Assert.True(result.GetProperty("isError").GetBoolean());
-    Assert.Equal("validation_error", result.GetProperty("structuredContent").GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
+    (result.GetProperty("isError").GetBoolean()).Should().BeTrue();
+    (result.GetProperty("structuredContent").GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
+    (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
   private static Process StartServer(bool readOnly)
@@ -141,7 +141,7 @@ public sealed class CompositeToolTests
   private static async Task<JsonDocument> ReadAsync(Process process)
   {
     var line = await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
-    Assert.False(string.IsNullOrWhiteSpace(line));
-    return JsonDocument.Parse(line);
+    (string.IsNullOrWhiteSpace(line)).Should().BeFalse();
+    return JsonDocument.Parse(line!);
   }
 }

@@ -19,9 +19,9 @@ public sealed class WorkoutToolTests
 
     var result = await WorkoutReadTools.GetWorkouts(Services(client), page, pageSize, "compact", CancellationToken.None);
 
-    Assert.True(result.IsError);
-    Assert.Equal("validation_error", result.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(0, client.CallCount);
+    (result.IsError).Should().BeTrue();
+    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
+    (client.CallCount).Should().Be(0);
   }
 
   [Fact]
@@ -36,16 +36,16 @@ public sealed class WorkoutToolTests
     var structured = result.Structured();
     var item = structured.GetProperty("data").GetProperty("items")[0];
 
-    Assert.False(result.IsError);
-    Assert.Equal("workout-1", item.GetProperty("id").GetString());
-    Assert.False(item.TryGetProperty("exercises", out _));
-    Assert.Equal(2, structured.GetProperty("meta").GetProperty("page").GetInt32());
-    Assert.Equal(4, structured.GetProperty("meta").GetProperty("page_count").GetInt32());
-    Assert.Equal(3, structured.GetProperty("meta").GetProperty("page_size").GetInt32());
-    Assert.True(structured.GetProperty("meta").GetProperty("truncated").GetBoolean());
-    Assert.Equal(3, structured.GetProperty("meta").GetProperty("continuation").GetProperty("page").GetInt32());
-    Assert.Equal(3, structured.GetProperty("meta").GetProperty("continuation").GetProperty("page_size").GetInt32());
-    Assert.NotEmpty(result.Content);
+    (result.IsError).Should().BeFalse();
+    (item.GetProperty("id").GetString()).Should().Be("workout-1");
+    (item.TryGetProperty("exercises", out _)).Should().BeFalse();
+    (structured.GetProperty("meta").GetProperty("page").GetInt32()).Should().Be(2);
+    (structured.GetProperty("meta").GetProperty("page_count").GetInt32()).Should().Be(4);
+    (structured.GetProperty("meta").GetProperty("page_size").GetInt32()).Should().Be(3);
+    (structured.GetProperty("meta").GetProperty("truncated").GetBoolean()).Should().BeTrue();
+    (structured.GetProperty("meta").GetProperty("continuation").GetProperty("page").GetInt32()).Should().Be(3);
+    (structured.GetProperty("meta").GetProperty("continuation").GetProperty("page_size").GetInt32()).Should().Be(3);
+    (result.Content).Should().NotBeEmpty();
   }
 
   [Fact]
@@ -58,8 +58,8 @@ public sealed class WorkoutToolTests
 
     var result = await WorkoutReadTools.GetWorkouts(Services(client), 1, 10, "full", CancellationToken.None);
 
-    Assert.Equal("template-1", result.Structured().GetProperty("data").GetProperty("items")[0]
-        .GetProperty("exercises")[0].GetProperty("exercise_template_id").GetString());
+    (result.Structured().GetProperty("data").GetProperty("items")[0]
+        .GetProperty("exercises")[0].GetProperty("exercise_template_id").GetString()).Should().Be("template-1");
   }
 
   [Fact]
@@ -78,8 +78,8 @@ public sealed class WorkoutToolTests
     var pending = WorkoutReadTools.GetWorkouts(Services(client), 1, 10, "compact", cancellation.Token);
     await cancellation.CancelAsync();
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
-    Assert.Equal(cancellation.Token, client.LastCancellationToken);
+    await FluentActions.Awaiting(() => pending).Should().ThrowAsync<OperationCanceledException>();
+    (client.LastCancellationToken).Should().Be(cancellation.Token);
   }
 
   private static IServiceProvider Services(IHevyClient client) => new ServiceCollection()

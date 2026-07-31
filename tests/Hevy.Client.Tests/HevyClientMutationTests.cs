@@ -25,15 +25,14 @@ public sealed class HevyClientMutationTests
     }
   }
 
-  // Break caught: malformed mutation payloads crossing the network boundary instead of failing locally.
   [Fact]
   public async Task Mutation_methods_reject_invalid_bodies_before_sending_a_request()
   {
     var handler = RespondingWith(Fixture.Read("workout.json"));
     var client = CreateClient(handler);
 
-    await Assert.ThrowsAsync<ArgumentNullException>(() =>
-        client.CreateWorkoutAsync(null!, CancellationToken.None));
+    await FluentActions.Awaiting(() =>
+        client.CreateWorkoutAsync(null!, CancellationToken.None)).Should().ThrowExactlyAsync<ArgumentNullException>();
 
     var requestWithNullSet = new CreateWorkoutRequest(
         new WorkoutWrite(
@@ -44,13 +43,12 @@ public sealed class HevyClientMutationTests
             false,
             [new WorkoutExerciseWrite("D04AC939", null, null, [null!])]));
 
-    await Assert.ThrowsAsync<ArgumentNullException>(() =>
-        client.CreateWorkoutAsync(requestWithNullSet, CancellationToken.None));
+    await FluentActions.Awaiting(() =>
+        client.CreateWorkoutAsync(requestWithNullSet, CancellationToken.None)).Should().ThrowExactlyAsync<ArgumentNullException>();
 
-    Assert.Empty(handler.Requests);
+    (handler.Requests).Should().BeEmpty();
   }
 
-  // Break caught: mutation endpoint routes, verbs, or JSON envelopes drifting from the official contract.
   [Fact]
   public async Task Mutation_methods_send_documented_verbs_paths_and_bodies()
   {
@@ -72,14 +70,13 @@ public sealed class HevyClientMutationTests
     await client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None);
     await client.UpdateWorkoutAsync("workout/a", FixtureFactory.UpdateWorkoutRequest(), CancellationToken.None);
     await client.CreateRoutineAsync(FixtureFactory.CreateRoutineRequest(), CancellationToken.None);
-    Assert.Equal("routine-1", (await client.UpdateRoutineAsync("routine/a", FixtureFactory.UpdateRoutineRequest(), CancellationToken.None)).Id);
+    ((await client.UpdateRoutineAsync("routine/a", FixtureFactory.UpdateRoutineRequest(), CancellationToken.None)).Id).Should().Be("routine-1");
     await client.CreateRoutineFolderAsync(FixtureFactory.CreateRoutineFolderRequest(), CancellationToken.None);
     await client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), CancellationToken.None);
     await client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None);
     await client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), CancellationToken.None);
 
-    Assert.Equal(
-    [
+    (handler.Requests.Select(request => (request.Method, request.RequestUri!.AbsoluteUri, request.Body))).Should().Equal([
         (HttpMethod.Post, "https://api.hevyapp.com/v1/workouts", "{\"workout\":{\"title\":\"Friday Leg Day\",\"description\":\"Sanitized workout\",\"start_time\":\"2024-08-14T12:00:00+00:00\",\"end_time\":\"2024-08-14T12:30:00+00:00\",\"is_private\":false,\"exercises\":[{\"exercise_template_id\":\"D04AC939\",\"superset_id\":null,\"notes\":\"Sanitized note\",\"sets\":[{\"type\":\"normal\",\"weight_kg\":100,\"reps\":10,\"distance_meters\":null,\"duration_seconds\":null,\"custom_metric\":null,\"rpe\":8.5}]}]}}"),
         (HttpMethod.Put, "https://api.hevyapp.com/v1/workouts/workout%2Fa", "{\"workout\":{\"title\":\"Friday Leg Day\",\"description\":\"Sanitized workout\",\"start_time\":\"2024-08-14T12:00:00+00:00\",\"end_time\":\"2024-08-14T12:30:00+00:00\",\"is_private\":false,\"exercises\":[{\"exercise_template_id\":\"D04AC939\",\"superset_id\":null,\"notes\":\"Sanitized note\",\"sets\":[{\"type\":\"normal\",\"weight_kg\":100,\"reps\":10,\"distance_meters\":null,\"duration_seconds\":null,\"custom_metric\":null,\"rpe\":8.5}]}]}}"),
         (HttpMethod.Post, "https://api.hevyapp.com/v1/routines", "{\"routine\":{\"title\":\"April Leg Day\",\"folder_id\":null,\"notes\":\"Sanitized routine\",\"exercises\":[{\"exercise_template_id\":\"D04AC939\",\"superset_id\":null,\"rest_seconds\":90,\"notes\":\"Controlled\",\"sets\":[{\"type\":\"normal\",\"weight_kg\":100,\"reps\":10,\"distance_meters\":null,\"duration_seconds\":null,\"custom_metric\":null,\"rep_range\":{\"start\":8,\"end\":12}}]}]}}"),
@@ -91,11 +88,9 @@ public sealed class HevyClientMutationTests
         (HttpMethod.Get, "https://api.hevyapp.com/v1/body_measurements/2024-08-14", (string?)null),
         (HttpMethod.Put, "https://api.hevyapp.com/v1/body_measurements/2024-08-14", "{\"weight_kg\":80.5,\"lean_mass_kg\":65,\"fat_percent\":18.5,\"neck_cm\":38,\"shoulder_cm\":115,\"chest_cm\":95,\"left_bicep_cm\":35,\"right_bicep_cm\":35.5,\"left_forearm_cm\":28,\"right_forearm_cm\":28.5,\"abdomen\":85,\"waist\":80,\"hips\":95,\"left_thigh\":55,\"right_thigh\":55.5,\"left_calf\":37,\"right_calf\":37.5}"),
         (HttpMethod.Get, "https://api.hevyapp.com/v1/body_measurements/2024-08-14", (string?)null),
-    ],
-    handler.Requests.Select(request => (request.Method, request.RequestUri!.AbsoluteUri, request.Body)));
+    ]);
   }
 
-  // Break caught: mutation cancellation being converted to an API error or dropped before the transport.
   [Fact]
   public async Task Create_workout_propagates_cancellation_to_the_transport()
   {
@@ -108,26 +103,24 @@ public sealed class HevyClientMutationTests
     using var cancellation = new CancellationTokenSource();
     cancellation.Cancel();
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), cancellation.Token));
+    await FluentActions.Awaiting(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
 
-    Assert.True(Assert.Single(handler.Requests).CancellationToken.IsCancellationRequested);
+    ((handler.Requests).Should().ContainSingle().Which.CancellationToken.IsCancellationRequested).Should().BeTrue();
   }
 
-  // Break caught: an internal transport timeout after a mutation begins being exposed as cancellable/retryable.
   [Fact]
   public async Task Http_client_timeout_after_mutation_send_is_outcome_unknown()
   {
     using var httpClient = new HttpClient(new DelayingHandler()) { Timeout = TimeSpan.FromMilliseconds(20) };
     var client = new HevyClient(httpClient, new HevyClientOptions("test-api-key"));
 
-    var exception = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
 
-    Assert.Equal("outcome_unknown", exception.Code);
+    (exception.Code).Should().Be("outcome_unknown");
   }
 
-  // Break caught: a committed custom exercise being reported as a retryable whole-operation failure when read-back fails.
   [Fact]
   public async Task Committed_custom_exercise_with_failed_readback_is_non_retryable_and_forbids_replay()
   {
@@ -136,16 +129,15 @@ public sealed class HevyClientMutationTests
         RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}")]);
     var client = CreateClient(new RecordingHttpMessageHandler((_, _) => responses.Dequeue()));
 
-    var exception = await Assert.ThrowsAnyAsync<Exception>(() =>
-        client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() =>
+        client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), CancellationToken.None)).Should().ThrowAsync<Exception>()).Which;
 
-    Assert.Equal("committed_readback_failed", exception.GetType().GetProperty("Code")?.GetValue(exception));
-    Assert.Equal(false, exception.GetType().GetProperty("IsRetryable")?.GetValue(exception));
-    Assert.Contains("fetch", exception.Message, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("do not replay", exception.Message, StringComparison.OrdinalIgnoreCase);
+    (exception.GetType().GetProperty("Code")?.GetValue(exception)).Should().Be("committed_readback_failed");
+    (exception.GetType().GetProperty("IsRetryable")?.GetValue(exception)).Should().Be(false);
+    (exception.Message).Should().ContainEquivalentOf("fetch");
+    (exception.Message).Should().ContainEquivalentOf("do not replay");
   }
 
-  // Break caught: successful measurement POST/PUT followed by failed GET encouraging the agent to replay the write.
   [Theory]
   [InlineData(false)]
   [InlineData(true)]
@@ -157,16 +149,15 @@ public sealed class HevyClientMutationTests
     var client = CreateClient(new RecordingHttpMessageHandler((_, _) => responses.Dequeue()));
 
     var exception = update
-        ? await Assert.ThrowsAnyAsync<Exception>(() => client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), CancellationToken.None))
-        : await Assert.ThrowsAnyAsync<Exception>(() => client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None));
+        ? (await FluentActions.Awaiting(() => client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), CancellationToken.None)).Should().ThrowAsync<Exception>()).Which
+        : (await FluentActions.Awaiting(() => client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None)).Should().ThrowAsync<Exception>()).Which;
 
-    Assert.Equal("committed_readback_failed", exception.GetType().GetProperty("Code")?.GetValue(exception));
-    Assert.Equal(false, exception.GetType().GetProperty("IsRetryable")?.GetValue(exception));
-    Assert.Contains("fetch", exception.Message, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("do not replay", exception.Message, StringComparison.OrdinalIgnoreCase);
+    (exception.GetType().GetProperty("Code")?.GetValue(exception)).Should().Be("committed_readback_failed");
+    (exception.GetType().GetProperty("IsRetryable")?.GetValue(exception)).Should().Be(false);
+    (exception.Message).Should().ContainEquivalentOf("fetch");
+    (exception.Message).Should().ContainEquivalentOf("do not replay");
   }
 
-  // Break caught: a confirmed 2xx write whose direct body fails decoding being reported as safe to replay.
   [Theory]
   [MemberData(nameof(DirectMutationResponseFailures))]
   public async Task Every_direct_response_mutation_reports_post_commit_body_failures_as_non_replayable(string operation, string failure)
@@ -189,14 +180,13 @@ public sealed class HevyClientMutationTests
     var client = CreateClient(new RecordingHttpMessageHandler((_, _) =>
         RecordingHttpMessageHandler.Json(HttpStatusCode.Created, response)));
 
-    var exception = await Assert.ThrowsAsync<HevyCommittedReadbackException>(() => InvokeDirectMutationAsync(client, operation));
+    var exception = (await FluentActions.Awaiting(() => InvokeDirectMutationAsync(client, operation)).Should().ThrowExactlyAsync<HevyCommittedReadbackException>()).Which;
 
-    Assert.Equal("committed_readback_failed", exception.Code);
-    Assert.False(exception.IsRetryable);
-    Assert.Contains("do not replay", exception.Message, StringComparison.OrdinalIgnoreCase);
+    (exception.Code).Should().Be("committed_readback_failed");
+    (exception.IsRetryable).Should().BeFalse();
+    (exception.Message).Should().ContainEquivalentOf("do not replay");
   }
 
-  // Break caught: caller cancellation during a post-commit follow-up read being converted into a replayable write failure.
   [Theory]
   [InlineData("create_template")]
   [InlineData("create_measurement")]
@@ -219,54 +209,85 @@ public sealed class HevyClientMutationTests
     });
     var client = CreateClient(handler);
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => InvokeFollowUpMutationAsync(client, operation, cancellation.Token));
+    await FluentActions.Awaiting(() => InvokeFollowUpMutationAsync(client, operation, cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
 
-    Assert.Equal(2, handler.Requests.Count);
+    (handler.Requests.Count).Should().Be(2);
   }
 
-  // Break caught: injected test transports labelling a write connection failure retryable even though the remote outcome is ambiguous.
   [Fact]
   public async Task Mutation_transport_failures_are_unknown_without_a_retry_handler()
   {
     var handler = new RecordingHttpMessageHandler((_, _) => throw new HttpRequestException("transient"));
     var client = CreateClient(handler);
 
-    await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None));
-    await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
-        client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None));
+    await FluentActions.Awaiting(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
+    await FluentActions.Awaiting(() =>
+        client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
 
-    Assert.Equal(2, handler.Requests.Count);
+    (handler.Requests.Count).Should().Be(2);
   }
 
-  // Break caught: injected transports returning an unselected mutation 5xx as retryable instead of acknowledging an ambiguous write.
   [Fact]
   public async Task Mutation_5xx_responses_are_unknown_without_a_retry_handler()
   {
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.NotImplemented, "{}"));
     var client = CreateClient(handler);
 
-    var workoutException = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None));
-    var measurementException = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
-        client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None));
+    var workoutException = (await FluentActions.Awaiting(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
+    var measurementException = (await FluentActions.Awaiting(() =>
+        client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
 
-    Assert.Equal(HttpStatusCode.NotImplemented, workoutException.StatusCode);
-    Assert.Equal(HttpStatusCode.NotImplemented, measurementException.StatusCode);
-    Assert.Equal(2, handler.Requests.Count);
+    (workoutException.StatusCode).Should().Be(HttpStatusCode.NotImplemented);
+    (measurementException.StatusCode).Should().Be(HttpStatusCode.NotImplemented);
+    (handler.Requests.Count).Should().Be(2);
   }
 
-  // Break caught: update endpoints being treated as retry-safe without an endpoint-specific idempotency proof.
+  [Fact]
+  public async Task Mutation_5xx_response_preserves_a_single_safe_request_identifier_without_a_retry_handler()
+  {
+    var handler = new RecordingHttpMessageHandler((_, _) =>
+    {
+      var response = RecordingHttpMessageHandler.Json(HttpStatusCode.NotImplemented, "{}");
+      response.Headers.TryAddWithoutValidation("X-Request-Id", "safe-request-id");
+      return response;
+    });
+    var client = CreateClient(handler);
+
+    var exception = (await FluentActions.Awaiting(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
+
+    (exception.RequestId).Should().Be("safe-request-id");
+  }
+
+  [Fact]
+  public async Task Mutation_5xx_response_rejects_ambiguous_request_identifiers_without_changing_the_error_category()
+  {
+    var handler = new RecordingHttpMessageHandler((_, _) =>
+    {
+      var response = RecordingHttpMessageHandler.Json(HttpStatusCode.NotImplemented, "{}");
+      response.Headers.TryAddWithoutValidation("X-Request-Id", ["first-request-id", "second-request-id"]);
+      return response;
+    });
+    var client = CreateClient(handler);
+
+    var exception = (await FluentActions.Awaiting(() =>
+        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
+
+    (exception.RequestId).Should().BeNull();
+  }
+
   [Fact]
   public async Task Only_the_documented_full_replacement_measurement_update_is_retried()
   {
     var unsafeHandler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}"));
     var unsafeClient = CreateRetryingClient(unsafeHandler);
 
-    await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() =>
-        unsafeClient.UpdateWorkoutAsync("workout-1", FixtureFactory.UpdateWorkoutRequest(), CancellationToken.None));
+    await FluentActions.Awaiting(() =>
+        unsafeClient.UpdateWorkoutAsync("workout-1", FixtureFactory.UpdateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
 
-    Assert.Single(unsafeHandler.Requests);
+    (unsafeHandler.Requests).Should().ContainSingle();
 
     var responses = new Queue<HttpResponseMessage>([
         RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}"),
@@ -277,8 +298,8 @@ public sealed class HevyClientMutationTests
 
     var measurement = await safeClient.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), CancellationToken.None);
 
-    Assert.Equal(new DateOnly(2024, 8, 14), measurement.Date);
-    Assert.Equal(3, safeHandler.Requests.Count);
+    (measurement.Date).Should().Be(new DateOnly(2024, 8, 14));
+    (safeHandler.Requests.Count).Should().Be(3);
   }
 
   private static HevyClient CreateClient(RecordingHttpMessageHandler handler) =>

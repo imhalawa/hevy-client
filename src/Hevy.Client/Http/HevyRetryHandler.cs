@@ -52,8 +52,9 @@ internal sealed class HevyRetryHandler : DelegatingHandler
           if (mutation && (int)response.StatusCode >= 500 && !IsTransient(response.StatusCode))
           {
             var statusCode = response.StatusCode;
+            var requestId = HevyResponse.SafeRequestId(response);
             response.Dispose();
-            throw new HevyOutcomeUnknownException(statusCode);
+            throw new HevyOutcomeUnknownException(statusCode, requestId);
           }
 
           if (!IsTransient(response.StatusCode))
@@ -72,8 +73,9 @@ internal sealed class HevyRetryHandler : DelegatingHandler
           if (mutation)
           {
             var statusCode = response.StatusCode;
+            var requestId = HevyResponse.SafeRequestId(response);
             response.Dispose();
-            throw new HevyOutcomeUnknownException(statusCode);
+            throw new HevyOutcomeUnknownException(statusCode, requestId);
           }
 
           return response;

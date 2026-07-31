@@ -37,27 +37,27 @@ public sealed class StdioHandshakeTests
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-    Assert.Equal(1, initializeResponse.RootElement.GetProperty("id").GetInt32());
-    Assert.Equal("hevy-client", initializeResponse.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
-    Assert.Equal(2, toolsResponse.RootElement.GetProperty("id").GetInt32());
+    (initializeResponse.RootElement.GetProperty("id").GetInt32()).Should().Be(1);
+    (initializeResponse.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-client");
+    (toolsResponse.RootElement.GetProperty("id").GetInt32()).Should().Be(2);
     var tools = toolsResponse.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray().ToArray();
-    Assert.Equal(28, tools.Length);
-    Assert.All(tools, tool =>
+    (tools.Length).Should().Be(28);
+    (tools).Should().AllSatisfy(tool =>
     {
-      Assert.Equal("object", tool.GetProperty("inputSchema").GetProperty("type").GetString());
-      Assert.Equal("object", tool.GetProperty("outputSchema").GetProperty("type").GetString());
+      (tool.GetProperty("inputSchema").GetProperty("type").GetString()).Should().Be("object");
+      (tool.GetProperty("outputSchema").GetProperty("type").GetString()).Should().Be("object");
     });
     var callResult = callResponse.RootElement.GetProperty("result");
-    Assert.False(callResult.GetProperty("isError").GetBoolean());
-    Assert.Equal("Transport Dry Run", callResult.GetProperty("structuredContent").GetProperty("data").GetProperty("payload").GetProperty("routine_folder").GetProperty("title").GetString());
-    Assert.True(callResult.GetProperty("structuredContent").GetProperty("meta").GetProperty("dry_run").GetBoolean());
+    (callResult.GetProperty("isError").GetBoolean()).Should().BeFalse();
+    (callResult.GetProperty("structuredContent").GetProperty("data").GetProperty("payload").GetProperty("routine_folder").GetProperty("title").GetString()).Should().Be("Transport Dry Run");
+    (callResult.GetProperty("structuredContent").GetProperty("meta").GetProperty("dry_run").GetBoolean()).Should().BeTrue();
     var invalidCallResult = invalidCallResponse.RootElement.GetProperty("result");
-    Assert.True(invalidCallResult.GetProperty("isError").GetBoolean());
-    Assert.Equal("validation_error", invalidCallResult.GetProperty("structuredContent").GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(32, invalidCallResult.GetProperty("structuredContent").GetProperty("error").GetProperty("correlation_id").GetString()!.Length);
-    Assert.Equal(0, process.ExitCode);
-    Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
-    Assert.Equal(string.Empty, await process.StandardOutput.ReadToEndAsync());
+    (invalidCallResult.GetProperty("isError").GetBoolean()).Should().BeTrue();
+    (invalidCallResult.GetProperty("structuredContent").GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
+    (invalidCallResult.GetProperty("structuredContent").GetProperty("error").GetProperty("correlation_id").GetString()!.Length).Should().Be(32);
+    (process.ExitCode).Should().Be(0);
+    (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
+    (await process.StandardOutput.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
   [Fact]
@@ -67,9 +67,9 @@ public sealed class StdioHandshakeTests
 
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-    Assert.NotEqual(0, process.ExitCode);
-    Assert.Contains("HEVY_API_KEY", await process.StandardError.ReadToEndAsync(), StringComparison.Ordinal);
-    Assert.Equal(string.Empty, await process.StandardOutput.ReadToEndAsync());
+    (process.ExitCode).Should().NotBe(0);
+    (await process.StandardError.ReadToEndAsync()).Should().Contain("HEVY_API_KEY");
+    (await process.StandardOutput.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
   [Fact]
@@ -85,34 +85,34 @@ public sealed class StdioHandshakeTests
     var workoutSet = FindTool(tools, "create_workout").GetProperty("inputSchema").GetProperty("properties")
         .GetProperty("request").GetProperty("properties").GetProperty("workout").GetProperty("properties")
         .GetProperty("exercises").GetProperty("items").GetProperty("properties").GetProperty("sets").GetProperty("items").GetProperty("properties");
-    Assert.Equal(["warmup", "normal", "failure", "dropset"], Strings(workoutSet.GetProperty("type").GetProperty("enum")));
-    Assert.Equal(["number", "null"], Strings(workoutSet.GetProperty("rpe").GetProperty("type")));
-    Assert.Equal(["6", "7", "7.5", "8", "8.5", "9", "9.5", "10", "null"], Literals(workoutSet.GetProperty("rpe").GetProperty("enum")));
+    (Strings(workoutSet.GetProperty("type").GetProperty("enum"))).Should().Equal(["warmup", "normal", "failure", "dropset"]);
+    (Strings(workoutSet.GetProperty("rpe").GetProperty("type"))).Should().Equal(["number", "null"]);
+    (Literals(workoutSet.GetProperty("rpe").GetProperty("enum"))).Should().Equal(["6", "7", "7.5", "8", "8.5", "9", "9.5", "10", "null"]);
 
     var routineSet = FindTool(tools, "update_routine").GetProperty("inputSchema").GetProperty("properties")
         .GetProperty("request").GetProperty("properties").GetProperty("routine").GetProperty("properties")
         .GetProperty("exercises").GetProperty("items").GetProperty("properties").GetProperty("sets").GetProperty("items").GetProperty("properties");
-    Assert.Equal(["warmup", "normal", "failure", "dropset"], Strings(routineSet.GetProperty("type").GetProperty("enum")));
+    (Strings(routineSet.GetProperty("type").GetProperty("enum"))).Should().Equal(["warmup", "normal", "failure", "dropset"]);
 
     var exercise = FindTool(tools, "create_exercise_template").GetProperty("inputSchema").GetProperty("properties")
         .GetProperty("request").GetProperty("properties").GetProperty("exercise").GetProperty("properties");
-    Assert.Contains("weight_reps", Strings(exercise.GetProperty("exercise_type").GetProperty("enum")));
-    Assert.Contains("barbell", Strings(exercise.GetProperty("equipment_category").GetProperty("enum")));
-    Assert.Contains("chest", Strings(exercise.GetProperty("muscle_group").GetProperty("enum")));
-    Assert.Contains("triceps", Strings(exercise.GetProperty("other_muscles").GetProperty("items").GetProperty("enum")));
+    (Strings(exercise.GetProperty("exercise_type").GetProperty("enum"))).Should().Contain("weight_reps");
+    (Strings(exercise.GetProperty("equipment_category").GetProperty("enum"))).Should().Contain("barbell");
+    (Strings(exercise.GetProperty("muscle_group").GetProperty("enum"))).Should().Contain("chest");
+    (Strings(exercise.GetProperty("other_muscles").GetProperty("items").GetProperty("enum"))).Should().Contain("triceps");
 
     foreach (var message in new[] { WorkoutDryRun, CreateRoutineDryRun, UpdateRoutineDryRun, ExerciseTemplateDryRun })
     {
       await process.StandardInput.WriteLineAsync(message);
       await process.StandardInput.FlushAsync();
       using var response = await ReadProtocolMessageAsync(process, TimeSpan.FromSeconds(10));
-      Assert.False(response.RootElement.GetProperty("result").GetProperty("isError").GetBoolean(), response.RootElement.GetRawText());
+      (response.RootElement.GetProperty("result").GetProperty("isError").GetBoolean()).Should().BeFalse(response.RootElement.GetRawText());
     }
 
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
-    Assert.Equal(0, process.ExitCode);
-    Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
+    (process.ExitCode).Should().Be(0);
+    (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
   [Fact]
@@ -127,18 +127,18 @@ public sealed class StdioHandshakeTests
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
     var result = response.RootElement.GetProperty("result");
-    Assert.False(result.GetProperty("isError").GetBoolean(), response.RootElement.GetRawText());
+    (result.GetProperty("isError").GetBoolean()).Should().BeFalse(response.RootElement.GetRawText());
     var snapshot = result.GetProperty("structuredContent").GetProperty("data");
-    Assert.Equal("stdio", snapshot.GetProperty("transport").GetString());
-    Assert.True(snapshot.GetProperty("diagnostics_enabled").GetBoolean());
-    Assert.DoesNotContain("transport-fixture-secret-key", response.RootElement.GetRawText(), StringComparison.Ordinal);
-    Assert.Equal(string.Empty, await process.StandardOutput.ReadToEndAsync());
+    (snapshot.GetProperty("transport").GetString()).Should().Be("stdio");
+    (snapshot.GetProperty("diagnostics_enabled").GetBoolean()).Should().BeTrue();
+    (response.RootElement.GetRawText()).Should().NotContain("transport-fixture-secret-key");
+    (await process.StandardOutput.ReadToEndAsync()).Should().Be(string.Empty);
 
-    var line = Assert.Single((await process.StandardError.ReadToEndAsync()).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+    var line = ((await process.StandardError.ReadToEndAsync()).Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)).Should().ContainSingle().Which;
     using var diagnostic = JsonDocument.Parse(line);
-    Assert.Equal("diagnostics", diagnostic.RootElement.GetProperty("operation_category").GetString());
-    Assert.Equal("succeeded", diagnostic.RootElement.GetProperty("status").GetString());
-    Assert.DoesNotContain("transport-fixture-secret-key", line, StringComparison.Ordinal);
+    (diagnostic.RootElement.GetProperty("operation_category").GetString()).Should().Be("diagnostics");
+    (diagnostic.RootElement.GetProperty("status").GetString()).Should().Be("succeeded");
+    (line).Should().NotContain("transport-fixture-secret-key");
   }
 
   private static Process StartServer(string? apiKey, string? logLevel = null)
@@ -188,7 +188,7 @@ public sealed class StdioHandshakeTests
   private static async Task<JsonDocument> ReadProtocolMessageAsync(Process process, TimeSpan timeout)
   {
     var line = await process.StandardOutput.ReadLineAsync().WaitAsync(timeout);
-    Assert.False(string.IsNullOrWhiteSpace(line));
-    return JsonDocument.Parse(line);
+    (string.IsNullOrWhiteSpace(line)).Should().BeFalse();
+    return JsonDocument.Parse(line!);
   }
 }

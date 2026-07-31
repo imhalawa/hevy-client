@@ -51,7 +51,7 @@ public sealed class ToolInventoryTests
   public async Task ToolsListMatchesEveryOfficialOperationAndReadOnlyOmitsWrites(bool readOnly)
   {
     var snapshotOperations = ReadSnapshotOperations();
-    Assert.Equal(ExpectedNames.Keys.Order(), snapshotOperations.Order());
+    (snapshotOperations.Order()).Should().Equal(ExpectedNames.Keys.Order());
 
     using var process = StartServer(readOnly);
     await SendAsync(process, """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"inventory-test","version":"1.0"}}}""");
@@ -62,7 +62,7 @@ public sealed class ToolInventoryTests
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
-    Assert.True(listed.RootElement.TryGetProperty("result", out var result), listed.RootElement.GetRawText());
+    (listed.RootElement.TryGetProperty("result", out var result)).Should().BeTrue(listed.RootElement.GetRawText());
     var tools = result.GetProperty("tools").EnumerateArray().ToArray();
     var names = tools.Select(tool => tool.GetProperty("name").GetString()).ToArray();
     var expected = ExpectedNames
@@ -72,59 +72,59 @@ public sealed class ToolInventoryTests
         .Append(DiagnosticName)
         .Order().ToArray();
 
-    Assert.Equal(expected, names.Order());
-    Assert.Equal(names.Length, names.Distinct(StringComparer.Ordinal).Count());
+    (names.Order()).Should().Equal(expected);
+    (names.Distinct(StringComparer.Ordinal).Count()).Should().Be(names.Length);
     foreach (var tool in tools)
     {
       var name = tool.GetProperty("name").GetString()!;
       var input = tool.GetProperty("inputSchema");
       var annotations = tool.GetProperty("annotations");
-      Assert.Equal("object", input.GetProperty("type").GetString());
-      Assert.Equal("object", tool.GetProperty("outputSchema").GetProperty("type").GetString());
+      (input.GetProperty("type").GetString()).Should().Be("object");
+      (tool.GetProperty("outputSchema").GetProperty("type").GetString()).Should().Be("object");
       var outputData = tool.GetProperty("outputSchema").GetProperty("properties").GetProperty("data");
-      Assert.True(outputData.TryGetProperty("properties", out var outputDataProperties) && outputDataProperties.EnumerateObject().Any(), $"{name} data schema is not operation-specific.");
-      Assert.False(input.GetProperty("properties").TryGetProperty("services", out _));
-      Assert.False(input.GetProperty("properties").TryGetProperty("cancellation_token", out _));
-      Assert.Equal(name != DiagnosticName, Hint(annotations, "openWorldHint", defaultValue: true));
+      (outputData.TryGetProperty("properties", out var outputDataProperties) && outputDataProperties.EnumerateObject().Any()).Should().BeTrue($"{name} data schema is not operation-specific.");
+      (input.GetProperty("properties").TryGetProperty("services", out _)).Should().BeFalse();
+      (input.GetProperty("properties").TryGetProperty("cancellation_token", out _)).Should().BeFalse();
+      (Hint(annotations, "openWorldHint", defaultValue: true)).Should().Be(name != DiagnosticName);
 
       if (name.StartsWith("get_", StringComparison.Ordinal) || CompositeNames.Contains(name, StringComparer.Ordinal))
       {
-        Assert.True(Hint(annotations, "readOnlyHint", defaultValue: false));
+        (Hint(annotations, "readOnlyHint", defaultValue: false)).Should().BeTrue();
       }
       else
       {
-        Assert.False(Hint(annotations, "readOnlyHint", defaultValue: false));
-        Assert.False(input.GetProperty("properties").GetProperty("dry_run").GetProperty("default").GetBoolean());
+        (Hint(annotations, "readOnlyHint", defaultValue: false)).Should().BeFalse();
+        (input.GetProperty("properties").GetProperty("dry_run").GetProperty("default").GetBoolean()).Should().BeFalse();
         if (name.StartsWith("create_", StringComparison.Ordinal))
         {
-          Assert.False(Hint(annotations, "destructiveHint", defaultValue: true));
-          Assert.False(Hint(annotations, "idempotentHint", defaultValue: false));
+          (Hint(annotations, "destructiveHint", defaultValue: true)).Should().BeFalse();
+          (Hint(annotations, "idempotentHint", defaultValue: false)).Should().BeFalse();
         }
         else
         {
-          Assert.True(Hint(annotations, "destructiveHint", defaultValue: true));
-          Assert.Equal(name == "update_body_measurement", Hint(annotations, "idempotentHint", defaultValue: false));
-          Assert.True(input.GetProperty("properties").TryGetProperty("expected_updated_at", out _));
-          Assert.False(input.GetProperty("properties").GetProperty("force").GetProperty("default").GetBoolean());
+          (Hint(annotations, "destructiveHint", defaultValue: true)).Should().BeTrue();
+          (Hint(annotations, "idempotentHint", defaultValue: false)).Should().Be(name == "update_body_measurement");
+          (input.GetProperty("properties").TryGetProperty("expected_updated_at", out _)).Should().BeTrue();
+          (input.GetProperty("properties").GetProperty("force").GetProperty("default").GetBoolean()).Should().BeFalse();
         }
       }
     }
     var workoutsSchema = tools.Single(tool => tool.GetProperty("name").GetString() == "get_workouts")
         .GetProperty("inputSchema").GetProperty("properties");
-    Assert.Equal(1, workoutsSchema.GetProperty("page").GetProperty("minimum").GetInt32());
-    Assert.Equal(1, workoutsSchema.GetProperty("page_size").GetProperty("minimum").GetInt32());
-    Assert.Equal(10, workoutsSchema.GetProperty("page_size").GetProperty("maximum").GetInt32());
-    Assert.Equal("^(compact|full)$", workoutsSchema.GetProperty("detail").GetProperty("pattern").GetString());
+    (workoutsSchema.GetProperty("page").GetProperty("minimum").GetInt32()).Should().Be(1);
+    (workoutsSchema.GetProperty("page_size").GetProperty("minimum").GetInt32()).Should().Be(1);
+    (workoutsSchema.GetProperty("page_size").GetProperty("maximum").GetInt32()).Should().Be(10);
+    (workoutsSchema.GetProperty("detail").GetProperty("pattern").GetString()).Should().Be("^(compact|full)$");
     var exerciseTemplatesSchema = tools.Single(tool => tool.GetProperty("name").GetString() == "get_exercise_templates")
         .GetProperty("inputSchema").GetProperty("properties");
-    Assert.Equal(1, exerciseTemplatesSchema.GetProperty("page_size").GetProperty("minimum").GetInt32());
-    Assert.Equal(100, exerciseTemplatesSchema.GetProperty("page_size").GetProperty("maximum").GetInt32());
+    (exerciseTemplatesSchema.GetProperty("page_size").GetProperty("minimum").GetInt32()).Should().Be(1);
+    (exerciseTemplatesSchema.GetProperty("page_size").GetProperty("maximum").GetInt32()).Should().Be(100);
     var historyItemSchema = tools.Single(tool => tool.GetProperty("name").GetString() == "get_exercise_history")
         .GetProperty("outputSchema").GetProperty("properties").GetProperty("data")
         .GetProperty("properties").GetProperty("items").GetProperty("items").GetProperty("properties");
-    Assert.Equal(["integer", "null"], historyItemSchema.GetProperty("reps").GetProperty("type").EnumerateArray().Select(static value => value.GetString()));
-    Assert.Equal(["integer", "null"], historyItemSchema.GetProperty("distance_meters").GetProperty("type").EnumerateArray().Select(static value => value.GetString()));
-    Assert.Equal(["integer", "null"], historyItemSchema.GetProperty("duration_seconds").GetProperty("type").EnumerateArray().Select(static value => value.GetString()));
+    (historyItemSchema.GetProperty("reps").GetProperty("type").EnumerateArray().Select(static value => value.GetString())).Should().Equal(["integer", "null"]);
+    (historyItemSchema.GetProperty("distance_meters").GetProperty("type").EnumerateArray().Select(static value => value.GetString())).Should().Equal(["integer", "null"]);
+    (historyItemSchema.GetProperty("duration_seconds").GetProperty("type").EnumerateArray().Select(static value => value.GetString())).Should().Equal(["integer", "null"]);
     AssertOutputShape(tools, "get_workouts", "items", "page", "continuation");
     AssertOutputShape(tools, "get_workout_count", "workout_count");
     AssertOutputShape(tools, "get_workout", "id");
@@ -138,11 +138,11 @@ public sealed class ToolInventoryTests
       AssertOutputShape(tools, "update_body_measurement", "payload", "result", "forced", "expected_updated_at", "guard_available", "guard_limitation");
       var measurementUpdateInput = tools.Single(tool => tool.GetProperty("name").GetString() == "update_body_measurement")
           .GetProperty("inputSchema").GetProperty("properties");
-      Assert.Contains("required", measurementUpdateInput.GetProperty("force").GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
-      Assert.Contains("do not expose updated_at", measurementUpdateInput.GetProperty("expected_updated_at").GetProperty("description").GetString(), StringComparison.OrdinalIgnoreCase);
+      (measurementUpdateInput.GetProperty("force").GetProperty("description").GetString()).Should().ContainEquivalentOf("required");
+      (measurementUpdateInput.GetProperty("expected_updated_at").GetProperty("description").GetString()).Should().ContainEquivalentOf("do not expose updated_at");
     }
-    Assert.Equal(0, process.ExitCode);
-    Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
+    (process.ExitCode).Should().Be(0);
+    (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
   private static bool Hint(JsonElement annotations, string name, bool defaultValue) =>
@@ -155,7 +155,7 @@ public sealed class ToolInventoryTests
     var hasMetaProperties = output.GetProperty("meta").TryGetProperty("properties", out var meta);
     foreach (var property in properties)
     {
-      Assert.True(data.TryGetProperty(property, out _) || (hasMetaProperties && meta.TryGetProperty(property, out _)), $"{name} output schema omits {property}.");
+      (data.TryGetProperty(property, out _) || (hasMetaProperties && meta.TryGetProperty(property, out _))).Should().BeTrue($"{name} output schema omits {property}.");
     }
   }
 
@@ -206,7 +206,7 @@ public sealed class ToolInventoryTests
   private static async Task<JsonDocument> ReadAsync(Process process)
   {
     var line = await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
-    Assert.False(string.IsNullOrWhiteSpace(line));
-    return JsonDocument.Parse(line);
+    (string.IsNullOrWhiteSpace(line)).Should().BeFalse();
+    return JsonDocument.Parse(line!);
   }
 }

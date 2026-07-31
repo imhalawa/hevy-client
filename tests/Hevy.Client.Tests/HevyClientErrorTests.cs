@@ -8,7 +8,6 @@ namespace Hevy.Client.Tests;
 
 public sealed class HevyClientErrorTests
 {
-  // Break caught: upstream status failures losing their stable local category or leaking a sensitive response body.
   [Theory]
   [InlineData(HttpStatusCode.Unauthorized, "authentication", false)]
   [InlineData(HttpStatusCode.Forbidden, "authorization", false)]
@@ -21,16 +20,31 @@ public sealed class HevyClientErrorTests
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(statusCode, "{\"detail\":\"response-secret\"}"));
     var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal(code, exception.Code);
-    Assert.Equal(retryable, exception.IsRetryable);
-    Assert.Equal(statusCode, exception.StatusCode);
-    Assert.DoesNotContain("response-secret", exception.Message, StringComparison.Ordinal);
-    Assert.DoesNotContain("api-key-secret", exception.ToString(), StringComparison.Ordinal);
+    (exception.Code).Should().Be(code);
+    (exception.IsRetryable).Should().Be(retryable);
+    (exception.StatusCode).Should().Be(statusCode);
+    (exception.Message).Should().NotContain("response-secret");
+    (exception.ToString()).Should().NotContain("api-key-secret");
   }
 
-  // Break caught: an empty or malformed success response appearing as a successful null result.
+  [Fact]
+  public async Task Failed_responses_preserve_only_the_safe_upstream_request_identifier()
+  {
+    var handler = new RecordingHttpMessageHandler((_, _) =>
+    {
+      var response = RecordingHttpMessageHandler.Json(HttpStatusCode.BadRequest, "{}");
+      response.Headers.TryAddWithoutValidation("X-Request-Id", "hevy-request-123");
+      return response;
+    });
+    var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
+
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(default)).Should().ThrowExactlyAsync<HevyException>()).Which;
+
+    (exception.RequestId).Should().Be("hevy-request-123");
+  }
+
   [Theory]
   [InlineData("")]
   [InlineData("{")]
@@ -39,29 +53,27 @@ public sealed class HevyClientErrorTests
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));
     var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
-    Assert.False(exception.IsRetryable);
-    Assert.Equal(HttpStatusCode.OK, exception.StatusCode);
-    Assert.DoesNotContain("api-key-secret", exception.ToString(), StringComparison.Ordinal);
+    (exception.Code).Should().Be("unexpected_response");
+    (exception.IsRetryable).Should().BeFalse();
+    (exception.StatusCode).Should().Be(HttpStatusCode.OK);
+    (exception.ToString()).Should().NotContain("api-key-secret");
   }
 
-  // Break caught: a transport exception's untrusted text being retained as an inner exception and exposed by ToString().
   [Fact]
   public async Task Transport_failure_does_not_retain_sensitive_inner_exception_text()
   {
     var handler = new RecordingHttpMessageHandler((_, _) => throw new HttpRequestException("transport-secret"));
     var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.DoesNotContain("transport-secret", exception.Message, StringComparison.Ordinal);
-    Assert.DoesNotContain("transport-secret", exception.ToString(), StringComparison.Ordinal);
-    Assert.Null(exception.InnerException);
+    (exception.Message).Should().NotContain("transport-secret");
+    (exception.ToString()).Should().NotContain("transport-secret");
+    (exception.InnerException).Should().BeNull();
   }
 
-  // Break caught: malformed response content being retained through a JsonException at the public error boundary.
   [Fact]
   public async Task Malformed_response_does_not_retain_sensitive_payload_details()
   {
@@ -69,14 +81,13 @@ public sealed class HevyClientErrorTests
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, sensitivePayload));
     var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.DoesNotContain("malformed-payload-secret", exception.Message, StringComparison.Ordinal);
-    Assert.DoesNotContain("malformed-payload-secret", exception.ToString(), StringComparison.Ordinal);
-    Assert.Null(exception.InnerException);
+    (exception.Message).Should().NotContain("malformed-payload-secret");
+    (exception.ToString()).Should().NotContain("malformed-payload-secret");
+    (exception.InnerException).Should().BeNull();
   }
 
-  // Break caught: cancellation being translated to an API failure or ignored by the HTTP request.
   [Fact]
   public async Task Cancellation_is_propagated_without_normalization()
   {
@@ -89,26 +100,24 @@ public sealed class HevyClientErrorTests
     using var cancellation = new CancellationTokenSource();
     cancellation.Cancel();
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetUserInfoAsync(cancellation.Token));
+    await FluentActions.Awaiting(() => client.GetUserInfoAsync(cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
 
-    Assert.True(Assert.Single(handler.Requests).CancellationToken.IsCancellationRequested);
+    ((handler.Requests).Should().ContainSingle().Which.CancellationToken.IsCancellationRequested).Should().BeTrue();
   }
 
-  // Break caught: HttpClient's own timeout being mistaken for caller cancellation on a read.
   [Fact]
   public async Task Http_client_timeout_on_a_read_becomes_a_safe_retryable_timeout()
   {
     using var httpClient = new HttpClient(new DelayingHandler()) { Timeout = TimeSpan.FromMilliseconds(20) };
     var client = new HevyClient(httpClient, new HevyClientOptions("api-key-secret"));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("timeout", exception.Code);
-    Assert.True(exception.IsRetryable);
-    Assert.DoesNotContain("api-key-secret", exception.ToString(), StringComparison.Ordinal);
+    (exception.Code).Should().Be("timeout");
+    (exception.IsRetryable).Should().BeTrue();
+    (exception.ToString()).Should().NotContain("api-key-secret");
   }
 
-  // Break caught: a success body omitting its required response envelope or identifier being accepted as valid.
   [Theory]
   [InlineData("{}")]
   [InlineData("{\"data\":null}")]
@@ -118,13 +127,12 @@ public sealed class HevyClientErrorTests
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));
     var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
-    Assert.False(exception.IsRetryable);
+    (exception.Code).Should().Be("unexpected_response");
+    (exception.IsRetryable).Should().BeFalse();
   }
 
-  // Break caught: ordinary JSON endpoints buffering an arbitrarily large upstream response.
   [Fact]
   public async Task Oversized_ordinary_response_is_rejected_at_the_byte_ceiling()
   {
@@ -132,9 +140,9 @@ public sealed class HevyClientErrorTests
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));
     var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetUserInfoAsync(CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
+    (exception.Code).Should().Be("unexpected_response");
   }
 
   private sealed class DelayingHandler : HttpMessageHandler

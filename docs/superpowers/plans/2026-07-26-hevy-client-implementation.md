@@ -399,7 +399,7 @@ Parse the OpenAPI snapshot, map each HTTP operation to the exact expected tool n
 
 - [ ] **Step 2: Write failing representative read-tool tests**
 
-Assert list tools validate `page >= 1` and `1 <= page_size <= 10`, return compact results and pagination metadata, accept `detail=full`, expose `ReadOnlyHint=true` and `OpenWorldHint=true`, and propagate cancellation.
+Assert list tools validate `page >= 1` and the endpoint-specific official page-size limit (`10` generally and `100` for exercise templates), return compact results and pagination metadata, accept `detail=full`, expose `ReadOnlyHint=true` and `OpenWorldHint=true`, and propagate cancellation.
 
 - [ ] **Step 3: Implement read tools capability by capability**
 
@@ -448,7 +448,7 @@ Cache immutable DTOs only. Do not cache workouts, history, measurements, errors,
 
 - [ ] **Step 3: Write failing continuation tests**
 
-Assert signed-free opaque continuations encode only endpoint, next page, original filters, and remaining item budget; reject malformed, mismatched, or over-limit inputs; return `truncated=true` whenever more data exists.
+Assert signed-free opaque continuations encode only endpoint, next page, original filters, and remaining item budget; reject malformed, mismatched, or over-limit inputs; return `truncated=true` whenever more data exists. Exercise history is the explicit exception: its unpaginated upstream response returns a terminal item- or byte-safety reason when safe continuation cannot be represented within the same per-call bound.
 
 - [ ] **Step 4: Implement continuation and normalized search**
 

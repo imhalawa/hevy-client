@@ -8,32 +8,28 @@ namespace Hevy.Client.Tests.Serialization;
 
 public sealed class RequestSerializationTests
 {
-  // Break caught: accepting an arbitrary set-type string in an outgoing workout mutation.
   [Fact]
   public void Workout_set_write_rejects_unknown_set_type()
   {
     var set = new WorkoutSetWrite((SetType)999, null, null, null, null, null, new WorkoutRpe(8m));
 
-    Assert.Throws<JsonException>(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWrite));
+    FluentActions.Invoking(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWrite)).Should().ThrowExactly<JsonException>();
   }
 
-  // Break caught: accepting an RPE that is outside Hevy's documented discrete values.
   [Fact]
   public void Workout_rpe_rejects_undocumented_value()
   {
-    Assert.Throws<ArgumentOutOfRangeException>(() => new WorkoutRpe(8.25m));
+    FluentActions.Invoking(() => new WorkoutRpe(8.25m)).Should().ThrowExactly<ArgumentOutOfRangeException>();
   }
 
-  // Break caught: default struct construction bypassing RPE validation and emitting rpe:0.
   [Fact]
   public void Workout_rpe_default_value_fails_safely_during_serialization()
   {
     var set = new WorkoutSetWrite(SetType.Normal, null, null, null, null, null, default(WorkoutRpe));
 
-    Assert.Throws<JsonException>(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWrite));
+    FluentActions.Invoking(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWrite)).Should().ThrowExactly<JsonException>();
   }
 
-  // Break caught: serializing a create-workout payload in camelCase or including server timestamps.
   [Fact]
   public void Create_workout_serializes_only_writable_snake_case_fields()
   {
@@ -46,7 +42,6 @@ public sealed class RequestSerializationTests
         json);
   }
 
-  // Break caught: using a distinct update-workout wrapper that changes the documented workout envelope.
   [Fact]
   public void Update_workout_preserves_workout_envelope()
   {
@@ -59,7 +54,6 @@ public sealed class RequestSerializationTests
         json);
   }
 
-  // Break caught: emitting a create-routine folder identifier or set rep range under C# property names.
   [Fact]
   public void Create_routine_serializes_documented_fields()
   {
@@ -72,7 +66,6 @@ public sealed class RequestSerializationTests
         json);
   }
 
-  // Break caught: adding unsupported folder_id to the update-routine contract.
   [Fact]
   public void Update_routine_omits_create_only_folder_field()
   {
@@ -85,7 +78,6 @@ public sealed class RequestSerializationTests
         json);
   }
 
-  // Break caught: flattening the routine-folder create payload or camel-casing its wire name.
   [Fact]
   public void Create_routine_folder_serializes_routine_folder_envelope()
   {
@@ -94,7 +86,6 @@ public sealed class RequestSerializationTests
     AssertJsonTreeEqual("""{"routine_folder":{"title":"Push Pull"}}""", json);
   }
 
-  // Break caught: serializing custom-exercise enum values or nested wrapper names incorrectly.
   [Fact]
   public void Create_exercise_template_serializes_enum_wire_values()
   {
@@ -107,7 +98,6 @@ public sealed class RequestSerializationTests
         json);
   }
 
-  // Break caught: serializing a create measurement without its required date or with a server identifier.
   [Fact]
   public void Create_body_measurement_serializes_date_and_metrics()
   {
@@ -120,7 +110,6 @@ public sealed class RequestSerializationTests
         json);
   }
 
-  // Break caught: accidentally including the path-owned measurement date in an update payload.
   [Fact]
   public void Update_body_measurement_omits_path_owned_date()
   {
@@ -138,8 +127,6 @@ public sealed class RequestSerializationTests
     using var expected = JsonDocument.Parse(expectedJson);
     using var actual = JsonDocument.Parse(actualJson);
 
-    Assert.True(
-        JsonElement.DeepEquals(expected.RootElement, actual.RootElement),
-        $"Expected JSON: {expected.RootElement}\nActual JSON: {actual.RootElement}");
+    (JsonElement.DeepEquals(expected.RootElement, actual.RootElement)).Should().BeTrue($"Expected JSON: {expected.RootElement}\nActual JSON: {actual.RootElement}");
   }
 }

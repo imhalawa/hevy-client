@@ -47,13 +47,16 @@ internal sealed record SafeOperationEvent(
     DiagnosticOperationStatus Status,
     Guid CorrelationId,
     DiagnosticExceptionCategory ExceptionCategory,
-    int? HttpStatus = null)
+    int? HttpStatus = null,
+    string OperationName = "unknown",
+    string? HevyRequestId = null)
 {
   internal static SafeOperationEvent FromToolResult(
       DiagnosticOperationCategory category,
       TimeSpan elapsed,
       CallToolResult result,
-      Guid fallbackCorrelationId)
+      Guid fallbackCorrelationId,
+      string operationName = "unknown")
   {
     ArgumentNullException.ThrowIfNull(result);
 
@@ -61,6 +64,7 @@ internal sealed record SafeOperationEvent(
     var exceptionCategory = DiagnosticExceptionCategory.None;
     var status = DiagnosticOperationStatus.Succeeded;
     int? httpStatus = null;
+    string? hevyRequestId = null;
     if (result.IsError == true && result.StructuredContent is { } content)
     {
       status = DiagnosticOperationStatus.Failed;
@@ -81,6 +85,11 @@ internal sealed record SafeOperationEvent(
           httpStatus = parsedStatus;
         }
 
+        if (error.TryGetProperty("hevy_request_id", out var requestIdValue) && requestIdValue.ValueKind is JsonValueKind.String)
+        {
+          hevyRequestId = SafeIdentifier(requestIdValue.GetString());
+        }
+
         var code = error.TryGetProperty("code", out var codeValue) && codeValue.ValueKind is JsonValueKind.String
             ? codeValue.GetString()
             : null;
@@ -92,18 +101,30 @@ internal sealed record SafeOperationEvent(
       }
     }
 
-    return new SafeOperationEvent(category, Bucket(elapsed), status, correlationId, exceptionCategory, httpStatus);
+    return new SafeOperationEvent(category, Bucket(elapsed), status, correlationId, exceptionCategory, httpStatus, SafeOperationName(operationName), hevyRequestId);
   }
 
   internal static SafeOperationEvent Cancelled(
       DiagnosticOperationCategory category,
       TimeSpan elapsed,
-      Guid correlationId) => new(
+      Guid correlationId,
+      string operationName = "unknown") => new(
           category,
           Bucket(elapsed),
           DiagnosticOperationStatus.Cancelled,
           correlationId,
-          DiagnosticExceptionCategory.Cancellation);
+          DiagnosticExceptionCategory.Cancellation,
+          OperationName: SafeOperationName(operationName));
+
+  private static string SafeOperationName(string value) =>
+      value.Length is >= 1 and <= 64 && char.IsAsciiLetterLower(value[0]) && value.All(static character => char.IsAsciiLetterOrDigit(character) || character == '_')
+          ? value
+          : "unknown";
+
+  private static string? SafeIdentifier(string? value) =>
+      value is { Length: >= 1 and <= 128 } && value.All(static character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or ':' or '-')
+          ? value
+          : null;
 
   private static (DiagnosticOperationStatus Status, DiagnosticExceptionCategory Exception) ClassifyError(string? code) => code switch
   {
@@ -130,11 +151,13 @@ internal sealed record DiagnosticLogRecord(
     string Transport,
     bool ReadOnly,
     DiagnosticOperationCategory OperationCategory,
+    string OperationName,
     DiagnosticDurationBucket DurationBucket,
     DiagnosticOperationStatus Status,
     string CorrelationId,
     DiagnosticExceptionCategory ExceptionCategory,
-    int? HttpStatus);
+    int? HttpStatus,
+    string? HevyRequestId);
 
 internal sealed class RedactingLoggerProvider : ILoggerProvider
 {
@@ -193,11 +216,13 @@ internal sealed class RedactingLoggerProvider : ILoggerProvider
             snapshot.Transport,
             snapshot.ReadOnly,
             operationEvent.OperationCategory,
+            operationEvent.OperationName,
             operationEvent.DurationBucket,
             operationEvent.Status,
             operationEvent.CorrelationId.ToString("N"),
             operationEvent.ExceptionCategory,
-            operationEvent.HttpStatus);
+            operationEvent.HttpStatus,
+            operationEvent.HevyRequestId);
         var line = JsonSerializer.Serialize(record, ToolResults.JsonOptions);
         writer.WriteLine(line);
         writer.Flush();

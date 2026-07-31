@@ -21,11 +21,11 @@ public sealed class ContinuationTests
     var json = DecodeToken(token);
     var state = Continuation.Parse(token, "exercise-templates", filters);
 
-    Assert.Equal(["endpoint", "filters", "next_page", "remaining_item_budget"], json.RootElement.EnumerateObject().Select(static property => property.Name).Order());
-    Assert.Equal(4, state.NextPage);
-    Assert.Equal(875, state.RemainingItemBudget);
-    Assert.Equal(filters, state.Filters);
-    Assert.DoesNotContain("api", json.RootElement.GetRawText(), StringComparison.OrdinalIgnoreCase);
+    (json.RootElement.EnumerateObject().Select(static property => property.Name).Order()).Should().Equal(["endpoint", "filters", "next_page", "remaining_item_budget"]);
+    (state.NextPage).Should().Be(4);
+    (state.RemainingItemBudget).Should().Be(875);
+    (state.Filters).Should().BeEquivalentTo(filters);
+    (json.RootElement.GetRawText()).Should().NotContainEquivalentOf("api");
   }
 
   [Theory]
@@ -34,7 +34,7 @@ public sealed class ContinuationTests
   [InlineData("e30")]
   public void MalformedTokensAreRejected(string token)
   {
-    Assert.Throws<ArgumentException>(() => Continuation.Parse(token, "routines", new Dictionary<string, string?>()));
+    FluentActions.Invoking(() => Continuation.Parse(token, "routines", new Dictionary<string, string?>())).Should().ThrowExactly<ArgumentException>();
   }
 
   [Fact]
@@ -43,8 +43,8 @@ public sealed class ContinuationTests
     var filters = new Dictionary<string, string?> { ["query"] = "squat" };
     var token = Continuation.Create("routines", 2, filters, 90);
 
-    Assert.Throws<ArgumentException>(() => Continuation.Parse(token, "exercise-templates", filters));
-    Assert.Throws<ArgumentException>(() => Continuation.Parse(token, "routines", new Dictionary<string, string?> { ["query"] = "press" }));
+    FluentActions.Invoking(() => Continuation.Parse(token, "exercise-templates", filters)).Should().ThrowExactly<ArgumentException>();
+    FluentActions.Invoking(() => Continuation.Parse(token, "routines", new Dictionary<string, string?> { ["query"] = "press" })).Should().ThrowExactly<ArgumentException>();
   }
 
   [Theory]
@@ -54,7 +54,7 @@ public sealed class ContinuationTests
   {
     var token = EncodeJson($$"""{"endpoint":"routines","filters":{},"next_page":2,"remaining_item_budget":{{remaining}}}""");
 
-    Assert.Throws<ArgumentOutOfRangeException>(() => Continuation.Parse(token, "routines", new Dictionary<string, string?>()));
+    FluentActions.Invoking(() => Continuation.Parse(token, "routines", new Dictionary<string, string?>())).Should().ThrowExactly<ArgumentOutOfRangeException>();
   }
 
   [Fact]
@@ -62,7 +62,7 @@ public sealed class ContinuationTests
   {
     var token = EncodeJson("""{"endpoint":"routines","filters":{},"next_page":2,"remaining_item_budget":10,"credential":"secret"}""");
 
-    Assert.Throws<ArgumentException>(() => Continuation.Parse(token, "routines", new Dictionary<string, string?>()));
+    FluentActions.Invoking(() => Continuation.Parse(token, "routines", new Dictionary<string, string?>())).Should().ThrowExactly<ArgumentException>();
   }
 
   private static JsonDocument DecodeToken(string token) => JsonDocument.Parse(Base64UrlDecode(token));

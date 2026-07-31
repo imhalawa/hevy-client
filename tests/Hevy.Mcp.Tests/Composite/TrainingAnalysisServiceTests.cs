@@ -24,13 +24,13 @@ public sealed class TrainingAnalysisServiceTests
     var first = await service.GetWorkoutEvidenceAsync(4, null, 1, null, default);
     var second = await service.GetWorkoutEvidenceAsync(4, null, 1, first.Continuation, default);
 
-    Assert.Equal("workout-1", Assert.Single(first.Items).WorkoutId);
-    Assert.True(first.Truncated);
-    Assert.NotNull(first.Continuation);
-    Assert.Equal(first.RangeStartUtc, second.RangeStartUtc);
-    Assert.Equal(first.RangeEndUtc, second.RangeEndUtc);
-    Assert.Equal("workout-2", Assert.Single(second.Items).WorkoutId);
-    Assert.False(second.Truncated);
+    ((first.Items).Should().ContainSingle().Which.WorkoutId).Should().Be("workout-1");
+    (first.Truncated).Should().BeTrue();
+    (first.Continuation).Should().NotBeNull();
+    (second.RangeStartUtc).Should().Be(first.RangeStartUtc);
+    (second.RangeEndUtc).Should().Be(first.RangeEndUtc);
+    ((second.Items).Should().ContainSingle().Which.WorkoutId).Should().Be("workout-2");
+    (second.Truncated).Should().BeFalse();
   }
 
   [Fact]
@@ -55,20 +55,18 @@ public sealed class TrainingAnalysisServiceTests
 
     var result = await service.SummarizeTrainingAsync(4, null, 100, null, default);
 
-    Assert.Equal(3, result.ChunkWorkoutFrequency);
-    Assert.Equal([1, 1, 0, 1], result.WeeklyFrequency.Select(static week => week.ChunkWorkoutCount));
-    var squat = Assert.Single(result.Exercises);
-    Assert.Equal(1_575m, squat.ChunkVolumeKgReps);
-    Assert.Equal(50m, squat.ChunkProgressionKgReps);
-    Assert.Equal(["workout-1", "workout-2", "workout-3"], squat.Evidence.Select(static evidence => evidence.WorkoutId));
-    Assert.Equal(
-        [DateTimeOffset.Parse("2026-06-30T10:00:00Z"), DateTimeOffset.Parse("2026-07-07T10:00:00Z"), DateTimeOffset.Parse("2026-07-21T10:00:00Z")],
-        squat.Evidence.Select(static evidence => evidence.StartTime));
-    Assert.Equal(DateTimeOffset.Parse("2026-07-13T00:00:00Z"), Assert.Single(result.MissingWeekGaps).PeriodStartUtc);
-    var weight = Assert.Single(result.MeasurementDeltas, delta => delta.Metric == "weight_kg");
-    Assert.Equal(-1m, weight.Delta);
-    Assert.Equal([new DateOnly(2026, 6, 30), new DateOnly(2026, 7, 21)], weight.EvidenceDates);
-    Assert.Equal(1m, Assert.Single(result.MeasurementDeltas, delta => delta.Metric == "left_bicep_cm").Delta);
+    (result.ChunkWorkoutFrequency).Should().Be(3);
+    (result.WeeklyFrequency.Select(static week => week.ChunkWorkoutCount)).Should().Equal([1, 1, 0, 1]);
+    var squat = (result.Exercises).Should().ContainSingle().Which;
+    (squat.ChunkVolumeKgReps).Should().Be(1_575m);
+    (squat.ChunkProgressionKgReps).Should().Be(50m);
+    (squat.Evidence.Select(static evidence => evidence.WorkoutId)).Should().Equal(["workout-1", "workout-2", "workout-3"]);
+    (squat.Evidence.Select(static evidence => evidence.StartTime)).Should().Equal([DateTimeOffset.Parse("2026-06-30T10:00:00Z"), DateTimeOffset.Parse("2026-07-07T10:00:00Z"), DateTimeOffset.Parse("2026-07-21T10:00:00Z")]);
+    ((result.MissingWeekGaps).Should().ContainSingle().Which.PeriodStartUtc).Should().Be(DateTimeOffset.Parse("2026-07-13T00:00:00Z"));
+    var weight = (result.MeasurementDeltas).Should().ContainSingle(delta => delta.Metric == "weight_kg").Which;
+    (weight.Delta).Should().Be(-1m);
+    (weight.EvidenceDates).Should().Equal([new DateOnly(2026, 6, 30), new DateOnly(2026, 7, 21)]);
+    ((result.MeasurementDeltas).Should().ContainSingle(delta => delta.Metric == "left_bicep_cm").Which.Delta).Should().Be(1m);
   }
 
   [Fact]
@@ -90,10 +88,10 @@ public sealed class TrainingAnalysisServiceTests
     var result = await new TrainingAnalysisService(client, new FixedTimeProvider(Now)).SummarizeTrainingAsync(4, null, 100, null, default);
     var json = JsonSerializer.Serialize(result).ToLowerInvariant();
 
-    Assert.Equal(500m, Assert.Single(result.Exercises).ChunkVolumeKgReps);
+    ((result.Exercises).Should().ContainSingle().Which.ChunkVolumeKgReps).Should().Be(500m);
     foreach (var subjective in new[] { "good", "bad", "strong", "weak", "recommend", "should", "coach" })
     {
-      Assert.DoesNotContain(subjective, json, StringComparison.Ordinal);
+      (json).Should().NotContain(subjective);
     }
   }
 
@@ -113,12 +111,12 @@ public sealed class TrainingAnalysisServiceTests
 
     var result = await new TrainingAnalysisService(client, new FixedTimeProvider(Now)).SummarizeTrainingAsync(4, null, 100, null, default);
 
-    var squat = Assert.Single(result.Exercises);
-    Assert.Equal(1_350m, squat.ChunkVolumeKgReps);
-    Assert.Equal(750m, squat.FirstObservation.VolumeKgReps);
-    Assert.Equal(600m, squat.LastObservation.VolumeKgReps);
-    Assert.Equal(-150m, squat.ChunkProgressionKgReps);
-    Assert.Equal(["workout-1", "workout-2"], squat.Evidence.Select(static item => item.WorkoutId));
+    var squat = (result.Exercises).Should().ContainSingle().Which;
+    (squat.ChunkVolumeKgReps).Should().Be(1_350m);
+    (squat.FirstObservation.VolumeKgReps).Should().Be(750m);
+    (squat.LastObservation.VolumeKgReps).Should().Be(600m);
+    (squat.ChunkProgressionKgReps).Should().Be(-150m);
+    (squat.Evidence.Select(static item => item.WorkoutId)).Should().Equal(["workout-1", "workout-2"]);
   }
 
   [Fact]
@@ -136,10 +134,10 @@ public sealed class TrainingAnalysisServiceTests
 
     var result = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 100, null, default);
 
-    Assert.Equal(1_050m, result.ChunkVolumeKgReps);
-    Assert.Equal(50m, result.ChunkProgressionKgReps);
-    Assert.Equal(["workout-1", "workout-2"], result.Evidence.Select(static evidence => evidence.WorkoutId));
-    Assert.False(result.Truncated);
+    (result.ChunkVolumeKgReps).Should().Be(1_050m);
+    (result.ChunkProgressionKgReps).Should().Be(50m);
+    (result.Evidence.Select(static evidence => evidence.WorkoutId)).Should().Equal(["workout-1", "workout-2"]);
+    (result.Truncated).Should().BeFalse();
   }
 
   [Theory]
@@ -149,7 +147,7 @@ public sealed class TrainingAnalysisServiceTests
   {
     var service = new TrainingAnalysisService(new FakeHevyClient(), new FixedTimeProvider(Now));
 
-    await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.SummarizeTrainingAsync(weeks, null, 100, null, default));
+    await FluentActions.Awaiting(() => service.SummarizeTrainingAsync(weeks, null, 100, null, default)).Should().ThrowExactlyAsync<ArgumentOutOfRangeException>();
   }
 
   [Fact]
@@ -159,9 +157,9 @@ public sealed class TrainingAnalysisServiceTests
 
     var result = await service.SummarizeTrainingAsync(null, null, 100, null, default);
 
-    Assert.Equal(4, result.Weeks);
-    Assert.Equal(DateTimeOffset.Parse("2026-06-29T00:00:00Z"), result.RangeStartUtc);
-    Assert.Equal(DateTimeOffset.Parse("2026-07-27T00:00:00Z"), result.RangeEndUtc);
+    (result.Weeks).Should().Be(4);
+    (result.RangeStartUtc).Should().Be(DateTimeOffset.Parse("2026-06-29T00:00:00Z"));
+    (result.RangeEndUtc).Should().Be(DateTimeOffset.Parse("2026-07-27T00:00:00Z"));
   }
 
   [Fact]
@@ -175,9 +173,9 @@ public sealed class TrainingAnalysisServiceTests
 
     var result = await service.GetWorkoutEvidenceAsync(4, null, 1_000, null, default);
 
-    Assert.Equal(100, client.CallCount);
-    Assert.True(result.Truncated);
-    Assert.NotNull(result.Continuation);
+    (client.CallCount).Should().Be(100);
+    (result.Truncated).Should().BeTrue();
+    (result.Continuation).Should().NotBeNull();
   }
 
   [Theory]
@@ -201,9 +199,9 @@ public sealed class TrainingAnalysisServiceTests
 
     var result = await service.GetWorkoutEvidenceAsync(4, null, pageSize, null, default);
 
-    Assert.InRange(client.CallCount * pageSize, 1, 1_000);
-    Assert.True(result.Truncated);
-    Assert.NotNull(result.Continuation);
+    (client.CallCount * pageSize).Should().BeInRange(1, 1_000);
+    (result.Truncated).Should().BeTrue();
+    (result.Continuation).Should().NotBeNull();
   }
 
   [Fact]
@@ -222,10 +220,10 @@ public sealed class TrainingAnalysisServiceTests
 
     var result = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 2, null, default);
 
-    Assert.Equal(1, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.GetExerciseHistoryWindowAsync), client.LastOperation);
-    Assert.True(result.Truncated);
-    Assert.NotNull(result.Continuation);
+    (client.CallCount).Should().Be(1);
+    (client.LastOperation).Should().Be(nameof(IHevyClient.GetExerciseHistoryWindowAsync));
+    (result.Truncated).Should().BeTrue();
+    (result.Continuation).Should().NotBeNull();
   }
 
   [Fact]
@@ -241,15 +239,15 @@ public sealed class TrainingAnalysisServiceTests
     var first = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 100, null, default);
     var second = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 100, first.Continuation, default);
 
-    Assert.Equal(100, first.ChunkEntryCount);
-    Assert.InRange(first.ScannedEntryCount, 1, ExerciseHistoryWindowRequest.MaximumScannedItems);
-    Assert.True(first.Truncated);
-    Assert.Null(first.TruncationReason);
-    Assert.NotNull(first.ContinuationInputs);
-    Assert.Equal(50, second.ChunkEntryCount);
-    Assert.False(second.Truncated);
-    Assert.Equal(2, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.GetExerciseHistoryWindowAsync), client.LastOperation);
+    (first.ChunkEntryCount).Should().Be(100);
+    (first.ScannedEntryCount).Should().BeInRange(1, ExerciseHistoryWindowRequest.MaximumScannedItems);
+    (first.Truncated).Should().BeTrue();
+    (first.TruncationReason).Should().BeNull();
+    (first.ContinuationInputs).Should().NotBeNull();
+    (second.ChunkEntryCount).Should().Be(50);
+    (second.Truncated).Should().BeFalse();
+    (client.CallCount).Should().Be(2);
+    (client.LastOperation).Should().Be(nameof(IHevyClient.GetExerciseHistoryWindowAsync));
   }
 
   [Fact]
@@ -264,13 +262,13 @@ public sealed class TrainingAnalysisServiceTests
 
     var result = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 1_000, null, default);
 
-    Assert.Equal(1_000, result.ChunkEntryCount);
-    Assert.Equal(1_000, result.ScannedEntryCount);
-    Assert.True(result.Truncated);
-    Assert.Equal(ExerciseHistoryWindow.ItemSafetyCap, result.TruncationReason);
-    Assert.Null(result.Continuation);
-    Assert.Null(result.ContinuationInputs);
-    Assert.Equal(1, client.CallCount);
+    (result.ChunkEntryCount).Should().Be(1_000);
+    (result.ScannedEntryCount).Should().Be(1_000);
+    (result.Truncated).Should().BeTrue();
+    (result.TruncationReason).Should().Be(ExerciseHistoryWindow.ItemSafetyCap);
+    (result.Continuation).Should().BeNull();
+    (result.ContinuationInputs).Should().BeNull();
+    (client.CallCount).Should().Be(1);
   }
 
   [Fact]
@@ -293,15 +291,15 @@ public sealed class TrainingAnalysisServiceTests
         },
         Continuation.MaximumItemBudget);
 
-    await Assert.ThrowsAnyAsync<ArgumentException>(() => service.SummarizeExerciseHistoryAsync(
+    await FluentActions.Awaiting(() => service.SummarizeExerciseHistoryAsync(
         "template-1",
         4,
         DateTimeOffset.Parse("2026-07-27T00:00:00Z"),
         100,
         continuation,
-        default));
+        default)).Should().ThrowAsync<ArgumentException>();
 
-    Assert.Equal(0, client.CallCount);
+    (client.CallCount).Should().Be(0);
   }
 
   [Fact]
@@ -319,9 +317,9 @@ public sealed class TrainingAnalysisServiceTests
     };
     var result = await new TrainingAnalysisService(client, new FixedTimeProvider(Now)).SummarizeTrainingAsync(4, null, 100, null, default);
 
-    var bicep = Assert.Single(result.MeasurementDeltas, delta => delta.Metric == "left_bicep_cm");
-    Assert.Equal(1m, bicep.Delta);
-    Assert.Equal([new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 20)], bicep.EvidenceDates);
+    var bicep = (result.MeasurementDeltas).Should().ContainSingle(delta => delta.Metric == "left_bicep_cm").Which;
+    (bicep.Delta).Should().Be(1m);
+    (bicep.EvidenceDates).Should().Equal([new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 20)]);
   }
 
   [Fact]
@@ -335,8 +333,8 @@ public sealed class TrainingAnalysisServiceTests
     var evidence = await service.GetWorkoutEvidenceAsync(4, null, 1, null, default);
     var callsBefore = client.CallCount;
 
-    await Assert.ThrowsAsync<ArgumentException>(() => service.SummarizeTrainingAsync(4, null, 1, evidence.Continuation, default));
-    Assert.Equal(callsBefore, client.CallCount);
+    await FluentActions.Awaiting(() => service.SummarizeTrainingAsync(4, null, 1, evidence.Continuation, default)).Should().ThrowExactlyAsync<ArgumentException>();
+    (client.CallCount).Should().Be(callsBefore);
   }
 
   [Fact]
@@ -353,8 +351,8 @@ public sealed class TrainingAnalysisServiceTests
 
     var second = await service.GetWorkoutEvidenceAsync(4, null, 1, first.Continuation, default);
 
-    Assert.Equal(first.RangeStartUtc, second.RangeStartUtc);
-    Assert.Equal(first.RangeEndUtc, second.RangeEndUtc);
+    (second.RangeStartUtc).Should().Be(first.RangeStartUtc);
+    (second.RangeEndUtc).Should().Be(first.RangeEndUtc);
   }
 
   [Fact]
@@ -371,7 +369,7 @@ public sealed class TrainingAnalysisServiceTests
     };
     var result = await new TrainingAnalysisService(client, new FixedTimeProvider(Now)).SummarizeTrainingAsync(4, end, 100, null, default);
 
-    Assert.Equal(2, result.WeeklyFrequency.Sum(static week => week.ChunkWorkoutCount));
+    (result.WeeklyFrequency.Sum(static week => week.ChunkWorkoutCount)).Should().Be(2);
   }
 
   [Fact]
@@ -408,40 +406,40 @@ public sealed class TrainingAnalysisServiceTests
       chunks.Add(chunk);
       if (chunk.Truncated)
       {
-        Assert.Equal("partial_chunk", chunk.MetricScope);
-        Assert.NotNull(chunk.ContinuationInputs);
-        Assert.Equal(4, chunk.ContinuationInputs.Weeks);
-        Assert.Equal(end, chunk.ContinuationInputs.RangeEndUtc);
-        Assert.Equal(2, chunk.ContinuationInputs.Limit);
+        (chunk.MetricScope).Should().Be("partial_chunk");
+        (chunk.ContinuationInputs).Should().NotBeNull();
+        (chunk.ContinuationInputs.Weeks).Should().Be(4);
+        (chunk.ContinuationInputs.RangeEndUtc).Should().Be(end);
+        (chunk.ContinuationInputs.Limit).Should().Be(2);
       }
       continuation = chunk.Continuation;
     }
     while (continuation is not null);
 
-    Assert.Equal("complete_period", complete.MetricScope);
-    Assert.True(complete.GapsComplete);
-    Assert.Equal(complete.ChunkWorkoutFrequency, chunks.Sum(static chunk => chunk.ChunkWorkoutFrequency));
+    (complete.MetricScope).Should().Be("complete_period");
+    (complete.GapsComplete).Should().BeTrue();
+    (chunks.Sum(static chunk => chunk.ChunkWorkoutFrequency)).Should().Be(complete.ChunkWorkoutFrequency);
     foreach (var fullWeek in complete.WeeklyFrequency)
     {
-      Assert.Equal(fullWeek.ChunkWorkoutCount, chunks.Sum(chunk => chunk.WeeklyFrequency.Single(week => week.PeriodStartUtc == fullWeek.PeriodStartUtc).ChunkWorkoutCount));
+      (chunks.Sum(chunk => chunk.WeeklyFrequency.Single(week => week.PeriodStartUtc == fullWeek.PeriodStartUtc).ChunkWorkoutCount)).Should().Be(fullWeek.ChunkWorkoutCount);
     }
-    var fullExercise = Assert.Single(complete.Exercises);
-    Assert.Equal(fullExercise.ChunkVolumeKgReps, chunks.SelectMany(static chunk => chunk.Exercises).Sum(static exercise => exercise.ChunkVolumeKgReps));
+    var fullExercise = (complete.Exercises).Should().ContainSingle().Which;
+    (chunks.SelectMany(static chunk => chunk.Exercises).Sum(static exercise => exercise.ChunkVolumeKgReps)).Should().Be(fullExercise.ChunkVolumeKgReps);
     var observations = chunks.SelectMany(static chunk => chunk.Exercises)
         .SelectMany(static exercise => new[] { exercise.FirstObservation, exercise.LastObservation })
         .OrderBy(static observation => observation.StartTime).ToArray();
-    Assert.Equal(fullExercise.ChunkProgressionKgReps, observations[^1].VolumeKgReps - observations[0].VolumeKgReps);
+    (observations[^1].VolumeKgReps - observations[0].VolumeKgReps).Should().Be(fullExercise.ChunkProgressionKgReps);
     var composedGapStarts = complete.WeeklyFrequency
         .Where(fullWeek => chunks.Sum(chunk => chunk.WeeklyFrequency.Single(week => week.PeriodStartUtc == fullWeek.PeriodStartUtc).ChunkWorkoutCount) == 0)
         .Select(static week => week.PeriodStartUtc).ToArray();
-    Assert.Equal(complete.MissingWeekGaps.Select(static gap => gap.PeriodStartUtc), composedGapStarts);
-    Assert.All(chunks.Where(static chunk => !chunk.GapsComplete), static chunk => Assert.Empty(chunk.MissingWeekGaps));
+    (composedGapStarts).Should().Equal(complete.MissingWeekGaps.Select(static gap => gap.PeriodStartUtc));
+    (chunks.Where(static chunk => !chunk.GapsComplete)).Should().AllSatisfy(static chunk => (chunk.MissingWeekGaps).Should().BeEmpty());
     var weightSamples = chunks.SelectMany(static chunk => chunk.MeasurementDeltas)
         .Where(static delta => delta.Metric == "weight_kg")
         .SelectMany(static delta => new[] { (Date: delta.EvidenceDates[0], Value: delta.FirstValue), (Date: delta.EvidenceDates[1], Value: delta.LastValue) })
         .OrderBy(static sample => sample.Date).ToArray();
-    var fullWeight = Assert.Single(complete.MeasurementDeltas, static delta => delta.Metric == "weight_kg");
-    Assert.Equal(fullWeight.Delta, weightSamples[^1].Value - weightSamples[0].Value);
+    var fullWeight = (complete.MeasurementDeltas).Should().ContainSingle(static delta => delta.Metric == "weight_kg").Which;
+    (weightSamples[^1].Value - weightSamples[0].Value).Should().Be(fullWeight.Delta);
   }
 
   [Fact]
@@ -458,12 +456,12 @@ public sealed class TrainingAnalysisServiceTests
     var first = await service.SummarizeTrainingAsync(4, null, 1_000, null, default);
     var second = await service.SummarizeTrainingAsync(4, null, 1_000, first.Continuation, default);
 
-    Assert.True(first.Truncated);
-    Assert.Equal("partial_chunk", first.MetricScope);
-    Assert.NotNull(first.ContinuationInputs);
-    Assert.False(second.Truncated);
-    Assert.Equal("partial_chunk", second.MetricScope);
-    Assert.Equal(102, client.CallCount);
+    (first.Truncated).Should().BeTrue();
+    (first.MetricScope).Should().Be("partial_chunk");
+    (first.ContinuationInputs).Should().NotBeNull();
+    (second.Truncated).Should().BeFalse();
+    (second.MetricScope).Should().Be("partial_chunk");
+    (client.CallCount).Should().Be(102);
   }
 
   private static Workout Workout(string id, string start, decimal weight) => FakeHevyClient.SampleWorkout() with

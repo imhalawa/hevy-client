@@ -30,7 +30,8 @@ internal static class ToolExceptionFilter
           exception.Message,
           exception.IsRetryable,
           NewCorrelationId(),
-          exception.StatusCode is null ? null : (int)exception.StatusCode.Value));
+          exception.StatusCode is null ? null : (int)exception.StatusCode.Value,
+          exception.RequestId));
     }
     catch (HevyCommittedReadbackException exception)
     {
@@ -47,7 +48,8 @@ internal static class ToolExceptionFilter
           exception.Message,
           false,
           NewCorrelationId(),
-          exception.StatusCode is null ? null : (int)exception.StatusCode.Value));
+          exception.StatusCode is null ? null : (int)exception.StatusCode.Value,
+          exception.RequestId));
     }
     catch (ArgumentException exception)
     {

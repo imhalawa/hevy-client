@@ -15,6 +15,8 @@ internal sealed class HevyCache
   private readonly IMemoryCache _memory;
   private readonly TimeProvider _timeProvider;
   private readonly object _sync = new();
+  private int _routineGeneration;
+  private int _exerciseTemplateGeneration;
 
   public HevyCache(IHevyClient client, IMemoryCache memory, TimeProvider timeProvider)
   {
@@ -31,9 +33,36 @@ internal sealed class HevyCache
   internal Task<IReadOnlyList<ExerciseTemplate>> GetExerciseTemplatesAsync(CancellationToken cancellationToken) =>
       GetCatalogAsync(ExerciseTemplatesKey, _client.GetExerciseTemplatesAsync, cancellationToken);
 
-  internal void InvalidateRoutines() => _memory.Remove(RoutinesKey);
+  internal Task<PagedResult<Routine>> GetRoutinePageAsync(int page, CancellationToken cancellationToken) =>
+      GetPageAsync($"{RoutinesKey}:{_routineGeneration}:{page}", page, _client.GetRoutinesAsync, cancellationToken);
 
-  internal void InvalidateExerciseTemplates() => _memory.Remove(ExerciseTemplatesKey);
+  internal Task<PagedResult<ExerciseTemplate>> GetExerciseTemplatePageAsync(int page, CancellationToken cancellationToken) =>
+      GetPageAsync($"{ExerciseTemplatesKey}:{_exerciseTemplateGeneration}:{page}", page, _client.GetExerciseTemplatesAsync, cancellationToken);
+
+  internal void InvalidateRoutines()
+  {
+    lock (_sync) _routineGeneration++;
+    _memory.Remove(RoutinesKey);
+  }
+
+  internal void InvalidateExerciseTemplates()
+  {
+    lock (_sync) _exerciseTemplateGeneration++;
+    _memory.Remove(ExerciseTemplatesKey);
+  }
+
+  private async Task<PagedResult<T>> GetPageAsync<T>(
+      string key,
+      int page,
+      Func<int, int, CancellationToken, Task<PagedResult<T>>> readPage,
+      CancellationToken cancellationToken)
+      where T : class
+  {
+    if (_memory.TryGetValue(key, out PagedResult<T>? cached) && cached is not null) return cached;
+    var result = await readPage(page, PageSize, cancellationToken).ConfigureAwait(false);
+    _memory.Set(key, result, new MemoryCacheEntryOptions { Size = 1, SlidingExpiration = SlidingLifetime });
+    return result;
+  }
 
   private async Task<IReadOnlyList<T>> GetCatalogAsync<T>(
       string key,

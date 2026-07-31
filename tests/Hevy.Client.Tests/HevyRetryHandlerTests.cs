@@ -9,7 +9,6 @@ namespace Hevy.Client.Tests;
 
 public sealed class HevyRetryHandlerTests
 {
-  // Break caught: a transient connection failure making a read fail immediately instead of retrying the request.
   [Fact]
   public async Task Get_retries_a_connection_error_and_returns_the_later_response()
   {
@@ -22,12 +21,11 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.GetAsync("v1/user/info", CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal(2, handler.Requests.Count);
-    Assert.Equal([TimeSpan.FromSeconds(1)], delays);
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (handler.Requests.Count).Should().Be(2);
+    (delays).Should().Equal([TimeSpan.FromSeconds(1)]);
   }
 
-  // Break caught: sampling jitter separately for the retry-deadline check and the actual connection-error delay.
   [Fact]
   public async Task Connection_retry_samples_jitter_once_per_delay()
   {
@@ -56,12 +54,11 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.GetAsync("v1/user/info", CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal(1, jitterCalls);
-    Assert.Equal([TimeSpan.FromSeconds(1)], delays);
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (jitterCalls).Should().Be(1);
+    (delays).Should().Equal([TimeSpan.FromSeconds(1)]);
   }
 
-  // Break caught: rate-limit responses being retried before their server-provided Retry-After interval.
   [Fact]
   public async Task Get_honors_retry_after_before_retrying_a_rate_limited_response()
   {
@@ -74,12 +71,11 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.GetAsync("v1/user/info", CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal(2, handler.Requests.Count);
-    Assert.Equal([TimeSpan.FromSeconds(7)], delays);
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (handler.Requests.Count).Should().Be(2);
+    (delays).Should().Equal([TimeSpan.FromSeconds(7)]);
   }
 
-  // Break caught: a Retry-After date being interpreted relative to wall-clock time instead of the injected operation clock.
   [Fact]
   public async Task Get_uses_the_injected_clock_for_a_retry_after_date()
   {
@@ -93,11 +89,10 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.GetAsync("v1/user/info", CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal([TimeSpan.FromSeconds(4)], delays);
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (delays).Should().Equal([TimeSpan.FromSeconds(4)]);
   }
 
-  // Break caught: selected 5xx read failures exceeding the three-attempt ceiling.
   [Fact]
   public async Task Get_retries_a_503_no_more_than_three_total_attempts()
   {
@@ -107,12 +102,11 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.GetAsync("v1/user/info", CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-    Assert.Equal(3, handler.Requests.Count);
-    Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)], delays);
+    (response.StatusCode).Should().Be(HttpStatusCode.ServiceUnavailable);
+    (handler.Requests.Count).Should().Be(3);
+    (delays).Should().Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)]);
   }
 
-  // Break caught: retrying a non-transient 5xx status that is outside the conservative retry allow-list.
   [Fact]
   public async Task Get_does_not_retry_an_unselected_5xx_response()
   {
@@ -122,26 +116,30 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.GetAsync("v1/user/info", CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
-    Assert.Single(handler.Requests);
-    Assert.Empty(delays);
+    (response.StatusCode).Should().Be(HttpStatusCode.NotImplemented);
+    (handler.Requests).Should().ContainSingle();
+    (delays).Should().BeEmpty();
   }
 
-  // Break caught: returning an unselected 5xx for a transmitted mutation, which invites the caller to replay an ambiguous write.
   [Fact]
   public async Task Post_maps_an_unselected_5xx_response_to_an_unknown_outcome_without_retrying()
   {
-    var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.NotImplemented, "{}"));
+    var handler = new RecordingHttpMessageHandler((_, _) =>
+    {
+      var response = RecordingHttpMessageHandler.Json(HttpStatusCode.NotImplemented, "{}");
+      response.Headers.Add("X-Request-Id", "safe-request-id");
+      return response;
+    });
     using var client = CreateClient(handler, []);
     using var request = JsonPost("v1/workouts");
 
-    var exception = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() => client.SendAsync(request, CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.SendAsync(request, CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
 
-    Assert.Equal(HttpStatusCode.NotImplemented, exception.StatusCode);
-    Assert.Single(handler.Requests);
+    (exception.StatusCode).Should().Be(HttpStatusCode.NotImplemented);
+    (exception.RequestId).Should().Be("safe-request-id");
+    (handler.Requests).Should().ContainSingle();
   }
 
-  // Break caught: a non-idempotent POST being silently replayed after the server may have received its body.
   [Fact]
   public async Task Post_does_not_retry_and_reports_an_unknown_outcome_after_a_transient_response()
   {
@@ -150,14 +148,13 @@ public sealed class HevyRetryHandlerTests
     using var client = CreateClient(handler, delays);
     using var request = JsonPost("v1/workouts");
 
-    var exception = await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() => client.SendAsync(request, CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.SendAsync(request, CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
 
-    Assert.Equal("outcome_unknown", exception.Code);
-    Assert.Single(handler.Requests);
-    Assert.Empty(delays);
+    (exception.Code).Should().Be("outcome_unknown");
+    (handler.Requests).Should().ContainSingle();
+    (delays).Should().BeEmpty();
   }
 
-  // Break caught: PUT retries either occurring without an explicit idempotency mark or being disabled despite that mark.
   [Fact]
   public async Task Put_retries_only_when_explicitly_marked_safe()
   {
@@ -165,7 +162,7 @@ public sealed class HevyRetryHandlerTests
     using var unsafeClient = CreateClient(unsafeHandler, []);
     using var unsafeRequest = JsonPut("v1/workouts/workout-1");
 
-    await Assert.ThrowsAsync<HevyOutcomeUnknownException>(() => unsafeClient.SendAsync(unsafeRequest, CancellationToken.None));
+    await FluentActions.Awaiting(() => unsafeClient.SendAsync(unsafeRequest, CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
 
     var responses = new Queue<HttpResponseMessage>([
         RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}"),
@@ -178,13 +175,12 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await safeClient.SendAsync(safeRequest, CancellationToken.None);
 
-    Assert.Single(unsafeHandler.Requests);
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal(2, safeHandler.Requests.Count);
-    Assert.Equal([TimeSpan.FromSeconds(1)], delays);
+    (unsafeHandler.Requests).Should().ContainSingle();
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (safeHandler.Requests.Count).Should().Be(2);
+    (delays).Should().Equal([TimeSpan.FromSeconds(1)]);
   }
 
-  // Break caught: replaying the same HttpRequestMessage and content instance through a lower handler after it has already been sent.
   [Fact]
   public async Task Safe_put_uses_a_fresh_request_for_each_attempt()
   {
@@ -203,13 +199,12 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.SendAsync(request, CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal(2, requests.Count);
-    Assert.NotSame(requests[0], requests[1]);
-    Assert.All(handler.Requests, sent => Assert.Equal("{\"title\":\"sanitized\"}", sent.Body));
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (requests.Count).Should().Be(2);
+    (requests[1]).Should().NotBeSameAs(requests[0]);
+    (handler.Requests).Should().AllSatisfy(sent => (sent.Body).Should().Be("{\"title\":\"sanitized\"}"));
   }
 
-  // Break caught: honoring a Retry-After value that exceeds the remaining operation deadline.
   [Fact]
   public async Task Get_does_not_wait_past_the_operation_deadline()
   {
@@ -222,12 +217,11 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.SendAsync(request, CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
-    Assert.Single(handler.Requests);
-    Assert.Empty(delays);
+    (response.StatusCode).Should().Be(HttpStatusCode.TooManyRequests);
+    (handler.Requests).Should().ContainSingle();
+    (delays).Should().BeEmpty();
   }
 
-  // Break caught: retry backoff continuing after the caller cancels the operation.
   [Fact]
   public async Task Cancellation_during_retry_delay_stops_further_attempts()
   {
@@ -242,12 +236,11 @@ public sealed class HevyRetryHandlerTests
           return Task.Delay(Timeout.InfiniteTimeSpan, token);
         });
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetAsync("v1/user/info", cancellation.Token));
+    await FluentActions.Awaiting(() => client.GetAsync("v1/user/info", cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
 
-    Assert.Single(handler.Requests);
+    (handler.Requests).Should().ContainSingle();
   }
 
-  // Break caught: a lower handler changing one sent request's destination and contaminating later retry attempts.
   [Fact]
   public async Task Retry_uses_the_original_exact_hevy_origin_for_every_attempt()
   {
@@ -267,9 +260,9 @@ public sealed class HevyRetryHandlerTests
 
     using var response = await client.GetAsync("v1/user/info", CancellationToken.None);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal(2, handler.Requests.Count);
-    Assert.All(handler.Requests, sent => Assert.Equal("https://api.hevyapp.com/v1/user/info", sent.RequestUri!.AbsoluteUri));
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (handler.Requests.Count).Should().Be(2);
+    (handler.Requests).Should().AllSatisfy(sent => (sent.RequestUri!.AbsoluteUri).Should().Be("https://api.hevyapp.com/v1/user/info"));
   }
 
   private static HttpClient CreateClient(RecordingHttpMessageHandler handler, List<TimeSpan> delays, Func<TimeSpan, CancellationToken, Task>? delayAsync = null, TimeProvider? timeProvider = null)

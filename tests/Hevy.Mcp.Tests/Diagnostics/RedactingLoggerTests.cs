@@ -22,7 +22,7 @@ public sealed class RedactingLoggerTests
   {
     var writer = new StringWriter(CultureInfo.InvariantCulture);
     var options = Options("Information");
-    using var provider = Assert.IsType<RedactingLoggerProvider>(RedactingLoggerProvider.Create(options, writer));
+    using var provider = (RedactingLoggerProvider.Create(options, writer)).Should().BeOfType<RedactingLoggerProvider>().Which;
     var logger = provider.CreateLogger("unsafe-category-name");
     var correlationId = Guid.ParseExact("00112233445566778899aabbccddeeff", "N");
     var safeEvent = new SafeOperationEvent(
@@ -31,7 +31,9 @@ public sealed class RedactingLoggerTests
         DiagnosticOperationStatus.Failed,
         correlationId,
         DiagnosticExceptionCategory.Upstream,
-        503);
+        503,
+        "get_workouts",
+        "hevy-request-123");
 
     logger.Log(
         LogLevel.Warning,
@@ -40,32 +42,34 @@ public sealed class RedactingLoggerTests
         new InvalidOperationException(UnsafeContent),
         static (_, _) => UnsafeContent);
 
-    var line = Assert.Single(writer.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+    var line = (writer.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)).Should().ContainSingle().Which;
     using var document = JsonDocument.Parse(line);
     var root = document.RootElement;
-    Assert.Equal("read", root.GetProperty("operation_category").GetString());
-    Assert.Equal("under_one_second", root.GetProperty("duration_bucket").GetString());
-    Assert.Equal("failed", root.GetProperty("status").GetString());
-    Assert.Equal(correlationId.ToString("N"), root.GetProperty("correlation_id").GetString());
-    Assert.Equal("upstream", root.GetProperty("exception_category").GetString());
-    Assert.Equal(503, root.GetProperty("http_status").GetInt32());
-    Assert.Equal("stdio", root.GetProperty("transport").GetString());
-    Assert.False(root.GetProperty("read_only").GetBoolean());
-    Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("server_version").GetString()));
-    Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("runtime_version").GetString()));
-    Assert.DoesNotContain(UnsafeContent, line, StringComparison.Ordinal);
-    Assert.DoesNotContain("unsafe-category-name", line, StringComparison.Ordinal);
-    Assert.DoesNotContain("api-key", line, StringComparison.OrdinalIgnoreCase);
-    Assert.DoesNotContain("private workout", line, StringComparison.OrdinalIgnoreCase);
-    Assert.DoesNotContain("2026-07-25", line, StringComparison.Ordinal);
-    Assert.DoesNotContain("91.2", line, StringComparison.Ordinal);
+    (root.GetProperty("operation_category").GetString()).Should().Be("read");
+    (root.GetProperty("operation_name").GetString()).Should().Be("get_workouts");
+    (root.GetProperty("hevy_request_id").GetString()).Should().Be("hevy-request-123");
+    (root.GetProperty("duration_bucket").GetString()).Should().Be("under_one_second");
+    (root.GetProperty("status").GetString()).Should().Be("failed");
+    (root.GetProperty("correlation_id").GetString()).Should().Be(correlationId.ToString("N"));
+    (root.GetProperty("exception_category").GetString()).Should().Be("upstream");
+    (root.GetProperty("http_status").GetInt32()).Should().Be(503);
+    (root.GetProperty("transport").GetString()).Should().Be("stdio");
+    (root.GetProperty("read_only").GetBoolean()).Should().BeFalse();
+    (string.IsNullOrWhiteSpace(root.GetProperty("server_version").GetString())).Should().BeFalse();
+    (string.IsNullOrWhiteSpace(root.GetProperty("runtime_version").GetString())).Should().BeFalse();
+    (line).Should().NotContain(UnsafeContent);
+    (line).Should().NotContain("unsafe-category-name");
+    (line).Should().NotContainEquivalentOf("api-key");
+    (line).Should().NotContainEquivalentOf("private workout");
+    (line).Should().NotContain("2026-07-25");
+    (line).Should().NotContain("91.2");
   }
 
   [Fact]
   public void ArbitraryLoggerStateIsRejectedInsteadOfScrubbed()
   {
     var writer = new StringWriter(CultureInfo.InvariantCulture);
-    using var provider = Assert.IsType<RedactingLoggerProvider>(RedactingLoggerProvider.Create(Options("Trace"), writer));
+    using var provider = (RedactingLoggerProvider.Create(Options("Trace"), writer)).Should().BeOfType<RedactingLoggerProvider>().Which;
     var logger = provider.CreateLogger("category");
     var arbitraryState = new Dictionary<string, object?>
     {
@@ -80,7 +84,7 @@ public sealed class RedactingLoggerTests
 
     logger.Log(LogLevel.Error, new EventId(9), arbitraryState, new Exception(UnsafeContent), static (_, _) => UnsafeContent);
 
-    Assert.Equal(string.Empty, writer.ToString());
+    (writer.ToString()).Should().Be(string.Empty);
   }
 
   [Fact]
@@ -90,15 +94,15 @@ public sealed class RedactingLoggerTests
 
     var provider = RedactingLoggerProvider.Create(Options(logLevel: null), writer);
 
-    Assert.Null(provider);
-    Assert.Equal(string.Empty, writer.ToString());
+    (provider).Should().BeNull();
+    (writer.ToString()).Should().Be(string.Empty);
   }
 
   [Fact]
   public async Task ThrowingDiagnosticSinkCannotChangeACompletedMutationResult()
   {
     var writer = new ThrowingWriter();
-    using var provider = Assert.IsType<RedactingLoggerProvider>(RedactingLoggerProvider.Create(Options("Information"), writer));
+    using var provider = (RedactingLoggerProvider.Create(Options("Information"), writer)).Should().BeOfType<RedactingLoggerProvider>().Which;
     var client = new FakeHevyClient();
     using var services = new ServiceCollection().AddSingleton<IHevyClient>(client).BuildServiceProvider();
 
@@ -112,17 +116,17 @@ public sealed class RedactingLoggerTests
         provider,
         CancellationToken.None);
 
-    Assert.False(result.IsError);
-    Assert.Equal(1, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.CreateWorkoutAsync), client.LastOperation);
-    Assert.Equal(1, writer.WriteAttempts);
+    (result.IsError).Should().BeFalse();
+    (client.CallCount).Should().Be(1);
+    (client.LastOperation).Should().Be(nameof(IHevyClient.CreateWorkoutAsync));
+    (writer.WriteAttempts).Should().Be(1);
   }
 
   [Fact]
   public async Task ThrowingDiagnosticSinkCannotChangeStructuredErrorOrCancellationSemantics()
   {
     var errorWriter = new ThrowingWriter();
-    using var errorProvider = Assert.IsType<RedactingLoggerProvider>(RedactingLoggerProvider.Create(Options("Information"), errorWriter));
+    using var errorProvider = (RedactingLoggerProvider.Create(Options("Information"), errorWriter)).Should().BeOfType<RedactingLoggerProvider>().Which;
     var expected = ToolExceptionFilter.Validation("Safe fixed validation message.");
 
     var actual = await DiagnosticToolDispatch.InvokeAsync(
@@ -131,31 +135,31 @@ public sealed class RedactingLoggerTests
         errorProvider,
         CancellationToken.None);
 
-    Assert.Same(expected, actual);
-    Assert.True(actual.IsError);
-    Assert.Equal("validation_error", actual.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(1, errorWriter.WriteAttempts);
+    (actual).Should().BeSameAs(expected);
+    (actual.IsError).Should().BeTrue();
+    (actual.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
+    (errorWriter.WriteAttempts).Should().Be(1);
 
     var cancellationWriter = new ThrowingWriter();
-    using var cancellationProvider = Assert.IsType<RedactingLoggerProvider>(RedactingLoggerProvider.Create(Options("Information"), cancellationWriter));
+    using var cancellationProvider = (RedactingLoggerProvider.Create(Options("Information"), cancellationWriter)).Should().BeOfType<RedactingLoggerProvider>().Which;
     using var source = new CancellationTokenSource();
     source.Cancel();
 
-    var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => DiagnosticToolDispatch.InvokeAsync(
+    var exception = (await FluentActions.Awaiting(() => DiagnosticToolDispatch.InvokeAsync(
         _ => Task.FromCanceled<ModelContextProtocol.Protocol.CallToolResult>(source.Token),
         DiagnosticOperationCategory.Read,
         cancellationProvider,
-        source.Token));
+        source.Token)).Should().ThrowAsync<OperationCanceledException>()).Which;
 
-    Assert.Equal(source.Token, exception.CancellationToken);
-    Assert.Equal(1, cancellationWriter.WriteAttempts);
+    (exception.CancellationToken).Should().Be(source.Token);
+    (cancellationWriter.WriteAttempts).Should().Be(1);
   }
 
   [Fact]
   public void FailedDiagnosticSinkIsDisabledAfterItsFirstException()
   {
     var writer = new ThrowingWriter();
-    using var provider = Assert.IsType<RedactingLoggerProvider>(RedactingLoggerProvider.Create(Options("Trace"), writer));
+    using var provider = (RedactingLoggerProvider.Create(Options("Trace"), writer)).Should().BeOfType<RedactingLoggerProvider>().Which;
     var operationEvent = new SafeOperationEvent(
         DiagnosticOperationCategory.Read,
         DiagnosticDurationBucket.UnderOneSecond,
@@ -166,7 +170,7 @@ public sealed class RedactingLoggerTests
     provider.Write(LogLevel.Information, operationEvent);
     provider.Write(LogLevel.Information, operationEvent);
 
-    Assert.Equal(1, writer.WriteAttempts);
+    (writer.WriteAttempts).Should().Be(1);
   }
 
   [Fact]
@@ -176,16 +180,21 @@ public sealed class RedactingLoggerTests
         "validation",
         "Safe fixed validation message.",
         false,
-        "00112233445566778899aabbccddeeff"));
+        "00112233445566778899aabbccddeeff",
+        400,
+        "hevy-request-123"));
 
     var operationEvent = SafeOperationEvent.FromToolResult(
         DiagnosticOperationCategory.Mutation,
         TimeSpan.FromMilliseconds(5),
         result,
-        Guid.NewGuid());
+        Guid.NewGuid(),
+        "create_workout");
 
-    Assert.Equal(DiagnosticOperationStatus.Rejected, operationEvent.Status);
-    Assert.Equal(DiagnosticExceptionCategory.Validation, operationEvent.ExceptionCategory);
+    (operationEvent.Status).Should().Be(DiagnosticOperationStatus.Rejected);
+    (operationEvent.ExceptionCategory).Should().Be(DiagnosticExceptionCategory.Validation);
+    (operationEvent.OperationName).Should().Be("create_workout");
+    (operationEvent.HevyRequestId).Should().Be("hevy-request-123");
   }
 
   private static HevyMcpOptions Options(string? logLevel)

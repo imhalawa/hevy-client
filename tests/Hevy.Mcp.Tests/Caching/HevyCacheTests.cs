@@ -27,8 +27,8 @@ public sealed class HevyCacheTests
     var second = cache.GetRoutinesAsync(default);
     release.SetResult();
 
-    Assert.Same(await first, await second);
-    Assert.Equal(1, client.CallCount);
+    (await second).Should().BeSameAs(await first);
+    (client.CallCount).Should().Be(1);
   }
 
   [Fact]
@@ -47,11 +47,11 @@ public sealed class HevyCacheTests
     await cache.GetExerciseTemplatesAsync(default);
     clock.Advance(TimeSpan.FromMinutes(14));
     await cache.GetExerciseTemplatesAsync(default);
-    Assert.Equal(1, client.CallCount);
+    (client.CallCount).Should().Be(1);
 
     clock.Advance(TimeSpan.FromMinutes(15));
     await cache.GetExerciseTemplatesAsync(default);
-    Assert.Equal(2, client.CallCount);
+    (client.CallCount).Should().Be(2);
   }
 
   [Fact]
@@ -69,9 +69,9 @@ public sealed class HevyCacheTests
     await cache.GetExerciseTemplatesAsync(default);
     await cache.GetExerciseTemplatesAsync(default);
 
-    Assert.Equal(3, client.CallCount);
-    Assert.DoesNotContain("key", string.Join(',', HevyCache.CacheKeyNames), StringComparison.OrdinalIgnoreCase);
-    Assert.Equal(["exercise-templates", "routines"], HevyCache.CacheKeyNames.Order());
+    (client.CallCount).Should().Be(3);
+    (string.Join(',', HevyCache.CacheKeyNames)).Should().NotContainEquivalentOf("key");
+    (HevyCache.CacheKeyNames.Order()).Should().Equal(["exercise-templates", "routines"]);
   }
 
   [Fact]
@@ -93,7 +93,7 @@ public sealed class HevyCacheTests
     cache.InvalidateExerciseTemplates();
     await cache.GetExerciseTemplatesAsync(default);
 
-    Assert.Equal(4, client.CallCount);
+    (client.CallCount).Should().Be(4);
   }
 
   [Fact]
@@ -113,14 +113,13 @@ public sealed class HevyCacheTests
     using var memory = CreateMemoryCache(100);
     var cache = new HevyCache(client, memory, TimeProvider.System);
 
-    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
-    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
-    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
+    await FluentActions.Awaiting(() => cache.GetRoutinesAsync(default)).Should().ThrowExactlyAsync<InvalidOperationException>();
+    await FluentActions.Awaiting(() => cache.GetRoutinesAsync(default)).Should().ThrowExactlyAsync<InvalidOperationException>();
+    await FluentActions.Awaiting(() => cache.GetRoutinesAsync(default)).Should().ThrowExactlyAsync<InvalidOperationException>();
 
-    Assert.True(client.CallCount >= 3);
+    (client.CallCount >= 3).Should().BeTrue();
   }
 
-  // Break caught: page-count multiplication overflowing and driving an effectively unbounded empty-page loop.
   [Fact]
   public async Task Maximum_integer_page_count_is_rejected_after_one_page()
   {
@@ -131,9 +130,9 @@ public sealed class HevyCacheTests
     using var memory = CreateMemoryCache(100);
     var cache = new HevyCache(client, memory, TimeProvider.System);
 
-    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
+    await FluentActions.Awaiting(() => cache.GetRoutinesAsync(default)).Should().ThrowExactlyAsync<InvalidOperationException>();
 
-    Assert.Equal(1, client.CallCount);
+    (client.CallCount).Should().Be(1);
   }
 
   [Fact]
@@ -146,10 +145,10 @@ public sealed class HevyCacheTests
     using var memory = CreateMemoryCache(100);
     var cache = new HevyCache(client, memory, TimeProvider.System);
 
-    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
-    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
+    await FluentActions.Awaiting(() => cache.GetRoutinesAsync(default)).Should().ThrowExactlyAsync<InvalidOperationException>();
+    await FluentActions.Awaiting(() => cache.GetRoutinesAsync(default)).Should().ThrowExactlyAsync<InvalidOperationException>();
 
-    Assert.Equal(2, client.CallCount);
+    (client.CallCount).Should().Be(2);
   }
 
   [Fact]
@@ -162,10 +161,10 @@ public sealed class HevyCacheTests
     using var memory = CreateMemoryCache(100);
     var cache = new HevyCache(client, memory, TimeProvider.System);
 
-    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
-    await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetRoutinesAsync(default));
+    await FluentActions.Awaiting(() => cache.GetRoutinesAsync(default)).Should().ThrowExactlyAsync<InvalidOperationException>();
+    await FluentActions.Awaiting(() => cache.GetRoutinesAsync(default)).Should().ThrowExactlyAsync<InvalidOperationException>();
 
-    Assert.Equal(2, client.CallCount);
+    (client.CallCount).Should().Be(2);
   }
 
   [Fact]
@@ -190,13 +189,13 @@ public sealed class HevyCacheTests
     await started.Task;
     var survivor = cache.GetRoutinesAsync(default);
     creatorCancellation.Cancel();
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => creator);
+    await FluentActions.Awaiting(() => creator).Should().ThrowAsync<OperationCanceledException>();
     release.SetResult();
 
-    Assert.Single(await survivor);
-    Assert.Equal(1, client.CallCount);
-    Assert.Single(await cache.GetRoutinesAsync(default));
-    Assert.Equal(1, client.CallCount);
+    (await survivor).Should().ContainSingle();
+    (client.CallCount).Should().Be(1);
+    (await cache.GetRoutinesAsync(default)).Should().ContainSingle();
+    (client.CallCount).Should().Be(1);
   }
 
   [Fact]
@@ -220,11 +219,11 @@ public sealed class HevyCacheTests
     using var waiterCancellation = new CancellationTokenSource();
     var cancelledWaiter = cache.GetExerciseTemplatesAsync(waiterCancellation.Token);
     waiterCancellation.Cancel();
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelledWaiter);
+    await FluentActions.Awaiting(() => cancelledWaiter).Should().ThrowAsync<OperationCanceledException>();
     release.SetResult();
 
-    Assert.Single(await creator);
-    Assert.Equal(1, client.CallCount);
+    (await creator).Should().ContainSingle();
+    (client.CallCount).Should().Be(1);
   }
 
   [Fact]
@@ -262,10 +261,10 @@ public sealed class HevyCacheTests
 
     cancellation.Cancel();
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => abandoned);
+    await FluentActions.Awaiting(() => abandoned).Should().ThrowAsync<OperationCanceledException>();
     await fillCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
-    Assert.Single(await cache.GetRoutinesAsync(default));
-    Assert.Equal(2, client.CallCount);
+    (await cache.GetRoutinesAsync(default)).Should().ContainSingle();
+    (client.CallCount).Should().Be(2);
   }
 
   [Fact]
@@ -301,10 +300,10 @@ public sealed class HevyCacheTests
     firstCancellation.Cancel();
     secondCancellation.Cancel();
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => second);
+    await FluentActions.Awaiting(() => first).Should().ThrowAsync<OperationCanceledException>();
+    await FluentActions.Awaiting(() => second).Should().ThrowAsync<OperationCanceledException>();
     await fillCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
-    Assert.Equal(1, client.CallCount);
+    (client.CallCount).Should().Be(1);
   }
 
   private static MemoryCache CreateMemoryCache(long sizeLimit) => new(new MemoryCacheOptions { SizeLimit = sizeLimit });

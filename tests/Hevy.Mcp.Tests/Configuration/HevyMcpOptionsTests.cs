@@ -15,9 +15,9 @@ public sealed class HevyMcpOptionsTests
     var environment = ValidEnvironment();
     environment["HEVY_API_KEY"] = apiKey;
 
-    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+    var exception = FluentActions.Invoking(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault)).Should().ThrowExactly<InvalidOperationException>().Which;
 
-    Assert.Equal("HEVY_API_KEY is required.", exception.Message);
+    (exception.Message).Should().Be("HEVY_API_KEY is required.");
   }
 
   [Fact]
@@ -25,9 +25,10 @@ public sealed class HevyMcpOptionsTests
   {
     var options = HevyMcpOptions.FromEnvironment(ValidEnvironment().GetValueOrDefault);
 
-    Assert.Equal(HevyMcpTransport.Stdio, options.Transport);
-    Assert.False(options.ReadOnly);
-    Assert.Equal(LogLevel.None, options.LogLevel);
+    (options.ApiKey).Should().Be("hevy-key-secret");
+    (options.Transport).Should().Be(HevyMcpTransport.Stdio);
+    (options.ReadOnly).Should().BeFalse();
+    (options.LogLevel).Should().Be(LogLevel.None);
   }
 
   [Theory]
@@ -45,7 +46,7 @@ public sealed class HevyMcpOptionsTests
 
     var options = HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault);
 
-    Assert.Equal(expected, options.LogLevel);
+    (options.LogLevel).Should().Be(expected);
   }
 
   [Theory]
@@ -58,9 +59,9 @@ public sealed class HevyMcpOptionsTests
     var environment = ValidEnvironment();
     environment["HEVY_LOG_LEVEL"] = value;
 
-    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+    var exception = FluentActions.Invoking(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault)).Should().ThrowExactly<InvalidOperationException>().Which;
 
-    Assert.Contains("HEVY_LOG_LEVEL", exception.Message, StringComparison.Ordinal);
+    (exception.Message).Should().Contain("HEVY_LOG_LEVEL");
   }
 
   [Theory]
@@ -77,7 +78,7 @@ public sealed class HevyMcpOptionsTests
 
     var options = HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault);
 
-    Assert.Equal(expected, options.Transport);
+    (options.Transport).Should().Be(expected);
   }
 
   [Theory]
@@ -90,9 +91,9 @@ public sealed class HevyMcpOptionsTests
     var environment = ValidEnvironment();
     environment["HEVY_MCP_TRANSPORT"] = value;
 
-    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+    var exception = FluentActions.Invoking(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault)).Should().ThrowExactly<InvalidOperationException>().Which;
 
-    Assert.Contains("HEVY_MCP_TRANSPORT", exception.Message, StringComparison.Ordinal);
+    (exception.Message).Should().Contain("HEVY_MCP_TRANSPORT");
   }
 
   [Theory]
@@ -105,7 +106,7 @@ public sealed class HevyMcpOptionsTests
 
     var options = HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault);
 
-    Assert.Equal(expected, options.ReadOnly);
+    (options.ReadOnly).Should().Be(expected);
   }
 
   [Theory]
@@ -119,9 +120,9 @@ public sealed class HevyMcpOptionsTests
     var environment = ValidEnvironment();
     environment["HEVY_READ_ONLY"] = value;
 
-    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+    var exception = FluentActions.Invoking(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault)).Should().ThrowExactly<InvalidOperationException>().Which;
 
-    Assert.Contains("HEVY_READ_ONLY", exception.Message, StringComparison.Ordinal);
+    (exception.Message).Should().Contain("HEVY_READ_ONLY");
   }
 
   [Theory]
@@ -134,9 +135,9 @@ public sealed class HevyMcpOptionsTests
     environment["HEVY_MCP_TRANSPORT"] = "http";
     environment["MCP_AUTH_TOKEN"] = token;
 
-    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+    var exception = FluentActions.Invoking(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault)).Should().ThrowExactly<InvalidOperationException>().Which;
 
-    Assert.Equal("MCP_AUTH_TOKEN is required for HTTP transport.", exception.Message);
+    (exception.Message).Should().Be("MCP_AUTH_TOKEN is required for HTTP transport.");
   }
 
   [Theory]
@@ -154,9 +155,9 @@ public sealed class HevyMcpOptionsTests
     environment["HEVY_MCP_TRANSPORT"] = "http";
     environment["MCP_AUTH_TOKEN"] = token;
 
-    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+    var exception = FluentActions.Invoking(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault)).Should().ThrowExactly<InvalidOperationException>().Which;
 
-    Assert.Equal("MCP_AUTH_TOKEN must use Bearer token68 syntax.", exception.Message);
+    (exception.Message).Should().Be("MCP_AUTH_TOKEN must use Bearer token68 syntax.");
   }
 
   [Theory]
@@ -172,7 +173,7 @@ public sealed class HevyMcpOptionsTests
 
     var options = HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault);
 
-    Assert.Equal(token, options.McpAuthToken);
+    (options.McpAuthToken).Should().Be(token);
   }
 
   [Fact]
@@ -182,9 +183,9 @@ public sealed class HevyMcpOptionsTests
     environment["HEVY_MCP_TRANSPORT"] = "http";
     environment["MCP_AUTH_TOKEN"] = environment["HEVY_API_KEY"];
 
-    var exception = Assert.Throws<InvalidOperationException>(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault));
+    var exception = FluentActions.Invoking(() => HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault)).Should().ThrowExactly<InvalidOperationException>().Which;
 
-    Assert.Contains("distinct", exception.Message, StringComparison.OrdinalIgnoreCase);
+    (exception.Message).Should().ContainEquivalentOf("distinct");
   }
 
   [Fact]
@@ -196,9 +197,9 @@ public sealed class HevyMcpOptionsTests
 
     var text = HevyMcpOptions.FromEnvironment(environment.GetValueOrDefault).ToString();
 
-    Assert.DoesNotContain("hevy-key-secret", text, StringComparison.Ordinal);
-    Assert.DoesNotContain("mcp-token-secret", text, StringComparison.Ordinal);
-    Assert.Equal("HevyMcpOptions { Transport = Http, ReadOnly = False, LogLevel = None }", text);
+    (text).Should().NotContain("hevy-key-secret");
+    (text).Should().NotContain("mcp-token-secret");
+    (text).Should().Be("HevyMcpOptions { Transport = Http, ReadOnly = False, LogLevel = None }");
   }
 
   private static Dictionary<string, string?> ValidEnvironment() => new(StringComparer.Ordinal)

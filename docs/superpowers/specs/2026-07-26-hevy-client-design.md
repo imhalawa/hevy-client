@@ -119,13 +119,14 @@ Release builds can send authenticated requests only to `https://api.hevyapp.com`
 
 ### Pagination and bounds
 
-Hevy pages contain at most ten items. The server may combine pages for composite operations but never performs an unbounded fetch in one tool call.
+Hevy pages contain at most ten items except `/v1/exercise_templates`, whose official contract permits up to 100. The server may combine pages for composite operations but never performs an unbounded fetch in one tool call.
 
 - Low-level list tools preserve explicit page and page-size semantics.
 - Composite collection tools default to 100 items and cap a single call at 1,000 items.
 - Training summaries default to four weeks and cap a single call at 52 weeks.
-- Every partial result sets `truncated: true` and returns explicit continuation inputs.
-- An agent can repeatedly continue until it has enough evidence; the limit is per call, not per session.
+- Every resumable partial result sets `truncated: true` and returns explicit continuation inputs.
+- The official exercise-history endpoint is unpaginated. Its streaming reader stops at 1,000 scanned entries or 16 MiB and returns an explicit terminal truncation reason without a continuation; rereading a deeper offset would violate the same per-call safety bound.
+- An agent can repeatedly continue until it has enough evidence where the upstream operation supports safe resumption; the limit is per call, not per session.
 - Cancellation from the MCP client stops outstanding Hevy requests.
 
 ### Mutation safety
@@ -223,7 +224,7 @@ The README includes Docker MCP configuration examples for Codex, Claude Desktop,
 The first release is acceptable when:
 
 1. Every operation in the pinned Hevy OpenAPI snapshot has a tested typed-client method and MCP tool.
-2. Composite search, bounded evidence retrieval, exercise-history summary, and training summary tools return deterministic structured results with continuations and evidence identifiers.
+2. Composite search, bounded evidence retrieval, exercise-history summary, and training summary tools return deterministic structured results and evidence identifiers. Resumable operations return continuations; exercise history returns an explicit terminal reason at its unpaginated safety cap.
 3. Stdio works in a Docker-backed MCP configuration without opening a port.
 4. Streamable HTTP refuses unauthenticated requests and refuses startup without `MCP_AUTH_TOKEN`.
 5. Read-only mode omits all mutation tools; default mode includes them with correct annotations and dry-run behavior.

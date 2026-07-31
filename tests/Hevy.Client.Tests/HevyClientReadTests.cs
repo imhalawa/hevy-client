@@ -10,7 +10,6 @@ namespace Hevy.Client.Tests;
 
 public sealed class HevyClientReadTests
 {
-  // Break caught: requests not going to Hevy with one authentication header, or a list response not being normalized.
   [Fact]
   public async Task Get_workouts_sends_the_official_authenticated_request_and_returns_a_page()
   {
@@ -19,18 +18,17 @@ public sealed class HevyClientReadTests
 
     var page = await client.GetWorkoutsAsync(1, 5, CancellationToken.None);
 
-    var request = Assert.Single(handler.Requests);
-    Assert.Equal(HttpMethod.Get, request.Method);
-    Assert.Equal("https://api.hevyapp.com/v1/workouts?page=1&pageSize=5", request.RequestUri!.AbsoluteUri);
-    Assert.Null(request.Body);
-    Assert.True(request.Headers.TryGetValue("api-key", out var keys));
-    Assert.Equal(["test-api-key"], keys);
-    Assert.Equal(1, page.Page);
-    Assert.Equal(2, page.PageCount);
-    Assert.Equal("workout-page-1", page.Items[0].Id);
+    var request = (handler.Requests).Should().ContainSingle().Which;
+    (request.Method).Should().Be(HttpMethod.Get);
+    (request.RequestUri!.AbsoluteUri).Should().Be("https://api.hevyapp.com/v1/workouts?page=1&pageSize=5");
+    (request.Body).Should().BeNull();
+    (request.Headers.TryGetValue("api-key", out var keys)).Should().BeTrue();
+    (keys).Should().Equal(["test-api-key"]);
+    (page.Page).Should().Be(1);
+    (page.PageCount).Should().Be(2);
+    (page.Items[0].Id).Should().Be("workout-page-1");
   }
 
-  // Break caught: an upstream page with the wrong identity or too many items being trusted by the typed client.
   [Theory]
   [InlineData("{\"page\":2,\"page_count\":2,\"workouts\":[]}")]
   public async Task Get_workouts_rejects_inconsistent_pages(string response)
@@ -38,12 +36,11 @@ public sealed class HevyClientReadTests
     var handler = RespondingWith(response);
     var client = CreateClient(handler);
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetWorkoutsAsync(1, 1, CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetWorkoutsAsync(1, 1, CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
+    (exception.Code).Should().Be("unexpected_response");
   }
 
-  // Break caught: a page returning more valid items than requested bypassing the bounded page contract.
   [Fact]
   public async Task Get_workouts_rejects_more_items_than_the_requested_page_size()
   {
@@ -52,24 +49,22 @@ public sealed class HevyClientReadTests
     var handler = RespondingWith($"{{\"page\":1,\"page_count\":1,\"workouts\":[{item},{item}]}}");
     var client = CreateClient(handler);
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetWorkoutsAsync(1, 1, CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetWorkoutsAsync(1, 1, CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
+    (exception.Code).Should().Be("unexpected_response");
   }
 
-  // Break caught: a zero-page response claiming to be a later requested page being accepted as consistent.
   [Fact]
   public async Task Get_workouts_rejects_a_later_page_when_page_count_is_zero()
   {
     var handler = RespondingWith("{\"page\":2,\"page_count\":0,\"workouts\":[]}");
     var client = CreateClient(handler);
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetWorkoutsAsync(2, 1, CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetWorkoutsAsync(2, 1, CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
+    (exception.Code).Should().Be("unexpected_response");
   }
 
-  // Break caught: a supplied HttpClient base address being used to exfiltrate authenticated traffic.
   [Fact]
   public async Task Get_user_info_overrides_a_supplied_base_address_with_the_fixed_hevy_origin()
   {
@@ -79,11 +74,10 @@ public sealed class HevyClientReadTests
 
     var user = await client.GetUserInfoAsync(CancellationToken.None);
 
-    Assert.Equal("user-1", user.Id);
-    Assert.Equal("https://api.hevyapp.com/v1/user/info", Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
+    (user.Id).Should().Be("user-1");
+    ((handler.Requests).Should().ContainSingle().Which.RequestUri!.AbsoluteUri).Should().Be("https://api.hevyapp.com/v1/user/info");
   }
 
-  // Break caught: changing the injected client's base address after construction sends the API key to another origin.
   [Fact]
   public async Task Get_user_info_rejects_a_post_construction_base_address_change_before_network_access()
   {
@@ -92,13 +86,12 @@ public sealed class HevyClientReadTests
     var client = new HevyClient(httpClient, new HevyClientOptions("test-api-key"));
     httpClient.BaseAddress = new Uri("https://untrusted.example/");
 
-    var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => client.GetUserInfoAsync(CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<InvalidOperationException>()).Which;
 
-    Assert.Empty(handler.Requests);
-    Assert.DoesNotContain("test-api-key", exception.ToString(), StringComparison.Ordinal);
+    (handler.Requests).Should().BeEmpty();
+    (exception.ToString()).Should().NotContain("test-api-key");
   }
 
-  // Break caught: invalid pagination reaching the remote API instead of being rejected locally.
   [Theory]
   [InlineData(0, 5)]
   [InlineData(1, 0)]
@@ -108,12 +101,11 @@ public sealed class HevyClientReadTests
     var handler = RespondingWith(Fixture.Read("workout-page.json"));
     var client = CreateClient(handler);
 
-    await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.GetWorkoutsAsync(page, pageSize, CancellationToken.None));
+    await FluentActions.Awaiting(() => client.GetWorkoutsAsync(page, pageSize, CancellationToken.None)).Should().ThrowExactlyAsync<ArgumentOutOfRangeException>();
 
-    Assert.Empty(handler.Requests);
+    (handler.Requests).Should().BeEmpty();
   }
 
-  // Break caught: routes that omit query values, fail to encode identifiers, or use an undocumented endpoint path.
   [Fact]
   public async Task Get_read_endpoints_use_their_documented_paths_and_query_values()
   {
@@ -133,21 +125,20 @@ public sealed class HevyClientReadTests
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, responses.Dequeue()));
     var client = CreateClient(handler);
 
-    Assert.Equal(42, await client.GetWorkoutCountAsync(CancellationToken.None));
+    (await client.GetWorkoutCountAsync(CancellationToken.None)).Should().Be(42);
     await client.GetWorkoutEventsAsync(1, 4, new DateTimeOffset(2024, 1, 2, 3, 4, 5, TimeSpan.Zero), CancellationToken.None);
-    Assert.Equal("workout-1", (await client.GetWorkoutAsync("a/b", CancellationToken.None)).Id);
+    ((await client.GetWorkoutAsync("a/b", CancellationToken.None)).Id).Should().Be("workout-1");
     await client.GetRoutinesAsync(1, 5, CancellationToken.None);
-    Assert.Equal("routine-response-1", (await client.GetRoutineAsync("routine/1", CancellationToken.None)).Id);
+    ((await client.GetRoutineAsync("routine/1", CancellationToken.None)).Id).Should().Be("routine-response-1");
     await client.GetExerciseTemplatesAsync(1, 50, CancellationToken.None);
-    Assert.Equal("D04AC939", (await client.GetExerciseTemplateAsync("template/1", CancellationToken.None)).Id);
+    ((await client.GetExerciseTemplateAsync("template/1", CancellationToken.None)).Id).Should().Be("D04AC939");
     await client.GetRoutineFoldersAsync(2, 7, CancellationToken.None);
-    Assert.Equal(42, (await client.GetRoutineFolderAsync(42, CancellationToken.None)).Id);
+    ((await client.GetRoutineFolderAsync(42, CancellationToken.None)).Id).Should().Be(42);
     await client.GetExerciseHistoryAsync("template/1", 1, 5, new DateOnly(2024, 1, 2), new DateOnly(2024, 2, 3), CancellationToken.None);
     await client.GetBodyMeasurementsAsync(1, 8, CancellationToken.None);
-    Assert.Equal(new DateOnly(2024, 8, 14), (await client.GetBodyMeasurementAsync(new DateOnly(2024, 8, 14), CancellationToken.None)).Date);
+    ((await client.GetBodyMeasurementAsync(new DateOnly(2024, 8, 14), CancellationToken.None)).Date).Should().Be(new DateOnly(2024, 8, 14));
 
-    Assert.Equal(
-    [
+    (handler.Requests.Select(request => request.RequestUri!.AbsoluteUri)).Should().Equal([
         "https://api.hevyapp.com/v1/workouts/count",
             "https://api.hevyapp.com/v1/workouts/events?page=1&pageSize=4&since=2024-01-02T03%3A04%3A05.0000000%2B00%3A00",
             "https://api.hevyapp.com/v1/workouts/a%2Fb",
@@ -160,11 +151,9 @@ public sealed class HevyClientReadTests
             "https://api.hevyapp.com/v1/exercise_history/template%2F1?start_date=2024-01-02&end_date=2024-02-03",
             "https://api.hevyapp.com/v1/body_measurements?page=1&pageSize=8",
             "https://api.hevyapp.com/v1/body_measurements/2024-08-14",
-        ],
-    handler.Requests.Select(request => request.RequestUri!.AbsoluteUri));
+        ]);
   }
 
-  // Break caught: exercise-history pagination reporting impossible metadata while returning the entire unpaginated payload.
   [Fact]
   public async Task Get_exercise_history_applies_local_pagination_without_undocumented_query_parameters()
   {
@@ -173,11 +162,9 @@ public sealed class HevyClientReadTests
 
     var page = await client.GetExerciseHistoryAsync("D04AC939", 2, 2, null, null, CancellationToken.None);
 
-    Assert.Equal("workout-history-3", Assert.Single(page.Items).WorkoutId);
-    Assert.False(page.Truncated);
-    Assert.Equal(
-        "https://api.hevyapp.com/v1/exercise_history/D04AC939",
-        Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
+    ((page.Items).Should().ContainSingle().Which.WorkoutId).Should().Be("workout-history-3");
+    (page.Truncated).Should().BeFalse();
+    ((handler.Requests).Should().ContainSingle().Which.RequestUri!.AbsoluteUri).Should().Be("https://api.hevyapp.com/v1/exercise_history/D04AC939");
   }
 
   [Fact]
@@ -191,25 +178,21 @@ public sealed class HevyClientReadTests
         new ExerciseHistoryWindowRequest(0, 3, new DateOnly(2024, 1, 1), new DateOnly(2024, 12, 31)),
         CancellationToken.None);
 
-    Assert.Equal(3, history.Items.Count);
-    Assert.False(history.Truncated);
-    Assert.Equal(["workout-history-1", "workout-history-2", "workout-history-3"], history.Items.Select(static entry => entry.WorkoutId));
-    Assert.Equal(
-        "https://api.hevyapp.com/v1/exercise_history/D04AC939?start_date=2024-01-01&end_date=2024-12-31",
-        Assert.Single(handler.Requests).RequestUri!.AbsoluteUri);
+    (history.Items.Count).Should().Be(3);
+    (history.Truncated).Should().BeFalse();
+    (history.Items.Select(static entry => entry.WorkoutId)).Should().Equal(["workout-history-1", "workout-history-2", "workout-history-3"]);
+    ((handler.Requests).Should().ContainSingle().Which.RequestUri!.AbsoluteUri).Should().Be("https://api.hevyapp.com/v1/exercise_history/D04AC939?start_date=2024-01-01&end_date=2024-12-31");
   }
 
-  // Break caught: options or public diagnostics exposing the API credential.
   [Fact]
   public void Authentication_configuration_never_formats_the_api_key()
   {
     var options = new HevyClientOptions("test-api-key");
 
-    Assert.DoesNotContain("test-api-key", options.ToString(), StringComparison.Ordinal);
-    Assert.Throws<ArgumentException>(() => new HevyClientOptions(" "));
+    (options.ToString()).Should().NotContain("test-api-key");
+    FluentActions.Invoking(() => new HevyClientOptions(" ")).Should().ThrowExactly<ArgumentException>();
   }
 
-  // Break caught: a pre-existing header surviving authentication middleware and sending multiple credentials.
   [Fact]
   public async Task Authentication_handler_replaces_any_existing_api_key_with_exactly_one_configured_value()
   {
@@ -224,12 +207,11 @@ public sealed class HevyClientReadTests
 
     await httpClient.SendAsync(request, CancellationToken.None);
 
-    var headers = Assert.Single(recordingHandler.Requests).Headers;
-    Assert.True(headers.TryGetValue("api-key", out var keys));
-    Assert.Equal(["test-api-key"], keys);
+    var headers = (recordingHandler.Requests).Should().ContainSingle().Which.Headers;
+    (headers.TryGetValue("api-key", out var keys)).Should().BeTrue();
+    (keys).Should().Equal(["test-api-key"]);
   }
 
-  // Break caught: standalone authentication middleware attaching the credential to a non-Hevy absolute request.
   [Theory]
   [InlineData("https://untrusted.example/v1/user/info")]
   [InlineData("http://api.hevyapp.com/v1/user/info")]
@@ -243,22 +225,21 @@ public sealed class HevyClientReadTests
     };
     using var httpClient = new HttpClient(authenticationHandler);
 
-    var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-        httpClient.GetAsync(target, CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() =>
+        httpClient.GetAsync(target, CancellationToken.None)).Should().ThrowExactlyAsync<InvalidOperationException>()).Which;
 
-    Assert.Empty(recordingHandler.Requests);
-    Assert.DoesNotContain("test-api-key", exception.ToString(), StringComparison.Ordinal);
+    (recordingHandler.Requests).Should().BeEmpty();
+    (exception.ToString()).Should().NotContain("test-api-key");
   }
 
-  // Break caught: the production HTTP stack following a redirect that could replay a custom credential cross-origin.
   [Fact]
   public void Production_pipeline_disables_automatic_redirects()
   {
     using var pipeline = HevyClient.CreateProductionPipeline(new HevyClientOptions("test-api-key"));
 
-    var authenticationHandler = Assert.IsType<HevyAuthenticationHandler>(pipeline.InnerHandler);
-    var primaryHandler = Assert.IsType<HttpClientHandler>(authenticationHandler.InnerHandler);
-    Assert.False(primaryHandler.AllowAutoRedirect);
+    var authenticationHandler = (pipeline.InnerHandler).Should().BeOfType<HevyAuthenticationHandler>().Which;
+    var primaryHandler = (authenticationHandler.InnerHandler).Should().BeOfType<HttpClientHandler>().Which;
+    (primaryHandler.AllowAutoRedirect).Should().BeFalse();
   }
 
   private static HevyClient CreateClient(RecordingHttpMessageHandler handler) =>

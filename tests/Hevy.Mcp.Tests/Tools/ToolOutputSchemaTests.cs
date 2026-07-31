@@ -106,17 +106,17 @@ public sealed class ToolOutputSchemaTests
   private static void AssertMatches(JsonElement schema, JsonElement instance, string path)
   {
     if (schema.ValueKind is JsonValueKind.True) return;
-    Assert.Equal(JsonValueKind.Object, schema.ValueKind);
+    (schema.ValueKind).Should().Be(JsonValueKind.Object);
 
     if (schema.TryGetProperty("anyOf", out var anyOf))
     {
       if (anyOf.EnumerateArray().Any(candidate => Matches(candidate, instance))) return;
-      Assert.Fail($"{path} does not match any advertised schema branch: {instance.GetRawText()}");
+      false.Should().BeTrue($"{path} does not match any advertised schema branch: {instance.GetRawText()}");
     }
 
     if (schema.TryGetProperty("enum", out var enumValues))
     {
-      Assert.Contains(enumValues.EnumerateArray(), expected => JsonElement.DeepEquals(expected, instance));
+      (enumValues.EnumerateArray()).Should().Contain((expected => JsonElement.DeepEquals(expected, instance)));
     }
 
     if (schema.TryGetProperty("type", out var type))
@@ -125,8 +125,7 @@ public sealed class ToolOutputSchemaTests
           ? type.EnumerateArray().Select(static item => item.GetString()).ToArray()
           : [type.GetString()];
       var actualType = TypeName(instance);
-      Assert.True(allowed.Contains(actualType, StringComparer.Ordinal) || (actualType == "integer" && allowed.Contains("number", StringComparer.Ordinal)),
-          $"{path} is {actualType}; advertised types are {string.Join(", ", allowed)}.");
+      (allowed.Contains(actualType, StringComparer.Ordinal) || (actualType == "integer" && allowed.Contains("number", StringComparer.Ordinal))).Should().BeTrue($"{path} is {actualType}; advertised types are {string.Join(", ", allowed)}.");
     }
 
     if (instance.ValueKind == JsonValueKind.Object && schema.TryGetProperty("properties", out var properties))
@@ -135,7 +134,7 @@ public sealed class ToolOutputSchemaTests
       {
         foreach (var name in required.EnumerateArray().Select(static item => item.GetString()!))
         {
-          Assert.True(instance.TryGetProperty(name, out _), $"{path} omits required {name}.");
+          (instance.TryGetProperty(name, out _)).Should().BeTrue($"{path} omits required {name}.");
         }
       }
 

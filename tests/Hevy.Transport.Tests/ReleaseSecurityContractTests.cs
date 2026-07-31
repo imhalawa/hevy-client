@@ -33,19 +33,17 @@ public sealed class ReleaseSecurityContractTests
         ["ghcr.io/example/hevy-client", "1.2.3"],
         fixture.Environment(registry.BaseUri, secret));
 
-    Assert.Equal(0, result.ExitCode);
-    Assert.Equal(expectedOutput, result.StandardOutput.Trim());
-    Assert.DoesNotContain(secret, result.StandardOutput, StringComparison.Ordinal);
-    Assert.DoesNotContain(secret, result.StandardError, StringComparison.Ordinal);
-    Assert.DoesNotContain(secret, await File.ReadAllTextAsync(fixture.ArgumentLog), StringComparison.Ordinal);
+    (result.ExitCode).Should().Be(0);
+    (result.StandardOutput.Trim()).Should().Be(expectedOutput);
+    (result.StandardOutput).Should().NotContain(secret);
+    (result.StandardError).Should().NotContain(secret);
+    (await File.ReadAllTextAsync(fixture.ArgumentLog)).Should().NotContain(secret);
 
     var requests = registry.Requests.ToArray();
-    Assert.Equal(3, requests.Length);
-    Assert.False(requests[0].Headers.ContainsKey("Authorization"));
-    Assert.True(
-        HasBasicCredentials(requests[1], "release-actor", secret),
-        "The scoped token request did not carry the expected credentials.");
-    Assert.Equal("Bearer fixture-registry-bearer-token", requests[2].Headers["Authorization"]);
+    (requests.Length).Should().Be(3);
+    (requests[0].Headers.ContainsKey("Authorization")).Should().BeFalse();
+    (HasBasicCredentials(requests[1], "release-actor", secret)).Should().BeTrue("The scoped token request did not carry the expected credentials.");
+    (requests[2].Headers["Authorization"]).Should().Be("Bearer fixture-registry-bearer-token");
   }
 
   [Theory]
@@ -64,8 +62,8 @@ public sealed class ReleaseSecurityContractTests
         ["ghcr.io/example/hevy-client", "1.2.3"],
         fixture.Environment(registry.BaseUri, "fixture-registry-secret"));
 
-    Assert.NotEqual(0, result.ExitCode);
-    Assert.Contains("authenticated manifest probe failed", result.StandardError, StringComparison.OrdinalIgnoreCase);
+    (result.ExitCode).Should().NotBe(0);
+    (result.StandardError).Should().ContainEquivalentOf("authenticated manifest probe failed");
   }
 
   [Theory]
@@ -87,8 +85,8 @@ public sealed class ReleaseSecurityContractTests
         ["ghcr.io/example/hevy-client", "1.2.3"],
         fixture.Environment(registry.BaseUri, "fixture-registry-secret"));
 
-    Assert.NotEqual(0, result.ExitCode);
-    Assert.DoesNotContain("fixture-registry-secret", result.StandardError, StringComparison.Ordinal);
+    (result.ExitCode).Should().NotBe(0);
+    (result.StandardError).Should().NotContain("fixture-registry-secret");
   }
 
   [Fact]
@@ -103,8 +101,8 @@ public sealed class ReleaseSecurityContractTests
         ["ghcr.io/example/hevy-client", "1.2.3"],
         fixture.Environment(registry.BaseUri, "fixture-registry-secret"));
 
-    Assert.Equal(0, result.ExitCode);
-    Assert.Equal("absent", result.StandardOutput.Trim());
+    (result.ExitCode).Should().Be(0);
+    (result.StandardOutput.Trim()).Should().Be("absent");
   }
 
   [Fact]
@@ -119,8 +117,8 @@ public sealed class ReleaseSecurityContractTests
         ["ghcr.io/example/hevy-client", "1.2.3"],
         fixture.Environment(registry.BaseUri, "fixture-registry-secret"));
 
-    Assert.NotEqual(0, result.ExitCode);
-    Assert.Contains("duplicate", result.StandardError, StringComparison.OrdinalIgnoreCase);
+    (result.ExitCode).Should().NotBe(0);
+    (result.StandardError).Should().ContainEquivalentOf("duplicate");
   }
 
   [Fact]
@@ -138,15 +136,15 @@ public sealed class ReleaseSecurityContractTests
         ["ghcr.io/example/hevy-client", "1.2.3"],
         fixture.Environment(new Uri($"http://127.0.0.1:{port}"), "fixture-registry-secret"));
 
-    Assert.NotEqual(0, result.ExitCode);
-    Assert.Contains("registry challenge probe failed", result.StandardError, StringComparison.OrdinalIgnoreCase);
+    (result.ExitCode).Should().NotBe(0);
+    (result.StandardError).Should().ContainEquivalentOf("registry challenge probe failed");
   }
 
   [Fact]
   public async Task SpdxValidatorRequiresVersion23AndEmitsItsExactPredicateType()
   {
     var script = Path.Combine(RepositoryRoot, "scripts", "validate-spdx.sh");
-    Assert.True(File.Exists(script), "The executable SPDX validator must exist.");
+    (File.Exists(script)).Should().BeTrue("The executable SPDX validator must exist.");
     var fixture = Path.Combine(Path.GetTempPath(), $"hevy-spdx-{Guid.NewGuid():N}");
     Directory.CreateDirectory(fixture);
     try
@@ -189,8 +187,8 @@ public sealed class ReleaseSecurityContractTests
           script,
           [amd64, arm64],
           new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = output });
-      Assert.Equal(0, accepted.ExitCode);
-      Assert.Equal("predicate_type=https://spdx.dev/Document/v2.3\n", await File.ReadAllTextAsync(output));
+      (accepted.ExitCode).Should().Be(0);
+      (await File.ReadAllTextAsync(output)).Should().Be("predicate_type=https://spdx.dev/Document/v2.3\n");
 
       foreach (var invalidSpdx in new[]
       {
@@ -204,8 +202,8 @@ public sealed class ReleaseSecurityContractTests
       {
         await File.WriteAllTextAsync(arm64, invalidSpdx);
         var rejected = await RunScriptAsync(script, [amd64, arm64], environment: null);
-        Assert.NotEqual(0, rejected.ExitCode);
-        Assert.Contains("complete SPDX-2.3", rejected.StandardError, StringComparison.Ordinal);
+        (rejected.ExitCode).Should().NotBe(0);
+        (rejected.StandardError).Should().Contain("complete SPDX-2.3");
       }
     }
     finally
@@ -218,20 +216,20 @@ public sealed class ReleaseSecurityContractTests
   public async Task Sha256DigestValidatorChecksEveryProvidedDigest()
   {
     var script = Path.Combine(RepositoryRoot, "scripts", "validate-sha256-digest.sh");
-    Assert.True(File.Exists(script), "The executable SHA-256 digest validator must exist.");
+    (File.Exists(script)).Should().BeTrue("The executable SHA-256 digest validator must exist.");
     var accepted = await RunScriptAsync(script, [ExistingDigest, IntendedDigest], environment: null);
-    Assert.Equal(0, accepted.ExitCode);
+    (accepted.ExitCode).Should().Be(0);
 
     var rejected = await RunScriptAsync(script, [ExistingDigest, "sha256:not-a-digest"], environment: null);
-    Assert.NotEqual(0, rejected.ExitCode);
-    Assert.Contains("SHA-256 digest", rejected.StandardError, StringComparison.Ordinal);
+    (rejected.ExitCode).Should().NotBe(0);
+    (rejected.StandardError).Should().Contain("SHA-256 digest");
 
     var rejectedMultiline = await RunScriptAsync(
         script,
         [ExistingDigest + "\ntrailing-value"],
         environment: null);
-    Assert.NotEqual(0, rejectedMultiline.ExitCode);
-    Assert.Contains("SHA-256 digest", rejectedMultiline.StandardError, StringComparison.Ordinal);
+    (rejectedMultiline.ExitCode).Should().NotBe(0);
+    (rejectedMultiline.StandardError).Should().Contain("SHA-256 digest");
   }
 
   [Fact]
@@ -242,12 +240,10 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync();
 
-      Assert.Equal(0, result.ExitCode);
-      Assert.Equal(fixture.ExpectedBuildLog, await File.ReadAllTextAsync(fixture.BuildLog));
-      Assert.Equal(
-          $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n",
-          await File.ReadAllTextAsync(fixture.GitHubOutput));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (result.ExitCode).Should().Be(0);
+      (await File.ReadAllTextAsync(fixture.BuildLog)).Should().Be(fixture.ExpectedBuildLog);
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -268,10 +264,10 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync();
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Contains(expectedError, result.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (result.ExitCode).Should().NotBe(0);
+      (result.StandardError).Should().ContainEquivalentOf(expectedError);
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -287,9 +283,9 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync(failOnBuild: "2");
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (result.ExitCode).Should().NotBe(0);
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -321,10 +317,10 @@ public sealed class ReleaseSecurityContractTests
           [output, "/bin/cat", source],
           new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = githubOutput });
 
-      Assert.Equal(0, result.ExitCode);
-      Assert.Equal(byteCount, new FileInfo(output).Length);
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
-      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+      (result.ExitCode).Should().Be(0);
+      (new FileInfo(output).Length).Should().Be(byteCount);
+      (await File.ReadAllTextAsync(githubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFiles(fixture, ".index.json.tmp.*")).Should().BeEmpty();
     }
     finally
     {
@@ -354,10 +350,10 @@ public sealed class ReleaseSecurityContractTests
           [output, "/bin/cat", source],
           new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = githubOutput });
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Equal("old-output", await File.ReadAllTextAsync(output));
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
-      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+      (result.ExitCode).Should().NotBe(0);
+      (await File.ReadAllTextAsync(output)).Should().Be("old-output");
+      (await File.ReadAllTextAsync(githubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFiles(fixture, ".index.json.tmp.*")).Should().BeEmpty();
     }
     finally
     {
@@ -385,10 +381,10 @@ public sealed class ReleaseSecurityContractTests
           [output, producer],
           new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = githubOutput });
 
-      Assert.Equal(23, result.ExitCode);
-      Assert.Equal("old-output", await File.ReadAllTextAsync(output));
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
-      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+      (result.ExitCode).Should().Be(23);
+      (await File.ReadAllTextAsync(output)).Should().Be("old-output");
+      (await File.ReadAllTextAsync(githubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFiles(fixture, ".index.json.tmp.*")).Should().BeEmpty();
     }
     finally
     {
@@ -421,12 +417,12 @@ public sealed class ReleaseSecurityContractTests
           [output, "/bin/printf", "new-output"],
           new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = githubOutput });
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.True(Directory.Exists(output));
-      Assert.Empty(Directory.GetFileSystemEntries(destinationDirectory));
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
-      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
-      Assert.Empty(Directory.GetFiles(fixture, ".destination.tmp.*"));
+      (result.ExitCode).Should().NotBe(0);
+      (Directory.Exists(output)).Should().BeTrue();
+      (Directory.GetFileSystemEntries(destinationDirectory)).Should().BeEmpty();
+      (await File.ReadAllTextAsync(githubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFiles(fixture, ".index.json.tmp.*")).Should().BeEmpty();
+      (Directory.GetFiles(fixture, ".destination.tmp.*")).Should().BeEmpty();
     }
     finally
     {
@@ -468,10 +464,10 @@ public sealed class ReleaseSecurityContractTests
             ["PATH"] = $"{binaries}{Path.PathSeparator}{System.Environment.GetEnvironmentVariable("PATH")}",
           });
 
-      Assert.Equal(37, result.ExitCode);
-      Assert.Equal("old-output", await File.ReadAllTextAsync(output));
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(githubOutput));
-      Assert.Empty(Directory.GetFiles(fixture, ".index.json.tmp.*"));
+      (result.ExitCode).Should().Be(37);
+      (await File.ReadAllTextAsync(output)).Should().Be("old-output");
+      (await File.ReadAllTextAsync(githubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFiles(fixture, ".index.json.tmp.*")).Should().BeEmpty();
     }
     finally
     {
@@ -511,14 +507,14 @@ public sealed class ReleaseSecurityContractTests
 
       if (scenario is "valid" or "max_size")
       {
-        Assert.Equal(0, result.ExitCode);
-        Assert.Equal($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n", result.StandardOutput);
+        (result.ExitCode).Should().Be(0);
+        (result.StandardOutput).Should().Be($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n");
       }
       else
       {
-        Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("OCI index", result.StandardError, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(string.Empty, result.StandardOutput);
+        (result.ExitCode).Should().NotBe(0);
+        (result.StandardError).Should().ContainEquivalentOf("OCI index");
+        (result.StandardOutput).Should().Be(string.Empty);
       }
     }
     finally
@@ -545,8 +541,8 @@ public sealed class ReleaseSecurityContractTests
           [index, Sha256Digest(bytes)],
           environment: null);
 
-      Assert.Equal(0, result.ExitCode);
-      Assert.Equal($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n", result.StandardOutput);
+      (result.ExitCode).Should().Be(0);
+      (result.StandardOutput).Should().Be($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n");
     }
     finally
     {
@@ -572,9 +568,9 @@ public sealed class ReleaseSecurityContractTests
           [index, Sha256Digest(bytes)],
           environment: null);
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Contains("OCI index", result.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Equal(string.Empty, result.StandardOutput);
+      (result.ExitCode).Should().NotBe(0);
+      (result.StandardError).Should().ContainEquivalentOf("OCI index");
+      (result.StandardOutput).Should().Be(string.Empty);
     }
     finally
     {
@@ -593,10 +589,10 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync();
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Contains("OCI index", result.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (result.ExitCode).Should().NotBe(0);
+      (result.StandardError).Should().ContainEquivalentOf("OCI index");
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -615,10 +611,10 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync();
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Contains("OCI archive index", result.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (result.ExitCode).Should().NotBe(0);
+      (result.StandardError).Should().ContainEquivalentOf("OCI archive index");
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -637,10 +633,10 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync();
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Contains("OCI archive index", result.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Equal("sentinel=preserve\n", await File.ReadAllTextAsync(fixture.GitHubOutput));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (result.ExitCode).Should().NotBe(0);
+      (result.StandardError).Should().ContainEquivalentOf("OCI archive index");
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -663,13 +659,11 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync();
 
-      Assert.Equal(shouldSucceed ? 0 : 1, result.ExitCode == 0 ? 0 : 1);
-      Assert.Equal(
-          shouldSucceed
+      (result.ExitCode == 0 ? 0 : 1).Should().Be(shouldSucceed ? 0 : 1);
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be(shouldSucceed
               ? $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n"
-              : "sentinel=preserve\n",
-          await File.ReadAllTextAsync(fixture.GitHubOutput));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+              : "sentinel=preserve\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -692,13 +686,11 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync();
 
-      Assert.Equal(shouldSucceed ? 0 : 1, result.ExitCode == 0 ? 0 : 1);
-      Assert.Equal(
-          shouldSucceed
+      (result.ExitCode == 0 ? 0 : 1).Should().Be(shouldSucceed ? 0 : 1);
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be(shouldSucceed
               ? $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n"
-              : "sentinel=preserve\n",
-          await File.ReadAllTextAsync(fixture.GitHubOutput));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+              : "sentinel=preserve\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -715,15 +707,11 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 0);
 
-      Assert.Equal(0, result.ExitCode);
-      Assert.Equal(
-          $"--fail\n--location\n--proto\n=https\n--tlsv1.2\n--output\n{pin.Archive}\nhttps://github.com/rhysd/actionlint/releases/download/v{pin.Version}/{pin.Archive}\n",
-          await File.ReadAllTextAsync(fixture.DownloadLog));
-      Assert.Equal(
-          $"arguments=--check --status\nchecksum={pin.Checksum}\nfile={pin.Archive}\n",
-          await File.ReadAllTextAsync(fixture.ChecksumLog));
-      Assert.Equal("-color\n", await File.ReadAllTextAsync(fixture.ExecutionLog));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (result.ExitCode).Should().Be(0);
+      (await File.ReadAllTextAsync(fixture.DownloadLog)).Should().Be($"--fail\n--location\n--proto\n=https\n--tlsv1.2\n--output\n{pin.Archive}\nhttps://github.com/rhysd/actionlint/releases/download/v{pin.Version}/{pin.Archive}\n");
+      (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be($"arguments=--check --status\nchecksum={pin.Checksum}\nfile={pin.Archive}\n");
+      (await File.ReadAllTextAsync(fixture.ExecutionLog)).Should().Be("-color\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -745,13 +733,13 @@ public sealed class ReleaseSecurityContractTests
           checksumSucceeds: scenario != "checksum",
           actionlintExitCode: 0);
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.False(File.Exists(fixture.ExecutionLog));
+      (result.ExitCode).Should().NotBe(0);
+      (File.Exists(fixture.ExecutionLog)).Should().BeFalse();
       if (scenario == "network")
       {
-        Assert.False(File.Exists(fixture.ChecksumLog));
+        (File.Exists(fixture.ChecksumLog)).Should().BeFalse();
       }
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -767,9 +755,9 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 17);
 
-      Assert.Equal(17, result.ExitCode);
-      Assert.Equal("-color\n", await File.ReadAllTextAsync(fixture.ExecutionLog));
-      Assert.Empty(Directory.GetFileSystemEntries(fixture.TemporaryRoot));
+      (result.ExitCode).Should().Be(17);
+      (await File.ReadAllTextAsync(fixture.ExecutionLog)).Should().Be("-color\n");
+      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
     }
     finally
     {
@@ -802,9 +790,9 @@ public sealed class ReleaseSecurityContractTests
           [index, digest, expectedTop, expectedAmd64, expectedArm64],
           new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = output });
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Contains("reproducibility gate", result.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Equal(string.Empty, await File.ReadAllTextAsync(output));
+      (result.ExitCode).Should().NotBe(0);
+      (result.StandardError).Should().ContainEquivalentOf("reproducibility gate");
+      (await File.ReadAllTextAsync(output)).Should().Be(string.Empty);
     }
     finally
     {
@@ -830,8 +818,8 @@ public sealed class ReleaseSecurityContractTests
           [index, digest, digest, ExistingDigest, IntendedDigest],
           new Dictionary<string, string?> { ["GITHUB_OUTPUT"] = output });
 
-      Assert.Equal(0, result.ExitCode);
-      Assert.Equal($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n", await File.ReadAllTextAsync(output));
+      (result.ExitCode).Should().Be(0);
+      (await File.ReadAllTextAsync(output)).Should().Be($"amd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n");
     }
     finally
     {
@@ -852,21 +840,17 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync(checksumSucceeds: true);
 
-      Assert.Equal(0, result.ExitCode);
-      Assert.Equal(expectedUrl + "\n", await File.ReadAllTextAsync(fixture.UrlLog));
-      Assert.Equal(expectedChecksum + "\n", await File.ReadAllTextAsync(fixture.ChecksumLog));
-      Assert.DoesNotContain(
-          Directory.GetDirectories(fixture.RunnerTemp),
-          static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
-              Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal));
-      Assert.True(File.Exists(fixture.InstalledExecutable));
+      (result.ExitCode).Should().Be(0);
+      (await File.ReadAllTextAsync(fixture.UrlLog)).Should().Be(expectedUrl + "\n");
+      (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be(expectedChecksum + "\n");
+      (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain((static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
+              Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal)));
+      (File.Exists(fixture.InstalledExecutable)).Should().BeTrue();
       if (scriptName == "install-buildx.sh")
       {
         var dockerConfig = Path.Combine(fixture.RunnerTemp, "hevy-buildx-bin");
-        Assert.Equal($"DOCKER_CONFIG={dockerConfig}\n", await File.ReadAllTextAsync(fixture.GitHubEnvironment));
-        Assert.Equal(
-            $"buildx_path={fixture.InstalledExecutable}\ndocker_config={dockerConfig}\n",
-            await File.ReadAllTextAsync(fixture.GitHubOutput));
+        (await File.ReadAllTextAsync(fixture.GitHubEnvironment)).Should().Be($"DOCKER_CONFIG={dockerConfig}\n");
+        (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"buildx_path={fixture.InstalledExecutable}\ndocker_config={dockerConfig}\n");
       }
     }
     finally
@@ -888,12 +872,10 @@ public sealed class ReleaseSecurityContractTests
     {
       var result = await fixture.RunAsync(checksumSucceeds: false);
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.DoesNotContain(
-          Directory.GetDirectories(fixture.RunnerTemp),
-          static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
-              Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal));
-      Assert.False(File.Exists(fixture.InstalledExecutable));
+      (result.ExitCode).Should().NotBe(0);
+      (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain((static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
+              Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal)));
+      (File.Exists(fixture.InstalledExecutable)).Should().BeFalse();
     }
     finally
     {
@@ -918,7 +900,7 @@ public sealed class ReleaseSecurityContractTests
           [],
           new Dictionary<string, string?> { ["HEVY_BUILDX_PATH"] = fakeBuildx });
 
-      Assert.Equal(expectedSuccess == 0 ? 0 : 1, result.ExitCode == 0 ? 0 : 1);
+      (result.ExitCode == 0 ? 0 : 1).Should().Be(expectedSuccess == 0 ? 0 : 1);
     }
     finally
     {
@@ -936,7 +918,7 @@ public sealed class ReleaseSecurityContractTests
       bool expectsDocker)
   {
     var source = Path.Combine(RepositoryRoot, "scripts", "promote-ghcr-tag.sh");
-    Assert.True(File.Exists(source), "The executable final-promotion transaction must exist.");
+    (File.Exists(source)).Should().BeTrue("The executable final-promotion transaction must exist.");
     var fixture = Path.Combine(Path.GetTempPath(), $"hevy-promote-{Guid.NewGuid():N}");
     var scripts = Path.Combine(fixture, "scripts");
     var binaries = Path.Combine(fixture, "bin");
@@ -972,13 +954,11 @@ public sealed class ReleaseSecurityContractTests
           ["ghcr.io/example/hevy-client", "1.2.3", IntendedDigest],
           environment);
 
-      Assert.Equal(expectedExitCode, result.ExitCode);
-      Assert.Equal(expectsDocker, File.Exists(dockerLog));
+      (result.ExitCode).Should().Be(expectedExitCode);
+      (File.Exists(dockerLog)).Should().Be(expectsDocker);
       if (expectsDocker)
       {
-        Assert.Equal(
-            $"buildx\nimagetools\ncreate\n--tag\nghcr.io/example/hevy-client:1.2.3\nghcr.io/example/hevy-client@{IntendedDigest}\n",
-            await File.ReadAllTextAsync(dockerLog));
+        (await File.ReadAllTextAsync(dockerLog)).Should().Be($"buildx\nimagetools\ncreate\n--tag\nghcr.io/example/hevy-client:1.2.3\nghcr.io/example/hevy-client@{IntendedDigest}\n");
       }
     }
     finally
@@ -1097,7 +1077,7 @@ public sealed class ReleaseSecurityContractTests
 
   private static byte[] PadJsonDocument(byte[] document, int byteCount)
   {
-    Assert.True(document.Length <= byteCount);
+    (document.Length <= byteCount).Should().BeTrue();
     var padded = new byte[byteCount];
     document.CopyTo(padded, 0);
     padded.AsSpan(document.Length).Fill((byte)' ');
@@ -1359,7 +1339,7 @@ public sealed class ReleaseSecurityContractTests
           "-C",
           contents,
           archivedName);
-      Assert.Equal(0, tarResult.ExitCode);
+      (tarResult.ExitCode).Should().Be(0);
 
       var curl = Path.Combine(binaries, "curl");
       await File.WriteAllTextAsync(
@@ -1477,7 +1457,7 @@ public sealed class ReleaseSecurityContractTests
         await File.WriteAllTextAsync(syft, "#!/bin/sh\nprintf 'syft fixture\\n'\n");
         MakeExecutable(syft);
         var tarResult = await DeliveryContractTests.RunProcessAsync(root, "tar", "-czf", asset, "-C", contents, "syft");
-        Assert.Equal(0, tarResult.ExitCode);
+        (tarResult.ExitCode).Should().Be(0);
       }
       else
       {
@@ -1552,7 +1532,7 @@ public sealed class ReleaseSecurityContractTests
   private static string GhcrProbeScript()
   {
     var script = Path.Combine(RepositoryRoot, "scripts", "ghcr-manifest.sh");
-    Assert.True(File.Exists(script), "The executable authenticated GHCR manifest probe must exist.");
+    (File.Exists(script)).Should().BeTrue("The executable authenticated GHCR manifest probe must exist.");
     return script;
   }
 

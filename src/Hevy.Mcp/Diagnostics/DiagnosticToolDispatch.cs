@@ -10,7 +10,8 @@ internal static class DiagnosticToolDispatch
       Func<CancellationToken, Task<CallToolResult>> action,
       DiagnosticOperationCategory category,
       RedactingLoggerProvider? diagnostics,
-      CancellationToken cancellationToken)
+      CancellationToken cancellationToken,
+      string operationName = "unknown")
   {
     ArgumentNullException.ThrowIfNull(action);
 
@@ -23,7 +24,8 @@ internal static class DiagnosticToolDispatch
           category,
           Stopwatch.GetElapsedTime(started),
           result,
-          correlationId);
+          correlationId,
+          operationName);
       diagnostics?.Write(LogLevelFor(operationEvent.Status), operationEvent);
       return result;
     }
@@ -31,7 +33,7 @@ internal static class DiagnosticToolDispatch
     {
       diagnostics?.Write(
           LogLevel.Warning,
-          SafeOperationEvent.Cancelled(category, Stopwatch.GetElapsedTime(started), correlationId));
+          SafeOperationEvent.Cancelled(category, Stopwatch.GetElapsedTime(started), correlationId, operationName));
       throw;
     }
   }

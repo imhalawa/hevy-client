@@ -8,11 +8,11 @@ public sealed class LiveReadSmokeTests
   [LiveReadFact]
   public async Task AuthenticatedUserInfoReadRequiresExplicitLiveGate()
   {
-    var client = new HevyClient(HevyClientOptions.FromEnvironment());
+    var client = new HevyClient(new HevyClientOptions(Environment.GetEnvironmentVariable("HEVY_API_KEY")!));
 
     var user = await client.GetUserInfoAsync(CancellationToken.None);
 
-    Assert.False(string.IsNullOrWhiteSpace(user.Id));
+    (string.IsNullOrWhiteSpace(user.Id)).Should().BeFalse();
   }
 
   [Theory]
@@ -36,9 +36,9 @@ public sealed class LiveReadSmokeTests
       requestCount++;
     }
 
-    Assert.False(gate.Enabled);
-    Assert.Contains("HEVY_LIVE_TESTS=true", gate.SkipReason, StringComparison.Ordinal);
-    Assert.Equal(0, requestCount);
+    (gate.Enabled).Should().BeFalse();
+    (gate.SkipReason).Should().Contain("HEVY_LIVE_TESTS=true");
+    (requestCount).Should().Be(0);
   }
 }
 

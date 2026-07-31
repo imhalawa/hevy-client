@@ -13,8 +13,8 @@ public sealed class ServiceRegistrationTests
     var result = ServiceRegistration.InvocationFailure(new JsonException("invalid untrusted argument"));
 
     var error = result.Structured().GetProperty("error");
-    Assert.Equal("validation_error", error.GetProperty("code").GetString());
-    Assert.DoesNotContain("invalid untrusted argument", error.GetProperty("message").GetString(), StringComparison.Ordinal);
+    (error.GetProperty("code").GetString()).Should().Be("validation_error");
+    (error.GetProperty("message").GetString()).Should().NotContain("invalid untrusted argument");
   }
 
   [Theory]
@@ -24,9 +24,9 @@ public sealed class ServiceRegistrationTests
     var result = ServiceRegistration.InvocationFailure(exception);
 
     var error = result.Structured().GetProperty("error");
-    Assert.Equal("unexpected_error", error.GetProperty("code").GetString());
-    Assert.Equal("The tool could not complete the request.", error.GetProperty("message").GetString());
-    Assert.DoesNotContain(exception.Message, error.GetProperty("message").GetString(), StringComparison.Ordinal);
+    (error.GetProperty("code").GetString()).Should().Be("unexpected_error");
+    (error.GetProperty("message").GetString()).Should().Be("The tool could not complete the request.");
+    (error.GetProperty("message").GetString()).Should().NotContain(exception.Message);
   }
 
   public static TheoryData<Exception> InternalFaults => new()

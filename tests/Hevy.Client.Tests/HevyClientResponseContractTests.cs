@@ -120,11 +120,11 @@ public sealed class HevyClientResponseContractTests
   {
     var client = CreateClient(RespondingWith(response));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => InvokeAsync(client, operation, requestedPage));
+    var exception = (await FluentActions.Awaiting(() => InvokeAsync(client, operation, requestedPage)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
-    Assert.False(exception.IsRetryable);
-    Assert.Equal(HttpStatusCode.OK, exception.StatusCode);
+    (exception.Code).Should().Be("unexpected_response");
+    (exception.IsRetryable).Should().BeFalse();
+    (exception.StatusCode).Should().Be(HttpStatusCode.OK);
   }
 
   [Theory]
@@ -143,11 +143,11 @@ public sealed class HevyClientResponseContractTests
   {
     var client = CreateClient(RespondingWith(response));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => InvokeAsync(client, operation));
+    var exception = (await FluentActions.Awaiting(() => InvokeAsync(client, operation)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
-    Assert.False(exception.IsRetryable);
-    Assert.Equal(HttpStatusCode.OK, exception.StatusCode);
+    (exception.Code).Should().Be("unexpected_response");
+    (exception.IsRetryable).Should().BeFalse();
+    (exception.StatusCode).Should().Be(HttpStatusCode.OK);
   }
 
   private static Task InvokeAsync(HevyClient client, string operation, int page = 1) => operation switch

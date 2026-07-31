@@ -9,11 +9,11 @@ public sealed class LiveMutationSmokeTests
   [LiveMutationFact]
   public async Task ExistingMeasurementCanBeReplacedWithoutChangingItsValuesWhenExplicitlyEnabled()
   {
-    var client = new HevyClient(HevyClientOptions.FromEnvironment());
+    var client = new HevyClient(new HevyClientOptions(Environment.GetEnvironmentVariable("HEVY_API_KEY")!));
     var measurements = await client.GetBodyMeasurementsAsync(1, 1, CancellationToken.None);
     if (measurements.Items.Count == 0)
     {
-      Assert.Fail("Live mutation smoke test requires one existing body measurement so it can perform a value-preserving replacement.");
+      false.Should().BeTrue("Live mutation smoke test requires one existing body measurement so it can perform a value-preserving replacement.");
     }
 
     var existing = measurements.Items[0];
@@ -38,7 +38,7 @@ public sealed class LiveMutationSmokeTests
 
     var updated = await client.UpdateBodyMeasurementAsync(existing.Date, request, CancellationToken.None);
 
-    PrivacySafeBodyMeasurementAssert.Equal(existing, updated);
+    PrivacySafeBodyMeasurementVerifier.Verify(existing, updated);
   }
 
   [Theory]
@@ -63,9 +63,9 @@ public sealed class LiveMutationSmokeTests
       requestCount++;
     }
 
-    Assert.False(gate.Enabled);
-    Assert.Contains("HEVY_LIVE_MUTATION_TESTS=true", gate.SkipReason, StringComparison.Ordinal);
-    Assert.Equal(0, requestCount);
+    (gate.Enabled).Should().BeFalse();
+    (gate.SkipReason).Should().Contain("HEVY_LIVE_MUTATION_TESTS=true");
+    (requestCount).Should().Be(0);
   }
 
   [Fact]
@@ -114,21 +114,21 @@ public sealed class LiveMutationSmokeTests
 
     foreach (var actual in mismatches)
     {
-      var exception = Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => PrivacySafeBodyMeasurementAssert.Equal(expected, actual));
+      var exception = FluentActions.Invoking(() => PrivacySafeBodyMeasurementVerifier.Verify(expected, actual)).Should().Throw<Xunit.Sdk.XunitException>().Which;
 
-      Assert.Equal(PrivacySafeBodyMeasurementAssert.FailureMessage, exception.Message);
-      Assert.DoesNotContain("2099-12-31", exception.Message, StringComparison.Ordinal);
-      Assert.DoesNotContain("12345.6789", exception.Message, StringComparison.Ordinal);
-      Assert.DoesNotContain("17234.5678", exception.Message, StringComparison.Ordinal);
+      (exception.Message).Should().Contain(PrivacySafeBodyMeasurementVerifier.FailureMessage);
+      (exception.Message).Should().NotContain("2099-12-31");
+      (exception.Message).Should().NotContain("12345.6789");
+      (exception.Message).Should().NotContain("17234.5678");
     }
   }
 }
 
-internal static class PrivacySafeBodyMeasurementAssert
+internal static class PrivacySafeBodyMeasurementVerifier
 {
   internal const string FailureMessage = "Live mutation response did not preserve every body-measurement field.";
 
-  internal static void Equal(BodyMeasurement expected, BodyMeasurement actual)
+  internal static void Verify(BodyMeasurement expected, BodyMeasurement actual)
   {
     if (expected.Date != actual.Date ||
         expected.WeightKg != actual.WeightKg ||
@@ -149,7 +149,7 @@ internal static class PrivacySafeBodyMeasurementAssert
         expected.LeftCalf != actual.LeftCalf ||
         expected.RightCalf != actual.RightCalf)
     {
-      Assert.Fail(FailureMessage);
+      false.Should().BeTrue(FailureMessage);
     }
   }
 }

@@ -359,7 +359,7 @@ public sealed class HevyClient : IHevyClient
   {
     if ((int)response.StatusCode >= 500)
     {
-      throw new HevyOutcomeUnknownException(response.StatusCode);
+      throw new HevyOutcomeUnknownException(response.StatusCode, HevyResponse.SafeRequestId(response));
     }
   }
 

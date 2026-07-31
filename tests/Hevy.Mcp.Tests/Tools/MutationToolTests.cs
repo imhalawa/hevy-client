@@ -23,18 +23,18 @@ public sealed class MutationToolTests
     var template = await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), true, CancellationToken.None);
     var measurement = await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.CreateBodyMeasurementRequest(), true, CancellationToken.None);
 
-    Assert.Equal("Friday Leg Day", workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("title").GetString());
-    Assert.Equal("D04AC939", workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("exercises")[0].GetProperty("exercise_template_id").GetString());
-    Assert.Equal("April Leg Day", routine.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine").GetProperty("title").GetString());
-    Assert.Equal("Push Pull", folder.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine_folder").GetProperty("title").GetString());
-    Assert.Equal("weight_reps", template.Structured().GetProperty("data").GetProperty("payload").GetProperty("exercise").GetProperty("exercise_type").GetString());
-    Assert.Equal("2024-08-14", measurement.Structured().GetProperty("data").GetProperty("payload").GetProperty("date").GetString());
-    Assert.All(new[] { workout, routine, folder, template, measurement }, result =>
+    (workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("title").GetString()).Should().Be("Friday Leg Day");
+    (workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("exercises")[0].GetProperty("exercise_template_id").GetString()).Should().Be("D04AC939");
+    (routine.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine").GetProperty("title").GetString()).Should().Be("April Leg Day");
+    (folder.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine_folder").GetProperty("title").GetString()).Should().Be("Push Pull");
+    (template.Structured().GetProperty("data").GetProperty("payload").GetProperty("exercise").GetProperty("exercise_type").GetString()).Should().Be("weight_reps");
+    (measurement.Structured().GetProperty("data").GetProperty("payload").GetProperty("date").GetString()).Should().Be("2024-08-14");
+    (new[] { workout, routine, folder, template, measurement }).Should().AllSatisfy(result =>
     {
-      Assert.True(result.Structured().GetProperty("meta").GetProperty("dry_run").GetBoolean());
-      Assert.Empty(result.Structured().GetProperty("meta").GetProperty("validation_warnings").EnumerateArray());
+      (result.Structured().GetProperty("meta").GetProperty("dry_run").GetBoolean()).Should().BeTrue();
+      (result.Structured().GetProperty("meta").GetProperty("validation_warnings").EnumerateArray()).Should().BeEmpty();
     });
-    Assert.Equal(0, client.CallCount);
+    (client.CallCount).Should().Be(0);
   }
 
   [Fact]
@@ -49,9 +49,9 @@ public sealed class MutationToolTests
     await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, CancellationToken.None);
     await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.CreateBodyMeasurementRequest(), false, CancellationToken.None);
 
-    Assert.Equal(5, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.CreateBodyMeasurementAsync), client.LastOperation);
-    Assert.Equal("workout-1", workout.Structured().GetProperty("data").GetProperty("result").GetProperty("id").GetString());
+    (client.CallCount).Should().Be(5);
+    (client.LastOperation).Should().Be(nameof(IHevyClient.CreateBodyMeasurementAsync));
+    (workout.Structured().GetProperty("data").GetProperty("result").GetProperty("id").GetString()).Should().Be("workout-1");
   }
 
   [Fact]
@@ -65,9 +65,9 @@ public sealed class MutationToolTests
 
     var result = await WorkoutWriteTools.CreateWorkout(Services(client), invalid, false, CancellationToken.None);
 
-    Assert.True(result.IsError);
-    Assert.Equal("validation_error", result.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(0, client.CallCount);
+    (result.IsError).Should().BeTrue();
+    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
+    (client.CallCount).Should().Be(0);
   }
 
   [Fact]
@@ -96,8 +96,8 @@ public sealed class MutationToolTests
       await MeasurementWriteTools.UpdateBodyMeasurement(services, new DateOnly(2024, 8, 14), updateMeasurement, null, true, false, CancellationToken.None),
     };
 
-    Assert.All(results, result => Assert.Equal("validation_error", result.Structured().GetProperty("error").GetProperty("code").GetString()));
-    Assert.Equal(0, client.CallCount);
+    (results).Should().AllSatisfy(result => (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error"));
+    (client.CallCount).Should().Be(0);
   }
 
   [Fact]
@@ -109,10 +109,10 @@ public sealed class MutationToolTests
     var result = await WorkoutWriteTools.UpdateWorkout(
         Services(client), "workout-1", FixtureFactory.UpdateWorkoutRequest(), expected, false, false, CancellationToken.None);
 
-    Assert.False(result.IsError);
-    Assert.Equal(2, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.UpdateWorkoutAsync), client.LastOperation);
-    Assert.False(result.Structured().GetProperty("meta").GetProperty("forced").GetBoolean());
+    (result.IsError).Should().BeFalse();
+    (client.CallCount).Should().Be(2);
+    (client.LastOperation).Should().Be(nameof(IHevyClient.UpdateWorkoutAsync));
+    (result.Structured().GetProperty("meta").GetProperty("forced").GetBoolean()).Should().BeFalse();
   }
 
   [Fact]
@@ -123,10 +123,10 @@ public sealed class MutationToolTests
     var result = await RoutineWriteTools.UpdateRoutine(
         Services(client), "routine-1", FixtureFactory.UpdateRoutineRequest(), DateTimeOffset.Parse("2026-07-24T12:00:00Z"), false, false, CancellationToken.None);
 
-    Assert.True(result.IsError);
-    Assert.Equal("conflict", result.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(1, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.GetRoutineAsync), client.LastOperation);
+    (result.IsError).Should().BeTrue();
+    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("conflict");
+    (client.CallCount).Should().Be(1);
+    (client.LastOperation).Should().Be(nameof(IHevyClient.GetRoutineAsync));
   }
 
   [Fact]
@@ -140,14 +140,14 @@ public sealed class MutationToolTests
     var routine = await RoutineWriteTools.UpdateRoutine(Services(routineClient), "routine-1", FixtureFactory.UpdateRoutineRequest(), null, true, false, CancellationToken.None);
     var measurement = await MeasurementWriteTools.UpdateBodyMeasurement(Services(measurementClient), new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), null, true, false, CancellationToken.None);
 
-    Assert.Equal(1, workoutClient.CallCount);
-    Assert.Equal(1, routineClient.CallCount);
-    Assert.Equal(1, measurementClient.CallCount);
-    Assert.True(workout.Structured().GetProperty("meta").GetProperty("forced").GetBoolean());
-    Assert.True(routine.Structured().GetProperty("meta").GetProperty("forced").GetBoolean());
-    Assert.True(measurement.Structured().GetProperty("meta").GetProperty("forced").GetBoolean());
-    Assert.False(measurement.Structured().GetProperty("meta").GetProperty("guard_available").GetBoolean());
-    Assert.Contains("do not expose updated_at", measurement.Structured().GetProperty("meta").GetProperty("guard_limitation").GetString(), StringComparison.Ordinal);
+    (workoutClient.CallCount).Should().Be(1);
+    (routineClient.CallCount).Should().Be(1);
+    (measurementClient.CallCount).Should().Be(1);
+    (workout.Structured().GetProperty("meta").GetProperty("forced").GetBoolean()).Should().BeTrue();
+    (routine.Structured().GetProperty("meta").GetProperty("forced").GetBoolean()).Should().BeTrue();
+    (measurement.Structured().GetProperty("meta").GetProperty("forced").GetBoolean()).Should().BeTrue();
+    (measurement.Structured().GetProperty("meta").GetProperty("guard_available").GetBoolean()).Should().BeFalse();
+    (measurement.Structured().GetProperty("meta").GetProperty("guard_limitation").GetString()).Should().Contain("do not expose updated_at");
   }
 
   [Fact]
@@ -160,10 +160,10 @@ public sealed class MutationToolTests
     var routine = await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.UpdateRoutineRequest(), null, true, true, CancellationToken.None);
     var measurement = await MeasurementWriteTools.UpdateBodyMeasurement(services, new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), null, true, true, CancellationToken.None);
 
-    Assert.Equal("Friday Leg Day", workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("title").GetString());
-    Assert.Equal("April Leg Day", routine.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine").GetProperty("title").GetString());
-    Assert.Equal(80.5m, measurement.Structured().GetProperty("data").GetProperty("payload").GetProperty("weight_kg").GetDecimal());
-    Assert.Equal(0, client.CallCount);
+    (workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("title").GetString()).Should().Be("Friday Leg Day");
+    (routine.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine").GetProperty("title").GetString()).Should().Be("April Leg Day");
+    (measurement.Structured().GetProperty("data").GetProperty("payload").GetProperty("weight_kg").GetDecimal()).Should().Be(80.5m);
+    (client.CallCount).Should().Be(0);
   }
 
   [Fact]
@@ -174,12 +174,12 @@ public sealed class MutationToolTests
     var result = await MeasurementWriteTools.UpdateBodyMeasurement(
         Services(client), new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), DateTimeOffset.Parse("2024-08-14T12:00:00Z"), false, false, CancellationToken.None);
 
-    Assert.True(result.IsError);
-    Assert.Equal("conflict", result.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.False(result.Structured().GetProperty("meta").GetProperty("guard_available").GetBoolean());
-    Assert.Contains("do not expose updated_at", result.Structured().GetProperty("meta").GetProperty("guard_limitation").GetString(), StringComparison.Ordinal);
-    Assert.Equal(1, client.CallCount);
-    Assert.Equal(nameof(IHevyClient.GetBodyMeasurementAsync), client.LastOperation);
+    (result.IsError).Should().BeTrue();
+    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("conflict");
+    (result.Structured().GetProperty("meta").GetProperty("guard_available").GetBoolean()).Should().BeFalse();
+    (result.Structured().GetProperty("meta").GetProperty("guard_limitation").GetString()).Should().Contain("do not expose updated_at");
+    (client.CallCount).Should().Be(1);
+    (client.LastOperation).Should().Be(nameof(IHevyClient.GetBodyMeasurementAsync));
   }
 
   [Fact]
@@ -202,19 +202,18 @@ public sealed class MutationToolTests
 
     await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), true, default);
     await cache.GetRoutinesAsync(default);
-    Assert.Equal(2, client.CallCount);
+    (client.CallCount).Should().Be(2);
 
     await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), false, default);
     await cache.GetRoutinesAsync(default);
     await cache.GetExerciseTemplatesAsync(default);
-    Assert.Equal(4, client.CallCount);
+    (client.CallCount).Should().Be(4);
 
     await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, default);
     await cache.GetExerciseTemplatesAsync(default);
-    Assert.Equal(6, client.CallCount);
+    (client.CallCount).Should().Be(6);
   }
 
-  // Break caught: a committed exercise creation whose read-back fails leaving the stale catalog cached.
   [Fact]
   public async Task Committed_exercise_with_failed_readback_invalidates_the_template_cache()
   {
@@ -235,13 +234,12 @@ public sealed class MutationToolTests
     var result = await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, default);
     await cache.GetExerciseTemplatesAsync(default);
 
-    Assert.True(result.IsError);
-    Assert.Equal("committed_readback_failed", result.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.False(result.Structured().GetProperty("error").GetProperty("retryable").GetBoolean());
-    Assert.Equal(3, client.CallCount);
+    (result.IsError).Should().BeTrue();
+    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("committed_readback_failed");
+    (result.Structured().GetProperty("error").GetProperty("retryable").GetBoolean()).Should().BeFalse();
+    (client.CallCount).Should().Be(3);
   }
 
-  // Break caught: a confirmed routine write whose response cannot be read leaving a stale pre-write catalog in memory.
   [Theory]
   [InlineData(false)]
   [InlineData(true)]
@@ -262,12 +260,11 @@ public sealed class MutationToolTests
         : await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), false, default);
     await cache.GetRoutinesAsync(default);
 
-    Assert.True(result.IsError);
-    Assert.Equal("committed_readback_failed", result.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(3, client.CallCount);
+    (result.IsError).Should().BeTrue();
+    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("committed_readback_failed");
+    (client.CallCount).Should().Be(3);
   }
 
-  // Break caught: caller cancellation after a committed custom-exercise write retaining a stale template catalog.
   [Fact]
   public async Task Template_mutation_invalidates_before_a_cancelled_post_commit_readback()
   {
@@ -285,11 +282,11 @@ public sealed class MutationToolTests
     var cache = services.GetRequiredService<HevyCache>();
     await cache.GetExerciseTemplatesAsync(default);
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-        ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, cancellation.Token));
+    await FluentActions.Awaiting(() =>
+        ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
     await cache.GetExerciseTemplatesAsync(default);
 
-    Assert.Equal(3, client.CallCount);
+    (client.CallCount).Should().Be(3);
   }
 
   private static IServiceProvider Services(IHevyClient client) => new ServiceCollection()

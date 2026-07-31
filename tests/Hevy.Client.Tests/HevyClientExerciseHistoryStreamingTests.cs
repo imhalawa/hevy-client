@@ -11,7 +11,6 @@ namespace Hevy.Client.Tests;
 
 public sealed class HevyClientExerciseHistoryStreamingTests
 {
-  // Break caught: fractional values in upstream fields documented as integers being widened silently.
   [Fact]
   public async Task Fractional_history_reps_are_rejected_as_an_unexpected_response()
   {
@@ -19,10 +18,10 @@ public sealed class HevyClientExerciseHistoryStreamingTests
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));
     var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("test-api-key"));
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() =>
-        client.GetExerciseHistoryAsync("template-1", 1, 10, null, null, CancellationToken.None));
+    var exception = (await FluentActions.Awaiting(() =>
+        client.GetExerciseHistoryAsync("template-1", 1, 10, null, null, CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
+    (exception.Code).Should().Be("unexpected_response");
   }
   [Theory]
   [InlineData(100, 150, 101, null)]
@@ -43,13 +42,13 @@ public sealed class HevyClientExerciseHistoryStreamingTests
         new ExerciseHistoryWindowRequest(0, limit),
         default);
 
-    Assert.Equal(limit, result.Items.Count);
-    Assert.True(result.Truncated);
-    Assert.Equal(expectedScanned, result.ScannedItemCount);
-    Assert.Equal(expectedReason, result.TruncationReason);
-    Assert.True(stream.BytesRead < stream.SourceLength);
-    Assert.True(stream.IsDisposed);
-    Assert.Single(handler.Requests);
+    (result.Items.Count).Should().Be(limit);
+    (result.Truncated).Should().BeTrue();
+    (result.ScannedItemCount).Should().Be(expectedScanned);
+    (result.TruncationReason).Should().Be(expectedReason);
+    (stream.BytesRead < stream.SourceLength).Should().BeTrue();
+    (stream.IsDisposed).Should().BeTrue();
+    (handler.Requests).Should().ContainSingle();
   }
 
   [Fact]
@@ -68,16 +67,16 @@ public sealed class HevyClientExerciseHistoryStreamingTests
         new ExerciseHistoryWindowRequest(100, 100),
         default);
 
-    Assert.Equal("workout-0001", first.Items[0].WorkoutId);
-    Assert.Equal("workout-0101", second.Items[0].WorkoutId);
-    Assert.All([first, second], result =>
+    (first.Items[0].WorkoutId).Should().Be("workout-0001");
+    (second.Items[0].WorkoutId).Should().Be("workout-0101");
+    (new[] { first, second }).Should().AllSatisfy(result =>
     {
-      Assert.Equal(100, result.Items.Count);
-      Assert.True(result.Truncated);
-      Assert.Null(result.TruncationReason);
-      Assert.InRange(result.ScannedItemCount, 1, ExerciseHistoryWindowRequest.MaximumScannedItems);
+      (result.Items.Count).Should().Be(100);
+      (result.Truncated).Should().BeTrue();
+      (result.TruncationReason).Should().BeNull();
+      (result.ScannedItemCount).Should().BeInRange(1, ExerciseHistoryWindowRequest.MaximumScannedItems);
     });
-    Assert.Equal(2, handler.Requests.Count);
+    (handler.Requests.Count).Should().Be(2);
   }
 
   [Fact]
@@ -96,10 +95,10 @@ public sealed class HevyClientExerciseHistoryStreamingTests
             EligibleEndTime: DateTimeOffset.Parse("2026-07-02T00:00:00Z")),
         default);
 
-    Assert.Equal(100, result.Items.Count);
-    Assert.True(result.Truncated);
-    Assert.Null(result.TruncationReason);
-    Assert.Equal(151, result.ScannedItemCount);
+    (result.Items.Count).Should().Be(100);
+    (result.Truncated).Should().BeTrue();
+    (result.TruncationReason).Should().BeNull();
+    (result.ScannedItemCount).Should().Be(151);
   }
 
   [Fact]
@@ -114,10 +113,10 @@ public sealed class HevyClientExerciseHistoryStreamingTests
         new ExerciseHistoryWindowRequest(0, 10),
         default);
 
-    Assert.True(result.Truncated);
-    Assert.Equal("byte_safety_cap", result.TruncationReason);
-    Assert.InRange(stream.BytesRead, 1, 1_024);
-    Assert.Single(handler.Requests);
+    (result.Truncated).Should().BeTrue();
+    (result.TruncationReason).Should().Be("byte_safety_cap");
+    (stream.BytesRead).Should().BeInRange(1, 1_024);
+    (handler.Requests).Should().ContainSingle();
   }
 
   [Fact]
@@ -136,8 +135,8 @@ public sealed class HevyClientExerciseHistoryStreamingTests
     await stream.Blocked;
     cancellation.Cancel();
 
-    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
-    Assert.Single(handler.Requests);
+    await FluentActions.Awaiting(() => read).Should().ThrowAsync<OperationCanceledException>();
+    (handler.Requests).Should().ContainSingle();
   }
 
   [Fact]
@@ -146,12 +145,12 @@ public sealed class HevyClientExerciseHistoryStreamingTests
     var handler = HistoryHandler(new TrackingReadStream(Encoding.UTF8.GetBytes(HistoryPayload(1))));
     var client = CreateClient(handler);
 
-    await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.GetExerciseHistoryWindowAsync(
+    await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
         new ExerciseHistoryWindowRequest(1_000, 1),
-        default));
+        default)).Should().ThrowExactlyAsync<ArgumentOutOfRangeException>();
 
-    Assert.Empty(handler.Requests);
+    (handler.Requests).Should().BeEmpty();
   }
 
   [Fact]
@@ -160,16 +159,15 @@ public sealed class HevyClientExerciseHistoryStreamingTests
     var handler = HistoryHandler(new TrackingReadStream(Encoding.UTF8.GetBytes("{\"exercise_history\":[{\"workout_id\":}]}")));
     var client = CreateClient(handler);
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetExerciseHistoryWindowAsync(
+    var exception = (await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
         new ExerciseHistoryWindowRequest(0, 10),
-        default));
+        default)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
-    Assert.Single(handler.Requests);
+    (exception.Code).Should().Be("unexpected_response");
+    (handler.Requests).Should().ContainSingle();
   }
 
-  // Break caught: treating the history array terminator as proof that the enclosing response object is complete.
   [Theory]
   [InlineData("{\"exercise_history\":[]")]
   [InlineData("{\"exercise_history\":[]} trailing")]
@@ -180,16 +178,15 @@ public sealed class HevyClientExerciseHistoryStreamingTests
     var handler = HistoryHandler(new ChunkedReadStream(Encoding.UTF8.GetBytes(payload), 2));
     var client = CreateClient(handler);
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetExerciseHistoryWindowAsync(
+    var exception = (await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
         new ExerciseHistoryWindowRequest(0, 10),
-        default));
+        default)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
-    Assert.Single(handler.Requests);
+    (exception.Code).Should().Be("unexpected_response");
+    (handler.Requests).Should().ContainSingle();
   }
 
-  // Break caught: coupling response parsing to the undocumented assumption that exercise_history is the first property.
   [Fact]
   public async Task HistoryWindowAcceptsUnknownMemberBeforeHistoryAcrossTokenBoundaries()
   {
@@ -203,12 +200,11 @@ public sealed class HevyClientExerciseHistoryStreamingTests
         new ExerciseHistoryWindowRequest(0, 10),
         default);
 
-    Assert.Equal("workout-0001", Assert.Single(result.Items).WorkoutId);
-    Assert.False(result.Truncated);
-    Assert.Equal(1, result.ScannedItemCount);
+    ((result.Items).Should().ContainSingle().Which.WorkoutId).Should().Be("workout-0001");
+    (result.Truncated).Should().BeFalse();
+    (result.ScannedItemCount).Should().Be(1);
   }
 
-  // Break caught: returning before validating an additive member that follows exercise_history.
   [Fact]
   public async Task HistoryWindowAcceptsUnknownMemberAfterHistoryAcrossTokenBoundaries()
   {
@@ -222,27 +218,25 @@ public sealed class HevyClientExerciseHistoryStreamingTests
         new ExerciseHistoryWindowRequest(0, 10),
         default);
 
-    Assert.Equal("workout-0001", Assert.Single(result.Items).WorkoutId);
-    Assert.False(result.Truncated);
-    Assert.Equal(1, result.ScannedItemCount);
+    ((result.Items).Should().ContainSingle().Which.WorkoutId).Should().Be("workout-0001");
+    (result.Truncated).Should().BeFalse();
+    (result.ScannedItemCount).Should().Be(1);
   }
 
-  // Break caught: accepting an envelope that cannot populate the non-null OpenAPI response collection.
   [Fact]
   public async Task HistoryWindowRejectsMissingHistoryMember()
   {
     var handler = HistoryHandler(new ChunkedReadStream(Encoding.UTF8.GetBytes("{\"metadata\":{}}"), 1));
     var client = CreateClient(handler);
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetExerciseHistoryWindowAsync(
+    var exception = (await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
         new ExerciseHistoryWindowRequest(0, 10),
-        default));
+        default)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
+    (exception.Code).Should().Be("unexpected_response");
   }
 
-  // Break caught: silently choosing one of multiple values for the single OpenAPI exercise_history field.
   [Fact]
   public async Task HistoryWindowRejectsDuplicateHistoryMembers()
   {
@@ -251,12 +245,12 @@ public sealed class HevyClientExerciseHistoryStreamingTests
     var handler = HistoryHandler(new ChunkedReadStream(Encoding.UTF8.GetBytes(payload), 2));
     var client = CreateClient(handler);
 
-    var exception = await Assert.ThrowsAsync<HevyException>(() => client.GetExerciseHistoryWindowAsync(
+    var exception = (await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
         new ExerciseHistoryWindowRequest(0, 10),
-        default));
+        default)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
-    Assert.Equal("unexpected_response", exception.Code);
+    (exception.Code).Should().Be("unexpected_response");
   }
 
   private static HevyClient CreateClient(

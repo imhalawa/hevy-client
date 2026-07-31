@@ -24,7 +24,7 @@ internal static class ServiceRegistration
 
     services.AddSingleton(options);
     services.AddSingleton(DiagnosticSnapshot.Create(options));
-    services.AddSingleton(HevyClientOptions.FromEnvironment());
+    services.AddSingleton(new HevyClientOptions(options.ApiKey));
     services.AddSingleton<IHevyClient>(serviceProvider =>
         new HevyClient(serviceProvider.GetRequiredService<HevyClientOptions>()));
     services.AddMemoryCache(memory => memory.SizeLimit = 2);
@@ -93,7 +93,8 @@ internal static class ServiceRegistration
             _ => Task.FromResult(ToolExceptionFilter.Validation($"Unknown tool '{name}'.")),
             DiagnosticOperationCategory.Protocol,
             diagnostics,
-            cancellationToken);
+            cancellationToken,
+            "protocol");
       }
 
       var category = Category(name);
@@ -118,7 +119,8 @@ internal static class ServiceRegistration
         },
         category,
         diagnostics,
-        cancellationToken);
+        cancellationToken,
+        name!);
     });
   }
 

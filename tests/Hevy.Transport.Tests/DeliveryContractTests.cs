@@ -15,30 +15,30 @@ public sealed class DeliveryContractTests
   {
     var workflow = Workflow("ci.yml");
 
-    Assert.Equal(["pull_request", "push"], Keys(Map(workflow, "on")).Order(StringComparer.Ordinal).ToArray());
+    (Keys(Map(workflow, "on")).Order(StringComparer.Ordinal).ToArray()).Should().Equal(["pull_request", "push"]);
     AssertPermissions(workflow, ("contents", "read"));
-    Assert.False(Map(workflow, "on").Children.ContainsKey(new YamlScalarNode("pull_request_target")));
+    (Map(workflow, "on").Children.ContainsKey(new YamlScalarNode("pull_request_target"))).Should().BeFalse();
 
     var runs = Steps(workflow)
         .Where(static step => step.Children.ContainsKey(new YamlScalarNode("run")))
         .Select(static step => Scalar(step, "run"))
         .ToArray();
-    Assert.Contains("./scripts/run-actionlint.sh", runs);
-    Assert.Contains("./scripts/validate-openapi.sh", runs);
-    Assert.Contains("dotnet restore HevyClient.slnx --locked-mode", runs);
-    Assert.Contains("dotnet format HevyClient.slnx --verify-no-changes --no-restore", runs);
-    Assert.Contains("dotnet build HevyClient.slnx --configuration Release --no-restore -warnaserror", runs);
-    Assert.Contains(runs, static run =>
+    (runs).Should().Contain("./scripts/run-actionlint.sh");
+    (runs).Should().Contain("./scripts/validate-openapi.sh");
+    (runs).Should().Contain("dotnet restore HevyClient.slnx --locked-mode");
+    (runs).Should().Contain("dotnet format HevyClient.slnx --verify-no-changes --no-restore");
+    (runs).Should().Contain("dotnet build HevyClient.slnx --configuration Release --no-restore -warnaserror");
+    (runs).Should().Contain((static run =>
         run.Contains("env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN", StringComparison.Ordinal) &&
-        run.Contains("dotnet test HevyClient.slnx --configuration Release --no-build", StringComparison.Ordinal));
-    Assert.Contains("docker build --pull --tag hevy-client:ci .", runs);
-    Assert.Contains("docker image inspect hevy-client:ci", runs);
-    Assert.Contains("./scripts/verify-reproducible-image.sh", runs);
-    Assert.Contains(runs, static run => run.Contains("FullyQualifiedName~ContainerSmokeTests", StringComparison.Ordinal));
-    Assert.DoesNotContain(runs, static run =>
+        run.Contains("dotnet test HevyClient.slnx --configuration Release --no-build", StringComparison.Ordinal)));
+    (runs).Should().Contain("docker build --pull --tag hevy-client:ci .");
+    (runs).Should().Contain("docker image inspect hevy-client:ci");
+    (runs).Should().Contain("./scripts/verify-reproducible-image.sh");
+    (runs).Should().Contain((static run => run.Contains("FullyQualifiedName~ContainerSmokeTests", StringComparison.Ordinal)));
+    (runs).Should().NotContain((static run =>
         run.Contains("HEVY_LIVE_TESTS=true", StringComparison.Ordinal) ||
         run.Contains("HEVY_LIVE_MUTATION_TESTS=true", StringComparison.Ordinal) ||
-        run.Contains("secrets.HEVY", StringComparison.Ordinal));
+        run.Contains("secrets.HEVY", StringComparison.Ordinal)));
   }
 
   [Fact]
@@ -48,153 +48,138 @@ public sealed class DeliveryContractTests
 
     var tagPatterns = Sequence(Map(Map(workflow, "on"), "push"), "tags")
         .Children.Cast<YamlScalarNode>().Select(static value => value.Value!).ToArray();
-    Assert.Equal(["v*.*.*"], tagPatterns);
+    (tagPatterns).Should().Equal(["v*.*.*"]);
     AssertPermissions(
         workflow,
         ("attestations", "write"),
         ("contents", "read"),
         ("id-token", "write"),
         ("packages", "write"));
-    Assert.Equal("release-ghcr-${{ github.repository }}", Scalar(Map(workflow, "concurrency"), "group"));
-    Assert.Equal("false", Scalar(Map(workflow, "concurrency"), "cancel-in-progress"));
+    (Scalar(Map(workflow, "concurrency"), "group")).Should().Be("release-ghcr-${{ github.repository }}");
+    (Scalar(Map(workflow, "concurrency"), "cancel-in-progress")).Should().Be("false");
 
     var publishJob = Map(Map(workflow, "jobs"), "publish");
-    Assert.Equal("release", Scalar(publishJob, "environment"));
+    (Scalar(publishJob, "environment")).Should().Be("release");
 
     var steps = Steps(workflow).ToArray();
     var validate = Step(steps, "Validate release identity and security gate");
-    Assert.Equal("release", Scalar(validate, "id"));
-    Assert.Equal("./scripts/validate-release.sh", Scalar(validate, "run"));
+    (Scalar(validate, "id")).Should().Be("release");
+    (Scalar(validate, "run")).Should().Be("./scripts/validate-release.sh");
     var validateEnvironment = Map(validate, "env");
-    Assert.Equal("${{ vars.HEVY_CANONICAL_REPOSITORY }}", Scalar(validateEnvironment, "HEVY_CANONICAL_REPOSITORY"));
-    Assert.Equal("${{ vars.HEVY_PRIVATE_ADVISORY_VERIFIED }}", Scalar(validateEnvironment, "HEVY_PRIVATE_ADVISORY_VERIFIED"));
+    (Scalar(validateEnvironment, "HEVY_CANONICAL_REPOSITORY")).Should().Be("${{ vars.HEVY_CANONICAL_REPOSITORY }}");
+    (Scalar(validateEnvironment, "HEVY_PRIVATE_ADVISORY_VERIFIED")).Should().Be("${{ vars.HEVY_PRIVATE_ADVISORY_VERIFIED }}");
 
     var reproducibility = Step(steps, "Verify reproducible multi-architecture image");
-    Assert.Equal("reproducibility", Scalar(reproducibility, "id"));
+    (Scalar(reproducibility, "id")).Should().Be("reproducibility");
     var reproducibilityEnvironment = Map(reproducibility, "env");
-    Assert.Equal("${{ steps.release.outputs.revision }}", Scalar(reproducibilityEnvironment, "REVISION"));
-    Assert.Equal("${{ steps.release.outputs.source }}", Scalar(reproducibilityEnvironment, "SOURCE_URL"));
-    Assert.Equal("${{ steps.release.outputs.version }}", Scalar(reproducibilityEnvironment, "VERSION"));
-    Assert.Equal("./scripts/verify-reproducible-image.sh", Scalar(reproducibility, "run"));
+    (Scalar(reproducibilityEnvironment, "REVISION")).Should().Be("${{ steps.release.outputs.revision }}");
+    (Scalar(reproducibilityEnvironment, "SOURCE_URL")).Should().Be("${{ steps.release.outputs.source }}");
+    (Scalar(reproducibilityEnvironment, "VERSION")).Should().Be("${{ steps.release.outputs.version }}");
+    (Scalar(reproducibility, "run")).Should().Be("./scripts/verify-reproducible-image.sh");
 
     var build = Step(steps, "Build and stage multi-architecture digest");
-    Assert.Equal("build", Scalar(build, "id"));
-    Assert.Equal(
-        "${{ steps.reproducibility.outputs.source_date_epoch }}",
-        Scalar(Map(build, "env"), "SOURCE_DATE_EPOCH"));
+    (Scalar(build, "id")).Should().Be("build");
+    (Scalar(Map(build, "env"), "SOURCE_DATE_EPOCH")).Should().Be("${{ steps.reproducibility.outputs.source_date_epoch }}");
     var buildWith = Map(build, "with");
-    Assert.Equal("linux/amd64,linux/arm64", Scalar(buildWith, "platforms"));
-    Assert.Equal("${{ steps.release.outputs.image }}", Scalar(buildWith, "tags"));
+    (Scalar(buildWith, "platforms")).Should().Be("linux/amd64,linux/arm64");
+    (Scalar(buildWith, "tags")).Should().Be("${{ steps.release.outputs.image }}");
     var outputs = Scalar(buildWith, "outputs");
-    Assert.Contains("push-by-digest=true", outputs, StringComparison.Ordinal);
-    Assert.Contains("name-canonical=true", outputs, StringComparison.Ordinal);
-    Assert.Contains("push=true", outputs, StringComparison.Ordinal);
-    Assert.Contains("rewrite-timestamp=true", outputs, StringComparison.Ordinal);
-    Assert.Contains("compatibility-version=30", outputs, StringComparison.Ordinal);
-    Assert.Contains("oci-mediatypes=true", outputs, StringComparison.Ordinal);
-    Assert.DoesNotContain("steps.release.outputs.version", outputs, StringComparison.Ordinal);
-    Assert.Equal("false", Scalar(buildWith, "sbom"));
-    Assert.Equal("false", Scalar(buildWith, "provenance"));
+    (outputs).Should().Contain("push-by-digest=true");
+    (outputs).Should().Contain("name-canonical=true");
+    (outputs).Should().Contain("push=true");
+    (outputs).Should().Contain("rewrite-timestamp=true");
+    (outputs).Should().Contain("compatibility-version=30");
+    (outputs).Should().Contain("oci-mediatypes=true");
+    (outputs).Should().NotContain("steps.release.outputs.version");
+    (Scalar(buildWith, "sbom")).Should().Be("false");
+    (Scalar(buildWith, "provenance")).Should().Be("false");
     var buildArguments = Scalar(buildWith, "build-args");
-    Assert.Contains("VERSION=${{ steps.release.outputs.version }}", buildArguments, StringComparison.Ordinal);
-    Assert.Contains("REVISION=${{ steps.release.outputs.revision }}", buildArguments, StringComparison.Ordinal);
-    Assert.Contains("SOURCE_URL=${{ steps.release.outputs.source }}", buildArguments, StringComparison.Ordinal);
+    (buildArguments).Should().Contain("VERSION=${{ steps.release.outputs.version }}");
+    (buildArguments).Should().Contain("REVISION=${{ steps.release.outputs.revision }}");
+    (buildArguments).Should().Contain("SOURCE_URL=${{ steps.release.outputs.source }}");
 
     var imageVerification = Step(steps, "Verify published digest platforms labels and assembly version");
-    Assert.Equal("image", Scalar(imageVerification, "id"));
+    (Scalar(imageVerification, "id")).Should().Be("image");
     var imageVerificationEnvironment = Map(imageVerification, "env");
-    Assert.Equal("${{ steps.reproducibility.outputs.index_digest }}", Scalar(imageVerificationEnvironment, "REPRO_INDEX_DIGEST"));
-    Assert.Equal("${{ steps.reproducibility.outputs.amd64_digest }}", Scalar(imageVerificationEnvironment, "REPRO_AMD64_DIGEST"));
-    Assert.Equal("${{ steps.reproducibility.outputs.arm64_digest }}", Scalar(imageVerificationEnvironment, "REPRO_ARM64_DIGEST"));
+    (Scalar(imageVerificationEnvironment, "REPRO_INDEX_DIGEST")).Should().Be("${{ steps.reproducibility.outputs.index_digest }}");
+    (Scalar(imageVerificationEnvironment, "REPRO_AMD64_DIGEST")).Should().Be("${{ steps.reproducibility.outputs.amd64_digest }}");
+    (Scalar(imageVerificationEnvironment, "REPRO_ARM64_DIGEST")).Should().Be("${{ steps.reproducibility.outputs.arm64_digest }}");
     var imageVerificationRun = Scalar(imageVerification, "run");
-    Assert.Contains(
-        "./scripts/capture-bounded-output.sh \"$index_file\" docker buildx imagetools inspect --raw \"$IMAGE@$IMAGE_DIGEST\"",
-        imageVerificationRun,
-        StringComparison.Ordinal);
-    Assert.DoesNotContain(
-        "imagetools inspect --raw \"$IMAGE@$IMAGE_DIGEST\" > \"$index_file\"",
-        imageVerificationRun,
-        StringComparison.Ordinal);
-    Assert.Contains("./scripts/verify-staged-index.sh", imageVerificationRun, StringComparison.Ordinal);
+    (imageVerificationRun).Should().Contain("./scripts/capture-bounded-output.sh \"$index_file\" docker buildx imagetools inspect --raw \"$IMAGE@$IMAGE_DIGEST\"");
+    (imageVerificationRun).Should().NotContain("imagetools inspect --raw \"$IMAGE@$IMAGE_DIGEST\" > \"$index_file\"");
+    (imageVerificationRun).Should().Contain("./scripts/verify-staged-index.sh");
     var amd64Attestation = Step(steps, "Attest amd64 container SBOM");
     var arm64Attestation = Step(steps, "Attest arm64 container SBOM");
-    Assert.StartsWith("actions/attest-sbom@", Scalar(amd64Attestation, "uses"), StringComparison.Ordinal);
-    Assert.StartsWith("actions/attest-sbom@", Scalar(arm64Attestation, "uses"), StringComparison.Ordinal);
-    Assert.DoesNotContain(new YamlScalarNode("create-storage-record"), Map(amd64Attestation, "with").Children.Keys);
-    Assert.DoesNotContain(new YamlScalarNode("create-storage-record"), Map(arm64Attestation, "with").Children.Keys);
-    Assert.Equal("${{ steps.image.outputs.amd64_digest }}", Scalar(Map(amd64Attestation, "with"), "subject-digest"));
-    Assert.Equal("${{ steps.image.outputs.arm64_digest }}", Scalar(Map(arm64Attestation, "with"), "subject-digest"));
+    (Scalar(amd64Attestation, "uses")).Should().StartWith("actions/attest-sbom@");
+    (Scalar(arm64Attestation, "uses")).Should().StartWith("actions/attest-sbom@");
+    (Map(amd64Attestation, "with").Children.Keys).Should().NotContain(new YamlScalarNode("create-storage-record"));
+    (Map(arm64Attestation, "with").Children.Keys).Should().NotContain(new YamlScalarNode("create-storage-record"));
+    (Scalar(Map(amd64Attestation, "with"), "subject-digest")).Should().Be("${{ steps.image.outputs.amd64_digest }}");
+    (Scalar(Map(arm64Attestation, "with"), "subject-digest")).Should().Be("${{ steps.image.outputs.arm64_digest }}");
 
     var installSyft = Step(steps, "Install pinned Syft");
-    Assert.Equal("./scripts/install-syft.sh", Scalar(installSyft, "run"));
+    (Scalar(installSyft, "run")).Should().Be("./scripts/install-syft.sh");
     var extractSboms = Step(steps, "Generate platform SPDX SBOMs");
     var extractSbomsRun = Scalar(extractSboms, "run");
-    Assert.Contains("syft \"registry:$IMAGE@$AMD64_DIGEST\"", extractSbomsRun, StringComparison.Ordinal);
-    Assert.Contains("syft \"registry:$IMAGE@$ARM64_DIGEST\"", extractSbomsRun, StringComparison.Ordinal);
-    Assert.Contains("./scripts/validate-spdx.sh", extractSbomsRun, StringComparison.Ordinal);
+    (extractSbomsRun).Should().Contain("syft \"registry:$IMAGE@$AMD64_DIGEST\"");
+    (extractSbomsRun).Should().Contain("syft \"registry:$IMAGE@$ARM64_DIGEST\"");
+    (extractSbomsRun).Should().Contain("./scripts/validate-spdx.sh");
 
-    Assert.StartsWith(
-        "actions/attest-build-provenance@",
-        Scalar(Step(steps, "Attest staged container provenance"), "uses"),
-        StringComparison.Ordinal);
+    (Scalar(Step(steps, "Attest staged container provenance"), "uses")).Should().StartWith("actions/attest-build-provenance@");
 
     var tagCheck = Step(steps, "Authenticate GHCR version-tag lookup");
-    Assert.Equal("${{ secrets.GITHUB_TOKEN }}", Scalar(Map(tagCheck, "env"), "GHCR_TOKEN"));
-    Assert.Equal(
-        "./scripts/ghcr-manifest.sh \"$IMAGE\" \"$RELEASE_VERSION\" >/dev/null",
-        Scalar(tagCheck, "run"));
+    (Scalar(Map(tagCheck, "env"), "GHCR_TOKEN")).Should().Be("${{ secrets.GITHUB_TOKEN }}");
+    (Scalar(tagCheck, "run")).Should().Be("./scripts/ghcr-manifest.sh \"$IMAGE\" \"$RELEASE_VERSION\" >/dev/null");
 
     var runs = steps
         .Where(static step => step.Children.ContainsKey(new YamlScalarNode("run")))
         .Select(static step => Scalar(step, "run"))
         .ToArray();
-    Assert.All(runs, static run => Assert.DoesNotContain("${{", run, StringComparison.Ordinal));
-    Assert.Contains(runs, static run => run.Contains("cosign sign --yes", StringComparison.Ordinal));
-    Assert.Contains(runs, static run =>
+    (runs).Should().AllSatisfy(static run => (run).Should().NotContain("${{"));
+    (runs).Should().Contain((static run => run.Contains("cosign sign --yes", StringComparison.Ordinal)));
+    (runs).Should().Contain((static run =>
         run.Contains("cosign verify", StringComparison.Ordinal) &&
-        run.Contains("--certificate-github-workflow-sha \"$REVISION\"", StringComparison.Ordinal));
-    Assert.Contains(runs, static run =>
+        run.Contains("--certificate-github-workflow-sha \"$REVISION\"", StringComparison.Ordinal)));
+    (runs).Should().Contain((static run =>
         run.Contains("gh attestation verify", StringComparison.Ordinal) &&
         run.Contains("--bundle-from-oci", StringComparison.Ordinal) &&
-        run.Contains("--predicate-type \"$SPDX_PREDICATE_TYPE\"", StringComparison.Ordinal));
-    Assert.Contains(runs, static run => run.Contains("docker buildx imagetools inspect", StringComparison.Ordinal));
-    Assert.Contains(runs, static run => run.Contains("coproc MCP_SERVER", StringComparison.Ordinal));
-    Assert.DoesNotContain(Scalar(buildWith, "tags"), "latest", StringComparison.OrdinalIgnoreCase);
+        run.Contains("--predicate-type \"$SPDX_PREDICATE_TYPE\"", StringComparison.Ordinal)));
+    (runs).Should().Contain((static run => run.Contains("docker buildx imagetools inspect", StringComparison.Ordinal)));
+    (runs).Should().Contain((static run => run.Contains("coproc MCP_SERVER", StringComparison.Ordinal)));
+    (Scalar(buildWith, "tags")).Should().NotContainEquivalentOf("latest");
 
     var loginIndex = Array.IndexOf(steps, Step(steps, "Log in to GHCR"));
-    Assert.True(Array.IndexOf(steps, Step(steps, "Run real release container smokes")) < loginIndex);
-    Assert.True(Array.IndexOf(steps, Step(steps, "Verify reproducible multi-architecture image")) < loginIndex);
-    Assert.DoesNotContain(steps, static step =>
-        Scalar(step, "name") is "Build local release-check image" or "Inspect local release-check image");
+    (Array.IndexOf(steps, Step(steps, "Run real release container smokes")) < loginIndex).Should().BeTrue();
+    (Array.IndexOf(steps, Step(steps, "Verify reproducible multi-architecture image")) < loginIndex).Should().BeTrue();
+    (steps.Any(static step =>
+        Scalar(step, "name") is "Build local release-check image" or "Inspect local release-check image")).Should().BeFalse();
 
     var promotion = Step(steps, "Promote verified digest to version tag");
     var promotionIndex = Array.IndexOf(steps, promotion);
-    Assert.Equal(steps.Length - 1, promotionIndex);
-    Assert.True(promotionIndex > Array.IndexOf(steps, Step(steps, "Verify GitHub attestations")));
-    Assert.True(promotionIndex > Array.IndexOf(steps, Step(steps, "Keylessly sign and verify the staged digest")));
+    (promotionIndex).Should().Be(steps.Length - 1);
+    (promotionIndex > Array.IndexOf(steps, Step(steps, "Verify GitHub attestations"))).Should().BeTrue();
+    (promotionIndex > Array.IndexOf(steps, Step(steps, "Keylessly sign and verify the staged digest"))).Should().BeTrue();
     var promotionRun = Scalar(promotion, "run");
-    Assert.Equal(
-        "exec ./scripts/promote-ghcr-tag.sh \"$IMAGE\" \"$RELEASE_VERSION\" \"$IMAGE_DIGEST\"",
-        promotionRun);
+    (promotionRun).Should().Be("exec ./scripts/promote-ghcr-tag.sh \"$IMAGE\" \"$RELEASE_VERSION\" \"$IMAGE_DIGEST\"");
 
-    Assert.Contains(steps, static step =>
+    (steps.Any(static step =>
         step.Children.TryGetValue(new YamlScalarNode("uses"), out var uses) &&
-        ((YamlScalarNode)uses).Value!.StartsWith("actions/attest-build-provenance@", StringComparison.Ordinal));
-    Assert.Contains(steps, static step =>
+        ((YamlScalarNode)uses).Value!.StartsWith("actions/attest-build-provenance@", StringComparison.Ordinal))).Should().BeTrue();
+    (steps.Any(static step =>
         step.Children.TryGetValue(new YamlScalarNode("uses"), out var uses) &&
-        ((YamlScalarNode)uses).Value!.StartsWith("sigstore/cosign-installer@", StringComparison.Ordinal));
+        ((YamlScalarNode)uses).Value!.StartsWith("sigstore/cosign-installer@", StringComparison.Ordinal))).Should().BeTrue();
 
     var digestConsumers = steps
         .Where(static step => step.Children.TryGetValue(new YamlScalarNode("env"), out _))
         .Select(static step => Map(step, "env"))
         .Where(static environment => environment.Children.ContainsKey(new YamlScalarNode("IMAGE_DIGEST")))
         .ToArray();
-    Assert.NotEmpty(digestConsumers);
-    Assert.All(digestConsumers, static environment =>
-        Assert.Equal("${{ steps.build.outputs.digest }}", Scalar(environment, "IMAGE_DIGEST")));
+    (digestConsumers).Should().NotBeEmpty();
+    (digestConsumers).Should().AllSatisfy(static environment =>
+        (Scalar(environment, "IMAGE_DIGEST")).Should().Be("${{ steps.build.outputs.digest }}"));
 
     var readme = File.ReadAllText(Path.Combine(RepositoryRoot, "README.md"));
-    Assert.Contains("--certificate-github-workflow-sha COMMIT_SHA", readme, StringComparison.Ordinal);
+    (readme).Should().Contain("--certificate-github-workflow-sha COMMIT_SHA");
   }
 
   [Fact]
@@ -208,61 +193,49 @@ public sealed class DeliveryContractTests
 
     var binfmt = tools.GetProperty("binfmt");
     var qemuWith = Map(Step(steps, "Set up QEMU"), "with");
-    Assert.Equal(
-        $"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}",
-        Scalar(qemuWith, "image"));
+    (Scalar(qemuWith, "image")).Should().Be($"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}");
 
     var buildx = tools.GetProperty("buildx");
     var buildkit = tools.GetProperty("buildkit");
     var buildxWith = Map(Step(steps, "Set up Docker Buildx"), "with");
-    Assert.DoesNotContain(new YamlScalarNode("version"), buildxWith.Children.Keys);
-    Assert.Equal(
-        $"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}",
-        Scalar(buildxWith, "driver-opts"));
+    (buildxWith.Children.Keys).Should().NotContain(new YamlScalarNode("version"));
+    (Scalar(buildxWith, "driver-opts")).Should().Be($"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}");
 
     var ciSteps = Steps(Workflow("ci.yml")).ToArray();
-    Assert.Equal(
-        $"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}",
-        Scalar(Map(Step(ciSteps, "Set up QEMU"), "with"), "image"));
+    (Scalar(Map(Step(ciSteps, "Set up QEMU"), "with"), "image")).Should().Be($"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}");
     var ciBuildxWith = Map(Step(ciSteps, "Set up Docker Buildx"), "with");
-    Assert.DoesNotContain(new YamlScalarNode("version"), ciBuildxWith.Children.Keys);
-    Assert.Equal(
-        $"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}",
-        Scalar(ciBuildxWith, "driver-opts"));
+    (ciBuildxWith.Children.Keys).Should().NotContain(new YamlScalarNode("version"));
+    (Scalar(ciBuildxWith, "driver-opts")).Should().Be($"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}");
 
     foreach (var tool in new[] { binfmt, buildkit })
     {
-      Assert.Matches("^[0-9a-f]{64}$", tool.GetProperty("sha256").GetString()!);
-      Assert.StartsWith("https://github.com/", tool.GetProperty("source").GetString(), StringComparison.Ordinal);
+      (tool.GetProperty("sha256").GetString()!).Should().MatchRegex("^[0-9a-f]{64}$");
+      (tool.GetProperty("source").GetString()).Should().StartWith("https://github.com/");
     }
 
-    Assert.Matches("^[0-9a-f]{40}$", buildx.GetProperty("commit").GetString()!);
-    Assert.Matches("^[0-9a-f]{64}$", buildx.GetProperty("sha256").GetString()!);
-    Assert.Equal(
-        $"buildx-v{buildx.GetProperty("version").GetString()}.linux-amd64",
-        buildx.GetProperty("archive").GetString());
-    Assert.Equal("./scripts/install-buildx.sh", Scalar(Step(steps, "Install pinned Buildx"), "run"));
-    Assert.Equal("./scripts/install-buildx.sh", Scalar(Step(ciSteps, "Install pinned Buildx"), "run"));
-    Assert.Equal("./scripts/verify-buildx-version.sh", Scalar(Step(steps, "Verify pinned Buildx"), "run"));
-    Assert.Equal("./scripts/verify-buildx-version.sh", Scalar(Step(ciSteps, "Verify pinned Buildx"), "run"));
-    Assert.True(Array.IndexOf(steps, Step(steps, "Install pinned Buildx")) < Array.IndexOf(steps, Step(steps, "Set up Docker Buildx")));
-    Assert.True(Array.IndexOf(steps, Step(steps, "Set up Docker Buildx")) < Array.IndexOf(steps, Step(steps, "Verify pinned Buildx")));
-    Assert.True(Array.IndexOf(ciSteps, Step(ciSteps, "Install pinned Buildx")) < Array.IndexOf(ciSteps, Step(ciSteps, "Set up Docker Buildx")));
-    Assert.True(Array.IndexOf(ciSteps, Step(ciSteps, "Set up Docker Buildx")) < Array.IndexOf(ciSteps, Step(ciSteps, "Verify pinned Buildx")));
+    (buildx.GetProperty("commit").GetString()!).Should().MatchRegex("^[0-9a-f]{40}$");
+    (buildx.GetProperty("sha256").GetString()!).Should().MatchRegex("^[0-9a-f]{64}$");
+    (buildx.GetProperty("archive").GetString()).Should().Be($"buildx-v{buildx.GetProperty("version").GetString()}.linux-amd64");
+    (Scalar(Step(steps, "Install pinned Buildx"), "run")).Should().Be("./scripts/install-buildx.sh");
+    (Scalar(Step(ciSteps, "Install pinned Buildx"), "run")).Should().Be("./scripts/install-buildx.sh");
+    (Scalar(Step(steps, "Verify pinned Buildx"), "run")).Should().Be("./scripts/verify-buildx-version.sh");
+    (Scalar(Step(ciSteps, "Verify pinned Buildx"), "run")).Should().Be("./scripts/verify-buildx-version.sh");
+    (Array.IndexOf(steps, Step(steps, "Install pinned Buildx")) < Array.IndexOf(steps, Step(steps, "Set up Docker Buildx"))).Should().BeTrue();
+    (Array.IndexOf(steps, Step(steps, "Set up Docker Buildx")) < Array.IndexOf(steps, Step(steps, "Verify pinned Buildx"))).Should().BeTrue();
+    (Array.IndexOf(ciSteps, Step(ciSteps, "Install pinned Buildx")) < Array.IndexOf(ciSteps, Step(ciSteps, "Set up Docker Buildx"))).Should().BeTrue();
+    (Array.IndexOf(ciSteps, Step(ciSteps, "Set up Docker Buildx")) < Array.IndexOf(ciSteps, Step(ciSteps, "Verify pinned Buildx"))).Should().BeTrue();
 
     var syft = tools.GetProperty("syft");
-    Assert.Matches("^[0-9a-f]{64}$", syft.GetProperty("sha256").GetString()!);
-    Assert.Matches("^[0-9a-f]{40}$", syft.GetProperty("commit").GetString()!);
-    Assert.Equal(
-        $"https://github.com/anchore/syft/releases/tag/v{syft.GetProperty("version").GetString()}",
-        syft.GetProperty("source").GetString());
+    (syft.GetProperty("sha256").GetString()!).Should().MatchRegex("^[0-9a-f]{64}$");
+    (syft.GetProperty("commit").GetString()!).Should().MatchRegex("^[0-9a-f]{40}$");
+    (syft.GetProperty("source").GetString()).Should().Be($"https://github.com/anchore/syft/releases/tag/v{syft.GetProperty("version").GetString()}");
   }
 
   [Fact]
   public void EveryExternalActionUsesAnAuditedFullCommitPin()
   {
     var lockPath = Path.Combine(RepositoryRoot, ".github", "actions-lock.json");
-    Assert.True(File.Exists(lockPath), "The audited action lock document must exist.");
+    (File.Exists(lockPath)).Should().BeTrue("The audited action lock document must exist.");
     using var lockDocument = JsonDocument.Parse(File.ReadAllText(lockPath));
     var actions = lockDocument.RootElement.GetProperty("actions");
 
@@ -273,17 +246,17 @@ public sealed class DeliveryContractTests
         .Where(static value => !value.StartsWith("./", StringComparison.Ordinal))
         .ToArray();
 
-    Assert.NotEmpty(usesValues);
+    (usesValues).Should().NotBeEmpty();
     foreach (var uses in usesValues)
     {
       var match = Regex.Match(uses, "^(?<action>[^@]+)@(?<commit>[0-9a-f]{40})$", RegexOptions.CultureInvariant);
-      Assert.True(match.Success, $"Action reference is not pinned by a full commit: {uses}");
+      (match.Success).Should().BeTrue($"Action reference is not pinned by a full commit: {uses}");
       var action = match.Groups["action"].Value;
       var locked = actions.GetProperty(action);
-      Assert.Equal(match.Groups["commit"].Value, locked.GetProperty("commit").GetString());
+      (locked.GetProperty("commit").GetString()).Should().Be(match.Groups["commit"].Value);
       var version = locked.GetProperty("version").GetString();
-      Assert.Matches("^v[0-9]+(?:\\.[0-9]+){1,2}$", version!);
-      Assert.Equal($"https://github.com/{action}/tree/{version}", locked.GetProperty("source").GetString());
+      (version!).Should().MatchRegex("^v[0-9]+(?:\\.[0-9]+){1,2}$");
+      (locked.GetProperty("source").GetString()).Should().Be($"https://github.com/{action}/tree/{version}");
     }
   }
 
@@ -291,13 +264,13 @@ public sealed class DeliveryContractTests
   public void ActionlintLockRecordsAnAuditedReleaseChecksum()
   {
     var lockPath = Path.Combine(RepositoryRoot, ".github", "tools-lock.json");
-    Assert.True(File.Exists(lockPath), "The audited CI-tool lock document must exist.");
+    (File.Exists(lockPath)).Should().BeTrue("The audited CI-tool lock document must exist.");
     using var document = JsonDocument.Parse(File.ReadAllText(lockPath));
     var actionlint = document.RootElement.GetProperty("tools").GetProperty("actionlint");
     var version = actionlint.GetProperty("version").GetString()!;
     var checksum = actionlint.GetProperty("sha256").GetString()!;
-    Assert.Matches("^[0-9a-f]{64}$", checksum);
-    Assert.Equal($"https://github.com/rhysd/actionlint/releases/tag/v{version}", actionlint.GetProperty("source").GetString());
+    (checksum).Should().MatchRegex("^[0-9a-f]{64}$");
+    (actionlint.GetProperty("source").GetString()).Should().Be($"https://github.com/rhysd/actionlint/releases/tag/v{version}");
   }
 
   [Fact]
@@ -326,10 +299,10 @@ public sealed class DeliveryContractTests
         "git",
         ["ls-files", "--stage", "--", .. scripts]);
 
-    Assert.Equal(0, result.ExitCode);
+    (result.ExitCode).Should().Be(0);
     var entries = result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-    Assert.Equal(scripts.Length, entries.Length);
-    Assert.All(entries, static entry => Assert.StartsWith("100755 ", entry, StringComparison.Ordinal));
+    (entries.Length).Should().Be(scripts.Length);
+    (entries).Should().AllSatisfy(static entry => (entry).Should().StartWith("100755 "));
   }
 
   [Fact]
@@ -337,50 +310,46 @@ public sealed class DeliveryContractTests
   {
     var editorConfig = File.ReadAllText(Path.Combine(RepositoryRoot, ".editorconfig"));
 
-    Assert.Contains("[*.{json,sh,yaml,yml}]", editorConfig, StringComparison.Ordinal);
-    Assert.Matches("(?m)^indent_size = 2$", editorConfig[(editorConfig.IndexOf("[*.{json,sh,yaml,yml}]", StringComparison.Ordinal))..]);
+    (editorConfig).Should().Contain("[*.{json,sh,yaml,yml}]");
+    (editorConfig[(editorConfig.IndexOf("[*.{json,sh,yaml,yml}]", StringComparison.Ordinal))..]).Should().MatchRegex("(?m)^indent_size = 2$");
   }
 
   [Fact]
   public void DependabotGroupsWeeklyStableUpdatesAndCannotSelectMcpTwo()
   {
     var dependabot = Yaml(Path.Combine(RepositoryRoot, ".github", "dependabot.yml"));
-    Assert.Equal("2", Scalar(dependabot, "version"));
+    (Scalar(dependabot, "version")).Should().Be("2");
     var updates = Sequence(dependabot, "updates").Children.Cast<YamlMappingNode>().ToArray();
-    Assert.Equal(["docker", "github-actions", "nuget"], updates.Select(static update => Scalar(update, "package-ecosystem")).Order(StringComparer.Ordinal).ToArray());
+    (updates.Select(static update => Scalar(update, "package-ecosystem")).Order(StringComparer.Ordinal).ToArray()).Should().Equal(["docker", "github-actions", "nuget"]);
 
     foreach (var update in updates)
     {
-      Assert.Equal("/", Scalar(update, "directory"));
-      Assert.Equal("weekly", Scalar(Map(update, "schedule"), "interval"));
+      (Scalar(update, "directory")).Should().Be("/");
+      (Scalar(Map(update, "schedule"), "interval")).Should().Be("weekly");
       var stable = Map(Map(update, "groups"), "stable-updates");
-      Assert.Equal(["minor", "patch"], Sequence(stable, "update-types").Children.Cast<YamlScalarNode>().Select(static value => value.Value!).Order(StringComparer.Ordinal).ToArray());
+      (Sequence(stable, "update-types").Children.Cast<YamlScalarNode>().Select(static value => value.Value!).Order(StringComparer.Ordinal).ToArray()).Should().Equal(["minor", "patch"]);
     }
 
     var nuget = updates.Single(static update => Scalar(update, "package-ecosystem") == "nuget");
     var ignored = Sequence(nuget, "ignore").Children.Cast<YamlMappingNode>().ToArray();
-    Assert.Equal(
-        ["ModelContextProtocol", "ModelContextProtocol.AspNetCore"],
-        ignored.Select(static item => Scalar(item, "dependency-name")).Order(StringComparer.Ordinal).ToArray());
-    Assert.All(ignored, static item =>
+    (ignored.Select(static item => Scalar(item, "dependency-name")).Order(StringComparer.Ordinal).ToArray()).Should().Equal(["ModelContextProtocol", "ModelContextProtocol.AspNetCore"]);
+    (ignored).Should().AllSatisfy(static item =>
     {
-      Assert.Equal(
-          ["2.*"],
-          Sequence(item, "versions").Children.Cast<YamlScalarNode>().Select(static value => value.Value!).ToArray());
-      Assert.Contains("version-update:semver-major", Sequence(item, "update-types").Children.Cast<YamlScalarNode>().Select(static value => value.Value));
+      (Sequence(item, "versions").Children.Cast<YamlScalarNode>().Select(static value => value.Value!).ToArray()).Should().Equal(["2.*"]);
+      (Sequence(item, "update-types").Children.Cast<YamlScalarNode>().Select(static value => value.Value)).Should().Contain("version-update:semver-major");
     });
 
     var packages = File.ReadAllText(Path.Combine(RepositoryRoot, "Directory.Packages.props"));
-    Assert.Contains("<PackageVersion Include=\"ModelContextProtocol\" Version=\"1.4.1\" />", packages, StringComparison.Ordinal);
-    Assert.Contains("<PackageVersion Include=\"ModelContextProtocol.AspNetCore\" Version=\"1.4.1\" />", packages, StringComparison.Ordinal);
-    Assert.DoesNotContain("preview", packages, StringComparison.OrdinalIgnoreCase);
+    (packages).Should().Contain("<PackageVersion Include=\"ModelContextProtocol\" Version=\"1.4.1\" />");
+    (packages).Should().Contain("<PackageVersion Include=\"ModelContextProtocol.AspNetCore\" Version=\"1.4.1\" />");
+    (packages).Should().NotContainEquivalentOf("preview");
   }
 
   [Fact]
   public async Task ReleaseValidatorAcceptsLightweightAndAnnotatedExactTagsAndRejectsUnsafeIdentity()
   {
     var script = Path.Combine(RepositoryRoot, "scripts", "validate-release.sh");
-    Assert.True(File.Exists(script), "The executable release validator must exist.");
+    (File.Exists(script)).Should().BeTrue("The executable release validator must exist.");
 
     await using var repository = await TemporaryGitRepository.CreateAsync();
     foreach (var annotated in new[] { false, true })
@@ -388,32 +357,32 @@ public sealed class DeliveryContractTests
       var tag = annotated ? "v2.3.4" : "v1.2.3";
       await repository.TagAsync(tag, annotated);
       var result = await repository.RunValidatorAsync(script, tag, securityVerified: "true");
-      Assert.Equal(0, result.ExitCode);
-      Assert.Contains($"version={tag[1..]}", result.OutputFile, StringComparison.Ordinal);
-      Assert.Contains("image=ghcr.io/example/hevy-client", result.OutputFile, StringComparison.Ordinal);
-      Assert.Contains($"revision={repository.Commit}", result.OutputFile, StringComparison.Ordinal);
-      Assert.Contains("source=https://github.com/Example/Hevy-Client", result.OutputFile, StringComparison.Ordinal);
+      (result.ExitCode).Should().Be(0);
+      (result.OutputFile).Should().Contain($"version={tag[1..]}");
+      (result.OutputFile).Should().Contain("image=ghcr.io/example/hevy-client");
+      (result.OutputFile).Should().Contain($"revision={repository.Commit}");
+      (result.OutputFile).Should().Contain("source=https://github.com/Example/Hevy-Client");
     }
 
     foreach (var invalidTag in new[] { "v1.2", "v1.2.3-rc.1", "v01.2.3", "1.2.3" })
     {
       var result = await repository.RunValidatorAsync(script, invalidTag, securityVerified: "true", createTag: false);
-      Assert.NotEqual(0, result.ExitCode);
+      (result.ExitCode).Should().NotBe(0);
     }
 
     var blocked = await repository.RunValidatorAsync(script, "v1.2.3", securityVerified: "false");
-    Assert.NotEqual(0, blocked.ExitCode);
-    Assert.Contains("private vulnerability reporting", blocked.StandardError, StringComparison.OrdinalIgnoreCase);
+    (blocked.ExitCode).Should().NotBe(0);
+    (blocked.StandardError).Should().ContainEquivalentOf("private vulnerability reporting");
   }
 
   [Fact]
   public async Task RepositoryAuditAcceptsThisTreeAndRejectsSecretsTelemetryForeignOriginsPlaceholdersAndArtifacts()
   {
     var script = Path.Combine(RepositoryRoot, "scripts", "audit-repository.sh");
-    Assert.True(File.Exists(script), "The repeatable release audit must exist.");
+    (File.Exists(script)).Should().BeTrue("The repeatable release audit must exist.");
 
     var current = await RunProcessAsync(RepositoryRoot, "/bin/sh", script, RepositoryRoot);
-    Assert.Equal(0, current.ExitCode);
+    (current.ExitCode).Should().Be(0);
 
     var fixture = Path.Combine(Path.GetTempPath(), $"hevy-audit-{Guid.NewGuid():N}");
     Directory.CreateDirectory(Path.Combine(fixture, "src"));
@@ -444,13 +413,13 @@ public sealed class DeliveryContractTests
       await GitAsync(fixture, "add", ".");
 
       var unsafeResult = await RunProcessAsync(fixture, "/bin/sh", script, fixture);
-      Assert.NotEqual(0, unsafeResult.ExitCode);
-      Assert.Contains("secret", unsafeResult.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Contains("credential assignment", unsafeResult.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Contains("telemetry", unsafeResult.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Contains("origin", unsafeResult.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Contains("placeholder", unsafeResult.StandardError, StringComparison.OrdinalIgnoreCase);
-      Assert.Contains("artifact", unsafeResult.StandardError, StringComparison.OrdinalIgnoreCase);
+      (unsafeResult.ExitCode).Should().NotBe(0);
+      (unsafeResult.StandardError).Should().ContainEquivalentOf("secret");
+      (unsafeResult.StandardError).Should().ContainEquivalentOf("credential assignment");
+      (unsafeResult.StandardError).Should().ContainEquivalentOf("telemetry");
+      (unsafeResult.StandardError).Should().ContainEquivalentOf("origin");
+      (unsafeResult.StandardError).Should().ContainEquivalentOf("placeholder");
+      (unsafeResult.StandardError).Should().ContainEquivalentOf("artifact");
     }
     finally
     {
@@ -465,6 +434,7 @@ public sealed class DeliveryContractTests
   [InlineData("docs/dotted.yml", "MCP_AUTH_TOKEN: {0}.signed.segment~suffix\n", "credential assignment")]
   [InlineData("docs/tilde.yml", "MCP_AUTH_TOKEN: {0}~agent-token\n", "credential assignment")]
   [InlineData("src/Origin.cs", "// https://api.hevyapp.com.evil/v1\n", "origin")]
+  [InlineData("src/Inline.cs", "var value = 1; // trailing comment\n", "single-line comment")]
   public async Task RepositoryAuditRejectsAdversarialCredentialsAndLookalikeOrigins(
       string relativePath,
       string contents,
@@ -484,8 +454,8 @@ public sealed class DeliveryContractTests
 
       var result = await RunProcessAsync(fixture, "/bin/sh", script, fixture);
 
-      Assert.NotEqual(0, result.ExitCode);
-      Assert.Contains(expectedFinding, result.StandardError, StringComparison.OrdinalIgnoreCase);
+      (result.ExitCode).Should().NotBe(0);
+      (result.StandardError).Should().ContainEquivalentOf(expectedFinding);
     }
     finally
     {
@@ -498,12 +468,12 @@ public sealed class DeliveryContractTests
 
   private static YamlMappingNode Yaml(string path)
   {
-    Assert.True(File.Exists(path), $"Required parsed YAML file does not exist: {path}");
+    (File.Exists(path)).Should().BeTrue($"Required parsed YAML file does not exist: {path}");
     var stream = new YamlStream();
     using var reader = File.OpenText(path);
     stream.Load(reader);
-    Assert.Single(stream.Documents);
-    return Assert.IsType<YamlMappingNode>(stream.Documents[0].RootNode);
+    (stream.Documents).Should().ContainSingle();
+    return (stream.Documents[0].RootNode).Should().BeOfType<YamlMappingNode>().Which;
   }
 
   private static IEnumerable<YamlMappingNode> Steps(YamlMappingNode workflow) =>
@@ -526,20 +496,20 @@ public sealed class DeliveryContractTests
         .OrderBy(static item => item.Key, StringComparer.Ordinal)
         .Select(static item => $"{item.Key}:{item.Value}")
         .ToArray();
-    Assert.Equal(expectedValues, actualValues);
+    (actualValues).Should().Equal(expectedValues);
   }
 
   private static IEnumerable<string> Keys(YamlMappingNode mapping) =>
       mapping.Children.Keys.Cast<YamlScalarNode>().Select(static key => key.Value!);
 
   private static YamlMappingNode Map(YamlMappingNode parent, string key) =>
-      Assert.IsType<YamlMappingNode>(parent.Children[new YamlScalarNode(key)]);
+      (parent.Children[new YamlScalarNode(key)]).Should().BeOfType<YamlMappingNode>().Which;
 
   private static YamlSequenceNode Sequence(YamlMappingNode parent, string key) =>
-      Assert.IsType<YamlSequenceNode>(parent.Children[new YamlScalarNode(key)]);
+      (parent.Children[new YamlScalarNode(key)]).Should().BeOfType<YamlSequenceNode>().Which;
 
   private static string Scalar(YamlMappingNode parent, string key) =>
-      Assert.IsType<YamlScalarNode>(parent.Children[new YamlScalarNode(key)]).Value!;
+      (parent.Children[new YamlScalarNode(key)]).Should().BeOfType<YamlScalarNode>().Which.Value!;
 
   internal static Task<ProcessResult> RunProcessAsync(
       string workingDirectory,
@@ -584,7 +554,7 @@ public sealed class DeliveryContractTests
   private static async Task GitAsync(string workingDirectory, params string[] arguments)
   {
     var result = await RunProcessAsync(workingDirectory, "git", arguments);
-    Assert.Equal(0, result.ExitCode);
+    (result.ExitCode).Should().Be(0);
   }
 
   private sealed class TemporaryGitRepository : IAsyncDisposable
@@ -669,7 +639,7 @@ public sealed class DeliveryContractTests
     private static async Task<ProcessResult> GitAsync(string workingDirectory, params string[] arguments)
     {
       var result = await DeliveryContractTests.RunProcessAsync(workingDirectory, "git", arguments);
-      Assert.Equal(0, result.ExitCode);
+      (result.ExitCode).Should().Be(0);
       return result;
     }
   }

@@ -6,6 +6,11 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Hevy.Mcp/Hevy.Mcp.csproj" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="FluentAssertions.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime;build;native;contentfiles;analyzers;buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="xunit" />

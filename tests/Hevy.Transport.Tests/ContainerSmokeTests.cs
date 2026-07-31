@@ -38,6 +38,10 @@ public static class DockerAvailabilityPolicy
 {
   private const string DockerEndpointFormat = "{{(index .Endpoints \"docker\").Host}}";
 
+  /// <remarks>
+  /// Docker CLI 29.5.2 resolves a nonempty <c>DOCKER_HOST</c> before <c>DOCKER_CONTEXT</c>.
+  /// Re-audit this precedence when the pinned Docker client changes.
+  /// </remarks>
   public static async Task<DockerAvailabilityDecision> EvaluateAsync(
       DockerProbeResult probe,
       bool isCi,
@@ -63,11 +67,6 @@ public static class DockerAvailabilityPolicy
       return DockerAvailabilityDecision.Skip;
     }
 
-    // Compatibility: pinned Docker CLI v29.5.2 resolves a nonempty DOCKER_HOST before
-    // DOCKER_CONTEXT, despite the Docker CLI docs claiming the inverse. Re-audit this
-    // on every Docker client bump:
-    // https://github.com/docker/cli/blob/v29.5.2/cli/command/cli.go#L409-L426
-    // https://docs.docker.com/engine/reference/commandline/cli/#environment-variables
     var effectiveEndpoint = configuredDockerHost;
     if (string.IsNullOrEmpty(effectiveEndpoint))
     {
@@ -560,9 +559,7 @@ public sealed class ContainerSmokeFixture : IAsyncLifetime
     {
       throw SkipException.ForSkip($"Docker is genuinely unavailable: {availability.StandardError.Trim()}");
     }
-    Assert.True(
-        decision is DockerAvailabilityDecision.Use,
-        $"Docker is installed but its prerequisite check failed and cannot be skipped: {availability.StandardError.Trim()}");
+    (decision is DockerAvailabilityDecision.Use).Should().BeTrue($"Docker is installed but its prerequisite check failed and cannot be skipped: {availability.StandardError.Trim()}");
 
     return await coordinator.EnsureBuiltAsync(DockerProcess.RepositoryRoot);
   }
@@ -665,8 +662,8 @@ public sealed class ContainerSmokeTests
         .Where(static reference => !string.Equals(reference, "scratch", StringComparison.Ordinal))
         .ToArray();
 
-    Assert.NotEmpty(references);
-    Assert.All(references, reference => Assert.Matches("@sha256:[0-9a-f]{64}$", reference));
+    (references).Should().NotBeEmpty();
+    (references).Should().AllSatisfy(reference => (reference).Should().MatchRegex("@sha256:[0-9a-f]{64}$"));
   }
 
   [Fact]
@@ -675,20 +672,20 @@ public sealed class ContainerSmokeTests
     var imageId = await fixture.EnsureImageAsync();
 
     var inspection = await DockerProcess.RunAsync(["image", "inspect", imageId]);
-    Assert.Equal(0, inspection.ExitCode);
+    (inspection.ExitCode).Should().Be(0);
     using var document = JsonDocument.Parse(inspection.StandardOutput);
     var config = document.RootElement[0].GetProperty("Config");
 
-    Assert.Equal("app", config.GetProperty("User").GetString());
-    Assert.Equal(["dotnet", "Hevy.Mcp.dll"], config.GetProperty("Entrypoint").EnumerateArray().Select(static value => value.GetString()!).ToArray());
-    Assert.False(config.TryGetProperty("ExposedPorts", out var exposedPorts) && exposedPorts.ValueKind is not JsonValueKind.Null);
+    (config.GetProperty("User").GetString()).Should().Be("app");
+    (config.GetProperty("Entrypoint").EnumerateArray().Select(static value => value.GetString()!).ToArray()).Should().Equal(["dotnet", "Hevy.Mcp.dll"]);
+    (config.TryGetProperty("ExposedPorts", out var exposedPorts) && exposedPorts.ValueKind is not JsonValueKind.Null).Should().BeFalse();
 
     var labels = config.GetProperty("Labels");
-    Assert.Equal("MIT", labels.GetProperty("org.opencontainers.image.licenses").GetString());
-    Assert.Equal("hevy-client", labels.GetProperty("org.opencontainers.image.title").GetString());
-    Assert.Equal("https://github.com/example/hevy-client", labels.GetProperty("org.opencontainers.image.source").GetString());
-    Assert.Equal("0123456789abcdef0123456789abcdef01234567", labels.GetProperty("org.opencontainers.image.revision").GetString());
-    Assert.Equal("1.2.3-smoke.1", labels.GetProperty("org.opencontainers.image.version").GetString());
+    (labels.GetProperty("org.opencontainers.image.licenses").GetString()).Should().Be("MIT");
+    (labels.GetProperty("org.opencontainers.image.title").GetString()).Should().Be("hevy-client");
+    (labels.GetProperty("org.opencontainers.image.source").GetString()).Should().Be("https://github.com/example/hevy-client");
+    (labels.GetProperty("org.opencontainers.image.revision").GetString()).Should().Be("0123456789abcdef0123456789abcdef01234567");
+    (labels.GetProperty("org.opencontainers.image.version").GetString()).Should().Be("1.2.3-smoke.1");
     foreach (var label in new[]
     {
       "org.opencontainers.image.description",
@@ -697,13 +694,13 @@ public sealed class ContainerSmokeTests
       "org.opencontainers.image.version",
     })
     {
-      Assert.False(string.IsNullOrWhiteSpace(labels.GetProperty(label).GetString()));
+      (string.IsNullOrWhiteSpace(labels.GetProperty(label).GetString())).Should().BeFalse();
     }
 
     var shellAttempt = await DockerProcess.RunAsync(["run", "--rm", "--entrypoint", "/bin/sh", imageId, "-c", "exit 0"]);
-    Assert.NotEqual(0, shellAttempt.ExitCode);
+    (shellAttempt.ExitCode).Should().NotBe(0);
     var packageManagerAttempt = await DockerProcess.RunAsync(["run", "--rm", "--entrypoint", "/usr/bin/apt-get", imageId, "--version"]);
-    Assert.NotEqual(0, packageManagerAttempt.ExitCode);
+    (packageManagerAttempt.ExitCode).Should().NotBe(0);
   }
 
   [Fact]
@@ -724,11 +721,11 @@ public sealed class ContainerSmokeTests
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
 
-    Assert.Equal("hevy-client", initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
-    Assert.Equal(28, tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength());
-    Assert.Equal(0, process.ExitCode);
-    Assert.Equal(string.Empty, await process.StandardOutput.ReadToEndAsync());
-    Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
+    (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-client");
+    (tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength()).Should().Be(28);
+    (process.ExitCode).Should().Be(0);
+    (await process.StandardOutput.ReadToEndAsync()).Should().Be(string.Empty);
+    (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
   [Theory]
@@ -745,7 +742,7 @@ public sealed class ContainerSmokeTests
 
     var imageId = await fixture.EnsureImageAsync();
     var wrapper = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "hevy-client-mcp");
-    Assert.True(File.Exists(wrapper), "The documented POSIX secret-backed MCP wrapper is required.");
+    (File.Exists(wrapper)).Should().BeTrue("The documented POSIX secret-backed MCP wrapper is required.");
     var fakeSecret = $"fixture-{RandomNumberGenerator.GetHexString(24)}";
     var temporaryDirectory = Path.Combine(Path.GetTempPath(), $"hevy-wrapper-{RandomNumberGenerator.GetHexString(16)}");
     Directory.CreateDirectory(temporaryDirectory);
@@ -783,14 +780,12 @@ public sealed class ContainerSmokeTests
       process.StandardInput.Close();
       await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
 
-      Assert.Equal("hevy-client", initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
-      Assert.Equal(28, tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength());
-      Assert.Equal(0, process.ExitCode);
-      Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
-      Assert.DoesNotContain(fakeSecret, await File.ReadAllTextAsync(wrapper), StringComparison.Ordinal);
-      Assert.All(
-          Directory.EnumerateFiles(temporaryDirectory),
-          file => Assert.DoesNotContain(fakeSecret, File.ReadAllText(file), StringComparison.Ordinal));
+      (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-client");
+      (tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength()).Should().Be(28);
+      (process.ExitCode).Should().Be(0);
+      (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
+      (await File.ReadAllTextAsync(wrapper)).Should().NotContain(fakeSecret);
+      (Directory.EnumerateFiles(temporaryDirectory)).Should().AllSatisfy(file => (File.ReadAllText(file)).Should().NotContain(fakeSecret));
     }
     finally
     {
@@ -802,20 +797,20 @@ public sealed class ContainerSmokeTests
   public void WindowsSecurePromptLauncherUsesProcessOnlyInheritanceAndRestoresTheEnvironment()
   {
     var launcher = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "Start-HevyClient.ps1");
-    Assert.True(File.Exists(launcher), "The documented Windows secure-prompt GUI launcher is required.");
+    (File.Exists(launcher)).Should().BeTrue("The documented Windows secure-prompt GUI launcher is required.");
     var script = File.ReadAllText(launcher);
 
-    Assert.Contains("Read-Host -Prompt 'Hevy API key' -AsSecureString", script, StringComparison.Ordinal);
-    Assert.Contains("[System.Management.Automation.PSCredential]::new", script, StringComparison.Ordinal);
-    Assert.Contains("$credential.GetNetworkCredential().Password", script, StringComparison.Ordinal);
-    Assert.Contains("[Environment]::SetEnvironmentVariable('HEVY_API_KEY', $plainKey, 'Process')", script, StringComparison.Ordinal);
-    Assert.Contains("& $ClientPath", script, StringComparison.Ordinal);
-    Assert.Contains("finally", script, StringComparison.Ordinal);
-    Assert.Contains("[Environment]::SetEnvironmentVariable('HEVY_API_KEY', $previousKey, 'Process')", script, StringComparison.Ordinal);
-    Assert.DoesNotContain("'User'", script, StringComparison.Ordinal);
-    Assert.DoesNotContain("'Machine'", script, StringComparison.Ordinal);
-    Assert.DoesNotContain("Set-Content", script, StringComparison.OrdinalIgnoreCase);
-    Assert.DoesNotContain("Out-File", script, StringComparison.OrdinalIgnoreCase);
+    (script).Should().Contain("Read-Host -Prompt 'Hevy API key' -AsSecureString");
+    (script).Should().Contain("[System.Management.Automation.PSCredential]::new");
+    (script).Should().Contain("$credential.GetNetworkCredential().Password");
+    (script).Should().Contain("[Environment]::SetEnvironmentVariable('HEVY_API_KEY', $plainKey, 'Process')");
+    (script).Should().Contain("& $ClientPath");
+    (script).Should().Contain("finally");
+    (script).Should().Contain("[Environment]::SetEnvironmentVariable('HEVY_API_KEY', $previousKey, 'Process')");
+    (script).Should().NotContain("'User'");
+    (script).Should().NotContain("'Machine'");
+    (script).Should().NotContainEquivalentOf("Set-Content");
+    (script).Should().NotContainEquivalentOf("Out-File");
   }
 
   [Fact]
@@ -831,26 +826,26 @@ public sealed class ContainerSmokeTests
       "-e", "ASPNETCORE_URLS=http://0.0.0.0:8080",
       imageId,
     ]);
-    Assert.Equal(0, started.ExitCode);
+    (started.ExitCode).Should().Be(0);
     var containerId = started.StandardOutput.Trim();
 
     try
     {
       var port = await WaitForLoopbackPortAsync(containerId);
       var processOwner = await DockerProcess.RunAsync(["top", containerId, "-eo", "uid,pid"]);
-      Assert.Equal(0, processOwner.ExitCode);
-      Assert.Equal("1654", processOwner.StandardOutput
+      (processOwner.ExitCode).Should().Be(0);
+      (processOwner.StandardOutput
           .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
           .Last()
-          .Split(' ', StringSplitOptions.RemoveEmptyEntries)[0]);
+          .Split(' ', StringSplitOptions.RemoveEmptyEntries)[0]).Should().Be("1654");
       using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
       using var health = await WaitForHealthAsync(client);
-      Assert.Equal(HttpStatusCode.OK, health.StatusCode);
-      Assert.Equal(string.Empty, await health.Content.ReadAsStringAsync());
+      (health.StatusCode).Should().Be(HttpStatusCode.OK);
+      (await health.Content.ReadAsStringAsync()).Should().Be(string.Empty);
 
       using var mcp = await client.PostAsync("/mcp", new StringContent("{}"));
-      Assert.Equal(HttpStatusCode.Unauthorized, mcp.StatusCode);
-      Assert.Equal("Bearer", mcp.Headers.WwwAuthenticate.Single().Scheme);
+      (mcp.StatusCode).Should().Be(HttpStatusCode.Unauthorized);
+      (mcp.Headers.WwwAuthenticate.Single().Scheme).Should().Be("Bearer");
     }
     finally
     {
@@ -908,9 +903,9 @@ public sealed class ContainerSmokeTests
     if (string.IsNullOrWhiteSpace(line))
     {
       var error = process.HasExited ? await process.StandardError.ReadToEndAsync() : "process is still running";
-      Assert.Fail($"The MCP process produced no protocol response; {error}");
+      false.Should().BeTrue($"The MCP process produced no protocol response; {error}");
     }
-    return JsonDocument.Parse(line);
+    return JsonDocument.Parse(line!);
   }
 
   private static void WriteExecutable(string path, string contents)
@@ -955,14 +950,12 @@ public sealed class ContainerSmokeInfrastructureTests
   {
     var probe = new DockerProbeResult(127, string.Empty, "docker executable was not found", ExecutableMissing: true);
 
-    Assert.Equal(
-        expected,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi,
             UnexpectedDocker,
             configuredDockerHost: "ssh://builder@build-host",
-            configuredDockerContext: "production"));
+            configuredDockerContext: "production")).Should().Be(expected);
   }
 
   [Theory]
@@ -984,8 +977,8 @@ public sealed class ContainerSmokeInfrastructureTests
         error,
         ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Skip, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
-    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: true));
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Skip);
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -998,8 +991,8 @@ public sealed class ContainerSmokeInfrastructureTests
   {
     var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
-    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: true));
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -1023,8 +1016,8 @@ public sealed class ContainerSmokeInfrastructureTests
   {
     var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
-    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: true));
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -1038,7 +1031,7 @@ public sealed class ContainerSmokeInfrastructureTests
         separator;
     var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -1067,7 +1060,7 @@ public sealed class ContainerSmokeInfrastructureTests
           string.Empty,
           diagnostic.Insert(position, separator),
           ExecutableMissing: false);
-      Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
+      (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
     }
   }
 
@@ -1092,14 +1085,12 @@ public sealed class ContainerSmokeInfrastructureTests
           _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
         };
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             FakeDocker,
             configuredDockerHost: null,
-            configuredDockerContext: null));
+            configuredDockerContext: null)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -1129,14 +1120,12 @@ public sealed class ContainerSmokeInfrastructureTests
           _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
         };
 
-    Assert.Equal(
-        expected,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             FakeDocker,
             configuredDockerHost: null,
-            configuredDockerContext: contextName));
+            configuredDockerContext: contextName)).Should().Be(expected);
   }
 
   [Fact]
@@ -1160,14 +1149,12 @@ public sealed class ContainerSmokeInfrastructureTests
           _ => throw new InvalidOperationException($"Unexpected fake Docker command: {string.Join(' ', arguments)}"),
         };
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             FakeDocker,
             configuredDockerHost: null,
-            configuredDockerContext: null));
+            configuredDockerContext: null)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Fact]
@@ -1184,14 +1171,12 @@ public sealed class ContainerSmokeInfrastructureTests
         string? workingDirectory,
         TimeSpan? timeout) => throw new TimeoutException("context command timed out");
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             FailingDocker,
             configuredDockerHost: null,
-            configuredDockerContext: null));
+            configuredDockerContext: null)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -1209,14 +1194,12 @@ public sealed class ContainerSmokeInfrastructureTests
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             UnexpectedDocker,
             configuredDockerHost: null,
-            configuredDockerContext: $"default{separator}"));
+            configuredDockerContext: $"default{separator}")).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -1233,14 +1216,12 @@ public sealed class ContainerSmokeInfrastructureTests
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
-    Assert.Equal(
-        expected,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             UnexpectedDocker,
             configuredDockerHost,
-            configuredDockerContext));
+            configuredDockerContext)).Should().Be(expected);
   }
 
   [Theory]
@@ -1260,21 +1241,17 @@ public sealed class ContainerSmokeInfrastructureTests
         string? workingDirectory,
         TimeSpan? timeout)
     {
-      Assert.Equal(
-          ["context", "inspect", "--format", "{{(index .Endpoints \"docker\").Host}}", "--", configuredDockerContext],
-          arguments);
+      (arguments).Should().Equal(["context", "inspect", "--format", "{{(index .Endpoints \"docker\").Host}}", "--", configuredDockerContext]);
       return Task.FromResult(
           new DockerCommandResult(0, "unix:///var/run/docker.sock\n", string.Empty, ExecutableMissing: false));
     }
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Skip,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             FakeDocker,
             configuredDockerHost,
-            configuredDockerContext));
+            configuredDockerContext)).Should().Be(DockerAvailabilityDecision.Skip);
   }
 
   [Theory]
@@ -1288,14 +1265,12 @@ public sealed class ContainerSmokeInfrastructureTests
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Skip,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             UnexpectedDocker,
             configuredDockerHost: LocalDockerEndpoint,
-            configuredDockerContext));
+            configuredDockerContext)).Should().Be(DockerAvailabilityDecision.Skip);
   }
 
   public static TheoryData<string> InvalidDockerContextNames => new()
@@ -1332,14 +1307,12 @@ public sealed class ContainerSmokeInfrastructureTests
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             UnexpectedDocker,
             configuredDockerHost: null,
-            configuredDockerContext));
+            configuredDockerContext)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -1359,20 +1332,18 @@ public sealed class ContainerSmokeInfrastructureTests
         TimeSpan? timeout)
     {
       commandCount++;
-      Assert.Equal(["context", "show"], arguments);
+      (arguments).Should().Equal(["context", "show"]);
       return Task.FromResult(
           new DockerCommandResult(0, $"{activeContext}\n", string.Empty, ExecutableMissing: false));
     }
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             FakeDocker,
             configuredDockerHost: null,
-            configuredDockerContext: null));
-    Assert.Equal(1, commandCount);
+            configuredDockerContext: null)).Should().Be(DockerAvailabilityDecision.Fail);
+    (commandCount).Should().Be(1);
   }
 
   [Theory]
@@ -1390,21 +1361,17 @@ public sealed class ContainerSmokeInfrastructureTests
         string? workingDirectory,
         TimeSpan? timeout)
     {
-      Assert.Equal(
-          ["context", "inspect", "--format", "{{(index .Endpoints \"docker\").Host}}", "--", configuredDockerContext],
-          arguments);
+      (arguments).Should().Equal(["context", "inspect", "--format", "{{(index .Endpoints \"docker\").Host}}", "--", configuredDockerContext]);
       return Task.FromResult(
           new DockerCommandResult(0, "unix:///var/run/docker.sock\n", string.Empty, ExecutableMissing: false));
     }
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Skip,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             FakeDocker,
             configuredDockerHost: null,
-            configuredDockerContext));
+            configuredDockerContext)).Should().Be(DockerAvailabilityDecision.Skip);
   }
 
   [Theory]
@@ -1434,14 +1401,12 @@ public sealed class ContainerSmokeInfrastructureTests
         TimeSpan? timeout) => throw new InvalidOperationException(
             $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Fail,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             UnexpectedDocker,
             configuredDockerHost,
-            configuredDockerContext: null));
+            configuredDockerContext: null)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Theory]
@@ -1469,14 +1434,12 @@ public sealed class ContainerSmokeInfrastructureTests
 
     foreach (var position in new[] { 0, endpoint.Length / 2, endpoint.Length })
     {
-      Assert.Equal(
-          DockerAvailabilityDecision.Fail,
-          await DockerAvailabilityPolicy.EvaluateAsync(
+      (await DockerAvailabilityPolicy.EvaluateAsync(
               probe,
               isCi: false,
               UnexpectedDocker,
               endpoint.Insert(position, separator),
-              configuredDockerContext: null));
+              configuredDockerContext: null)).Should().Be(DockerAvailabilityDecision.Fail);
     }
   }
 
@@ -1504,14 +1467,12 @@ public sealed class ContainerSmokeInfrastructureTests
         TimeSpan? timeout) => throw new InvalidOperationException(
             $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
 
-    Assert.Equal(
-        DockerAvailabilityDecision.Skip,
-        await DockerAvailabilityPolicy.EvaluateAsync(
+    (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
             isCi: false,
             UnexpectedDocker,
             configuredDockerHost,
-            configuredDockerContext: null));
+            configuredDockerContext: null)).Should().Be(DockerAvailabilityDecision.Skip);
   }
 
   [Theory]
@@ -1524,8 +1485,8 @@ public sealed class ContainerSmokeInfrastructureTests
   {
     var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
 
-    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: false));
-    Assert.Equal(DockerAvailabilityDecision.Fail, await EvaluateWithLocalEndpointAsync(probe, isCi: true));
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
+    (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
   }
 
   [Fact]
@@ -1542,7 +1503,7 @@ public sealed class ContainerSmokeInfrastructureTests
       if (arguments[0] == "build")
       {
         var tag = arguments[Array.IndexOf(arguments.ToArray(), "--tag") + 1];
-        Assert.True(builtTags.TryAdd(tag, 0), $"Build tag collided: {tag}");
+        (builtTags.TryAdd(tag, 0)).Should().BeTrue($"Build tag collided: {tag}");
         return new DockerCommandResult(0, string.Empty, string.Empty, ExecutableMissing: false);
       }
 
@@ -1554,7 +1515,7 @@ public sealed class ContainerSmokeInfrastructureTests
 
       if (arguments is ["image", "rm", var removedTag])
       {
-        Assert.True(removedTags.TryAdd(removedTag, 0), $"Tag was cleaned more than once: {removedTag}");
+        (removedTags.TryAdd(removedTag, 0)).Should().BeTrue($"Tag was cleaned more than once: {removedTag}");
         return new DockerCommandResult(0, string.Empty, string.Empty, ExecutableMissing: false);
       }
 
@@ -1568,18 +1529,16 @@ public sealed class ContainerSmokeInfrastructureTests
         first.EnsureBuiltAsync(DockerProcess.RepositoryRoot),
         second.EnsureBuiltAsync(DockerProcess.RepositoryRoot));
 
-    Assert.NotEqual(first.OwnedTag, second.OwnedTag);
-    Assert.Matches("^hevy-client:container-smoke-[0-9]+-[0-9a-f]{32}$", first.OwnedTag);
-    Assert.Matches("^sha256:[0-9a-f]{64}$", first.ImmutableImageId);
-    Assert.Equal(ids[0], first.ImmutableImageId);
-    Assert.Equal(ids[1], second.ImmutableImageId);
-    Assert.NotEqual(ids[0], ids[1]);
+    (second.OwnedTag).Should().NotBe(first.OwnedTag);
+    (first.OwnedTag).Should().MatchRegex("^hevy-client:container-smoke-[0-9]+-[0-9a-f]{32}$");
+    (first.ImmutableImageId).Should().MatchRegex("^sha256:[0-9a-f]{64}$");
+    (first.ImmutableImageId).Should().Be(ids[0]);
+    (second.ImmutableImageId).Should().Be(ids[1]);
+    (ids[1]).Should().NotBe(ids[0]);
 
     await first.DisposeAsync();
     await second.DisposeAsync();
-    Assert.Equal(
-        new[] { first.OwnedTag, second.OwnedTag }.Order(StringComparer.Ordinal).ToArray(),
-        removedTags.Keys.Order(StringComparer.Ordinal).ToArray());
+    (removedTags.Keys.Order(StringComparer.Ordinal).ToArray()).Should().Equal(new[] { first.OwnedTag, second.OwnedTag }.Order(StringComparer.Ordinal).ToArray());
   }
 
   [Fact]
@@ -1611,11 +1570,11 @@ public sealed class ContainerSmokeInfrastructureTests
     }
 
     var coordinator = new ContainerImageCoordinator(FakeDocker);
-    await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.EnsureBuiltAsync(DockerProcess.RepositoryRoot));
+    await FluentActions.Awaiting(() => coordinator.EnsureBuiltAsync(DockerProcess.RepositoryRoot)).Should().ThrowExactlyAsync<InvalidOperationException>();
 
     await coordinator.DisposeAsync();
 
-    Assert.Equal(coordinator.OwnedTag, removedTag);
+    (removedTag).Should().Be(coordinator.OwnedTag);
   }
 
   [Fact]
@@ -1624,15 +1583,15 @@ public sealed class ContainerSmokeInfrastructureTests
     var security = File.ReadAllText(Path.Combine(DockerProcess.RepositoryRoot, "SECURITY.md"));
     var checklistPath = Path.Combine(DockerProcess.RepositoryRoot, "docs", "release-checklist.md");
 
-    Assert.Contains("](../../security/advisories/new)", security, StringComparison.Ordinal);
-    Assert.Contains("must be enabled before public distribution", security, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("Do not open a public issue for a suspected vulnerability", security, StringComparison.Ordinal);
-    Assert.True(File.Exists(checklistPath), "The public-distribution release checklist is required.");
+    (security).Should().Contain("](../../security/advisories/new)");
+    (security).Should().ContainEquivalentOf("must be enabled before public distribution");
+    (security).Should().Contain("Do not open a public issue for a suspected vulnerability");
+    (File.Exists(checklistPath)).Should().BeTrue("The public-distribution release checklist is required.");
 
     var checklist = File.ReadAllText(checklistPath);
-    Assert.Contains("BLOCK RELEASE", checklist, StringComparison.Ordinal);
-    Assert.Contains("private vulnerability reporting", checklist, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("../../security/advisories/new", checklist, StringComparison.Ordinal);
+    (checklist).Should().Contain("BLOCK RELEASE");
+    (checklist).Should().ContainEquivalentOf("private vulnerability reporting");
+    (checklist).Should().Contain("../../security/advisories/new");
   }
 
   [Fact]
@@ -1640,12 +1599,12 @@ public sealed class ContainerSmokeInfrastructureTests
   {
     var readme = File.ReadAllText(Path.Combine(DockerProcess.RepositoryRoot, "README.md"));
 
-    Assert.Contains("scripts/hevy-client-mcp", readme, StringComparison.Ordinal);
-    Assert.Contains("scripts/Start-HevyClient.ps1", readme, StringComparison.Ordinal);
-    Assert.Contains("macOS Keychain", readme, StringComparison.Ordinal);
-    Assert.Contains("Linux Secret Service", readme, StringComparison.Ordinal);
-    Assert.Contains("Windows", readme, StringComparison.Ordinal);
-    Assert.Contains("\"command\": \"/absolute/path/to/hevy-client-mcp\"", readme, StringComparison.Ordinal);
-    Assert.DoesNotContain("restart a desktop client after setting it", readme, StringComparison.OrdinalIgnoreCase);
+    (readme).Should().Contain("scripts/hevy-client-mcp");
+    (readme).Should().Contain("scripts/Start-HevyClient.ps1");
+    (readme).Should().Contain("macOS Keychain");
+    (readme).Should().Contain("Linux Secret Service");
+    (readme).Should().Contain("Windows");
+    (readme).Should().Contain("\"command\": \"/absolute/path/to/hevy-client-mcp\"");
+    (readme).Should().NotContainEquivalentOf("restart a desktop client after setting it");
   }
 }

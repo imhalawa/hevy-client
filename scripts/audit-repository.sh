@@ -76,4 +76,13 @@ if rg -l -i \
   report "Deferred placeholder marker found in release content."
 fi
 
+comment_scanner=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/detect-csharp-comments.awk
+if find src tests -type d \( -name bin -o -name obj \) -prune -o -type f -name '*.cs' -exec awk -f "$comment_scanner" {} + 2>/dev/null | grep -q .; then
+  report "C# single-line comment found; retain only essential XML documentation."
+fi
+
+if rg -n '\bAssert\.' tests -g '*.cs' 2>/dev/null | grep -q .; then
+  report "Non-FluentAssertions assertion found."
+fi
+
 [ "$failures" -eq 0 ]

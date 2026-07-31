@@ -16,22 +16,22 @@ public sealed class HevyPromptsTests
     using var listed = await ReadAsync(process);
     var names = listed.RootElement.GetProperty("result").GetProperty("prompts").EnumerateArray()
         .Select(prompt => prompt.GetProperty("name").GetString()!).Order().ToArray();
-    Assert.Equal(["analyze_recent_training", "create_completed_workout_from_routine"], names);
+    (names).Should().Equal(["analyze_recent_training", "create_completed_workout_from_routine"]);
 
     await SendAsync(process, """{"jsonrpc":"2.0","id":3,"method":"prompts/get","params":{"name":"analyze_recent_training","arguments":{"weeks":"6"}}}""");
     using var result = await ReadAsync(process);
     var text = PromptText(result);
-    Assert.Contains("summarize_training", text, StringComparison.Ordinal);
-    Assert.Contains("evidence", text, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("cite", text, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("identifier", text, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("timestamp", text, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("summing chunk frequency and volume", text, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("earliest and latest", text, StringComparison.OrdinalIgnoreCase);
+    (text).Should().Contain("summarize_training");
+    (text).Should().ContainEquivalentOf("evidence");
+    (text).Should().ContainEquivalentOf("cite");
+    (text).Should().ContainEquivalentOf("identifier");
+    (text).Should().ContainEquivalentOf("timestamp");
+    (text).Should().ContainEquivalentOf("summing chunk frequency and volume");
+    (text).Should().ContainEquivalentOf("earliest and latest");
 
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
-    Assert.Equal(string.Empty, await process.StandardError.ReadToEndAsync());
+    (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
   [Fact]
@@ -43,11 +43,11 @@ public sealed class HevyPromptsTests
     using var result = await ReadAsync(process);
     var text = PromptText(result);
 
-    Assert.Contains("get_routine", text, StringComparison.Ordinal);
-    Assert.Contains("actual completed-set results", text, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("actual end time", text, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("do not invent", text, StringComparison.OrdinalIgnoreCase);
-    Assert.Contains("create_workout", text, StringComparison.Ordinal);
+    (text).Should().Contain("get_routine");
+    (text).Should().ContainEquivalentOf("actual completed-set results");
+    (text).Should().ContainEquivalentOf("actual end time");
+    (text).Should().ContainEquivalentOf("do not invent");
+    (text).Should().Contain("create_workout");
 
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
@@ -91,7 +91,7 @@ public sealed class HevyPromptsTests
   private static async Task<JsonDocument> ReadAsync(Process process)
   {
     var line = await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
-    Assert.False(string.IsNullOrWhiteSpace(line));
-    return JsonDocument.Parse(line);
+    (string.IsNullOrWhiteSpace(line)).Should().BeFalse();
+    return JsonDocument.Parse(line!);
   }
 }

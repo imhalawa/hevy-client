@@ -18,8 +18,8 @@ public sealed class HttpHostTests
 
     using var response = await client.GetAsync("/healthz");
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (await response.Content.ReadAsStringAsync()).Should().Be(string.Empty);
   }
 
   [Fact]
@@ -40,11 +40,11 @@ public sealed class HttpHostTests
     using var wrongResponse = await client.SendAsync(wrong);
     using var multipleResponse = await client.SendAsync(multiple);
 
-    Assert.Equal(HttpStatusCode.Unauthorized, missingResponse.StatusCode);
-    Assert.Equal(HttpStatusCode.Unauthorized, malformedResponse.StatusCode);
-    Assert.Equal(HttpStatusCode.Unauthorized, wrongResponse.StatusCode);
-    Assert.Equal(HttpStatusCode.Unauthorized, multipleResponse.StatusCode);
-    Assert.Equal("Bearer", missingResponse.Headers.WwwAuthenticate.Single().Scheme);
+    (missingResponse.StatusCode).Should().Be(HttpStatusCode.Unauthorized);
+    (malformedResponse.StatusCode).Should().Be(HttpStatusCode.Unauthorized);
+    (wrongResponse.StatusCode).Should().Be(HttpStatusCode.Unauthorized);
+    (multipleResponse.StatusCode).Should().Be(HttpStatusCode.Unauthorized);
+    (missingResponse.Headers.WwwAuthenticate.Single().Scheme).Should().Be("Bearer");
   }
 
   [Theory]
@@ -58,8 +58,8 @@ public sealed class HttpHostTests
 
     using var response = await client.SendAsync(request);
 
-    Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
+    (response.StatusCode).Should().Be(HttpStatusCode.Unauthorized);
+    (response.Headers.WwwAuthenticate.Single().Scheme).Should().Be("Bearer");
   }
 
   [Fact]
@@ -74,8 +74,8 @@ public sealed class HttpHostTests
     using var protectedResponse = await client.SendAsync(missingCredential);
     using var routedResponse = await client.SendAsync(authenticated);
 
-    Assert.Equal(HttpStatusCode.Unauthorized, protectedResponse.StatusCode);
-    Assert.Equal(HttpStatusCode.NotFound, routedResponse.StatusCode);
+    (protectedResponse.StatusCode).Should().Be(HttpStatusCode.Unauthorized);
+    (routedResponse.StatusCode).Should().Be(HttpStatusCode.NotFound);
   }
 
   [Fact]
@@ -86,8 +86,8 @@ public sealed class HttpHostTests
 
     using var response = await client.GetAsync("/mcpx");
 
-    Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    Assert.Empty(response.Headers.WwwAuthenticate);
+    (response.StatusCode).Should().Be(HttpStatusCode.NotFound);
+    (response.Headers.WwwAuthenticate).Should().BeEmpty();
   }
 
   [Fact]
@@ -100,11 +100,11 @@ public sealed class HttpHostTests
     using var response = await client.SendAsync(request);
     var body = await response.Content.ReadAsStringAsync();
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    Assert.Contains("\"jsonrpc\":\"2.0\"", body, StringComparison.Ordinal);
-    Assert.Contains("\"id\":1", body, StringComparison.Ordinal);
-    Assert.Contains("\"name\":\"hevy-client\"", body, StringComparison.Ordinal);
-    Assert.False(response.Headers.Contains("MCP-Session-Id"));
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
+    (body).Should().Contain("\"jsonrpc\":\"2.0\"");
+    (body).Should().Contain("\"id\":1");
+    (body).Should().Contain("\"name\":\"hevy-client\"");
+    (response.Headers.Contains("MCP-Session-Id")).Should().BeFalse();
   }
 
   [Fact]
@@ -117,7 +117,7 @@ public sealed class HttpHostTests
 
     using var response = await client.SendAsync(request);
 
-    Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    (response.StatusCode).Should().Be(HttpStatusCode.BadRequest);
   }
 
   [Theory]
@@ -133,7 +133,7 @@ public sealed class HttpHostTests
 
     using var response = await client.SendAsync(request);
 
-    Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    (response.StatusCode).Should().Be(HttpStatusCode.Forbidden);
   }
 
   [Fact]
@@ -147,7 +147,7 @@ public sealed class HttpHostTests
 
     using var response = await client.SendAsync(request);
 
-    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    (response.StatusCode).Should().Be(HttpStatusCode.OK);
   }
 
   [Fact]
@@ -161,7 +161,7 @@ public sealed class HttpHostTests
 
     using var response = await client.SendAsync(request);
 
-    Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    (response.StatusCode).Should().Be(HttpStatusCode.Forbidden);
   }
 
   [Fact]
@@ -172,8 +172,8 @@ public sealed class HttpHostTests
 
     var standardError = CaptureStartupFailure(factory, out var exception);
 
-    Assert.Contains("exited without ever building an IHost", exception.Message, StringComparison.Ordinal);
-    Assert.Contains("AllowedHosts", standardError, StringComparison.Ordinal);
+    (exception.Message).Should().Contain("exited without ever building an IHost");
+    (standardError).Should().Contain("AllowedHosts");
   }
 
   [Fact]
@@ -184,8 +184,8 @@ public sealed class HttpHostTests
 
     var standardError = CaptureStartupFailure(factory, out var exception);
 
-    Assert.Contains("exited without ever building an IHost", exception.Message, StringComparison.Ordinal);
-    Assert.Contains("MCP_AUTH_TOKEN", standardError, StringComparison.Ordinal);
+    (exception.Message).Should().Contain("exited without ever building an IHost");
+    (standardError).Should().Contain("MCP_AUTH_TOKEN");
   }
 
   private static string CaptureStartupFailure(WebApplicationFactory<Program> factory, out Exception exception)
@@ -195,7 +195,7 @@ public sealed class HttpHostTests
     try
     {
       Console.SetError(standardError);
-      exception = Assert.ThrowsAny<Exception>(factory.CreateClient);
+      exception = FluentActions.Invoking(factory.CreateClient).Should().Throw<Exception>().Which;
       return standardError.ToString();
     }
     finally

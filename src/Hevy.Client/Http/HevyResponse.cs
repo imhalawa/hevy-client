@@ -15,7 +15,7 @@ internal static class HevyResponse
     ArgumentNullException.ThrowIfNull(response);
     if (!response.IsSuccessStatusCode)
     {
-      throw CreateException(response.StatusCode);
+      throw CreateException(response);
     }
   }
 
@@ -237,15 +237,32 @@ internal static class HevyResponse
     if (value == default) throw new JsonException();
   }
 
-  private static HevyException CreateException(HttpStatusCode statusCode) => statusCode switch
+  private static HevyException CreateException(HttpResponseMessage response)
   {
-    HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity => new HevyException("validation", "The Hevy API rejected the request.", false, statusCode),
-    HttpStatusCode.Unauthorized => new HevyException("authentication", "The Hevy API rejected the credentials.", false, statusCode),
-    HttpStatusCode.Forbidden => new HevyException("authorization", "The Hevy API denied access to this resource.", false, statusCode),
-    HttpStatusCode.NotFound => new HevyException("not_found", "The requested Hevy resource was not found.", false, statusCode),
-    HttpStatusCode.Conflict => new HevyException("conflict", "The Hevy API reported a conflicting change.", false, statusCode),
-    HttpStatusCode.TooManyRequests => new HevyException("rate_limited", "The Hevy API rate limit was reached.", true, statusCode),
-    _ when (int)statusCode >= 500 => new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, statusCode),
-    _ => new HevyException("unexpected_response", "The Hevy API returned an unexpected response.", false, statusCode),
-  };
+    var statusCode = response.StatusCode;
+    var requestId = SafeRequestId(response);
+    return statusCode switch
+    {
+      HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity => new HevyException("validation", "The Hevy API rejected the request.", false, statusCode, requestId),
+      HttpStatusCode.Unauthorized => new HevyException("authentication", "The Hevy API rejected the credentials.", false, statusCode, requestId),
+      HttpStatusCode.Forbidden => new HevyException("authorization", "The Hevy API denied access to this resource.", false, statusCode, requestId),
+      HttpStatusCode.NotFound => new HevyException("not_found", "The requested Hevy resource was not found.", false, statusCode, requestId),
+      HttpStatusCode.Conflict => new HevyException("conflict", "The Hevy API reported a conflicting change.", false, statusCode, requestId),
+      HttpStatusCode.TooManyRequests => new HevyException("rate_limited", "The Hevy API rate limit was reached.", true, statusCode, requestId),
+      _ when (int)statusCode >= 500 => new HevyException("transient_upstream", "The Hevy API is temporarily unavailable.", true, statusCode, requestId),
+      _ => new HevyException("unexpected_response", "The Hevy API returned an unexpected response.", false, statusCode, requestId),
+    };
+  }
+
+  internal static string? SafeRequestId(HttpResponseMessage response)
+  {
+    if (!response.Headers.TryGetValues("X-Request-Id", out var values)) return null;
+    using var enumerator = values.GetEnumerator();
+    if (!enumerator.MoveNext()) return null;
+    var value = enumerator.Current;
+    if (enumerator.MoveNext()) return null;
+    return value is { Length: >= 1 and <= 128 } && value.All(static character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or ':' or '-')
+        ? value
+        : null;
+  }
 }

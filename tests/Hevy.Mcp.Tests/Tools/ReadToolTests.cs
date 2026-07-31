@@ -29,12 +29,12 @@ public sealed class ReadToolTests
     await RoutineReadTools.GetRoutines(services, 1, 10, "full", default);
     await ExerciseReadTools.GetExerciseTemplates(services, 1, 10, "compact", default);
 
-    Assert.Equal(["routine-06", "routine-07", "routine-08", "routine-09", "routine-10"], routinePage.Structured().GetProperty("data").GetProperty("items").EnumerateArray().Select(item => item.GetProperty("id").GetString()));
-    Assert.Equal(3, routinePage.Structured().GetProperty("meta").GetProperty("page_count").GetInt32());
-    Assert.Equal("routine-11", routine.Structured().GetProperty("data").GetProperty("id").GetString());
-    Assert.Equal(5, templatePage.Structured().GetProperty("data").GetProperty("items").GetArrayLength());
-    Assert.Equal("template-11", template.Structured().GetProperty("data").GetProperty("id").GetString());
-    Assert.Equal(4, client.CallCount);
+    (routinePage.Structured().GetProperty("data").GetProperty("items").EnumerateArray().Select(item => item.GetProperty("id").GetString())).Should().Equal(["routine-06", "routine-07", "routine-08", "routine-09", "routine-10"]);
+    (routinePage.Structured().GetProperty("meta").GetProperty("page_count").GetInt32()).Should().Be(3);
+    (routine.Structured().GetProperty("data").GetProperty("id").GetString()).Should().Be("routine-11");
+    (templatePage.Structured().GetProperty("data").GetProperty("items").GetArrayLength()).Should().Be(5);
+    (template.Structured().GetProperty("data").GetProperty("id").GetString()).Should().Be("template-11");
+    (client.CallCount).Should().Be(4);
   }
 
   [Fact]
@@ -54,11 +54,11 @@ public sealed class ReadToolTests
     var accepted = await ExerciseReadTools.GetExerciseTemplates(services, 1, 100, "compact", default);
     var rejected = await ExerciseReadTools.GetExerciseTemplates(services, 1, 101, "compact", default);
 
-    Assert.False(accepted.IsError);
-    Assert.Equal(100, acceptedPageSize);
-    Assert.True(rejected.IsError);
-    Assert.Equal("validation_error", rejected.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(1, client.CallCount);
+    (accepted.IsError).Should().BeFalse();
+    (acceptedPageSize).Should().Be(100);
+    (rejected.IsError).Should().BeTrue();
+    (rejected.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
+    (client.CallCount).Should().Be(1);
   }
 
   [Fact]
@@ -80,9 +80,9 @@ public sealed class ReadToolTests
 
     var result = await ExerciseReadTools.GetExerciseTemplates(services, 1, 100, "compact", default);
 
-    Assert.False(result.IsError);
-    Assert.Equal(12, result.Structured().GetProperty("data").GetProperty("items").GetArrayLength());
-    Assert.Equal([10, 10], upstreamPageSizes);
+    (result.IsError).Should().BeFalse();
+    (result.Structured().GetProperty("data").GetProperty("items").GetArrayLength()).Should().Be(12);
+    (upstreamPageSizes).Should().Equal([10, 10]);
   }
 
   [Theory]
@@ -101,8 +101,8 @@ public sealed class ReadToolTests
         ? await ExerciseReadTools.GetExerciseTemplates(services, 2, 10, "compact", default)
         : await RoutineReadTools.GetRoutines(services, 2, 10, "compact", default);
 
-    Assert.True(result.IsError);
-    Assert.Equal("validation_error", result.Structured().GetProperty("error").GetProperty("code").GetString());
+    (result.IsError).Should().BeTrue();
+    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
   }
 
   [Fact]
@@ -120,18 +120,18 @@ public sealed class ReadToolTests
     await RoutineReadTools.GetRoutine(services, "routine-1", default);
     await ExerciseReadTools.GetExerciseTemplates(services, 1, 10, "compact", default);
     await ExerciseReadTools.GetExerciseTemplate(services, "template-1", default);
-    Assert.Equal(2, client.CallCount);
+    (client.CallCount).Should().Be(2);
 
     clock.Advance(TimeSpan.FromMinutes(15));
     await RoutineReadTools.GetRoutines(services, 1, 10, "compact", default);
     await ExerciseReadTools.GetExerciseTemplates(services, 1, 10, "compact", default);
-    Assert.Equal(4, client.CallCount);
+    (client.CallCount).Should().Be(4);
 
     await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), false, default);
     await RoutineReadTools.GetRoutine(services, "routine-1", default);
     await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, default);
     await ExerciseReadTools.GetExerciseTemplate(services, "template-1", default);
-    Assert.Equal(8, client.CallCount);
+    (client.CallCount).Should().Be(8);
   }
   [Fact]
   public async Task EveryReadHandlerInvokesItsMatchingClientOperation()
@@ -154,7 +154,7 @@ public sealed class ReadToolTests
     await MeasurementReadTools.GetBodyMeasurement(services, new DateOnly(2026, 7, 25), CancellationToken.None);
     await UserTools.GetUserInfo(services, CancellationToken.None);
 
-    Assert.Equal(13, client.CallCount);
+    (client.CallCount).Should().Be(13);
   }
 
   [Fact]
@@ -165,8 +165,8 @@ public sealed class ReadToolTests
     var result = await ExerciseReadTools.GetExerciseHistory(
         Services(client), "template-1", 1, 10, new DateOnly(2026, 7, 25), new DateOnly(2026, 7, 1), "full", CancellationToken.None);
 
-    Assert.True(result.IsError);
-    Assert.Equal(0, client.CallCount);
+    (result.IsError).Should().BeTrue();
+    (client.CallCount).Should().Be(0);
   }
 
   [Fact]
@@ -177,9 +177,9 @@ public sealed class ReadToolTests
     var result = await ExerciseReadTools.GetExerciseHistory(
         Services(client), "template-1", 101, 10, null, null, "full", CancellationToken.None);
 
-    Assert.True(result.IsError);
-    Assert.Equal("validation_error", result.Structured().GetProperty("error").GetProperty("code").GetString());
-    Assert.Equal(0, client.CallCount);
+    (result.IsError).Should().BeTrue();
+    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
+    (client.CallCount).Should().Be(0);
   }
 
   [Fact]
@@ -193,11 +193,11 @@ public sealed class ReadToolTests
     var result = await WorkoutReadTools.GetWorkout(Services(client), "missing", CancellationToken.None);
     var error = result.Structured().GetProperty("error");
 
-    Assert.True(result.IsError);
-    Assert.Equal("not_found", error.GetProperty("code").GetString());
-    Assert.Equal(404, error.GetProperty("hevy_status").GetInt32());
-    Assert.Equal(32, error.GetProperty("correlation_id").GetString()!.Length);
-    Assert.DoesNotContain("System.", result.Content[0].ToString(), StringComparison.Ordinal);
+    (result.IsError).Should().BeTrue();
+    (error.GetProperty("code").GetString()).Should().Be("not_found");
+    (error.GetProperty("hevy_status").GetInt32()).Should().Be(404);
+    (error.GetProperty("correlation_id").GetString()!.Length).Should().Be(32);
+    (result.Content[0].ToString()).Should().NotContain("System.");
   }
 
   [Fact]
@@ -209,10 +209,10 @@ public sealed class ReadToolTests
     var result = await WorkoutReadTools.GetWorkoutEvents(Services(client), 2, 4, since, "full", CancellationToken.None);
     var next = result.Structured().GetProperty("meta").GetProperty("continuation");
 
-    Assert.Equal(3, next.GetProperty("page").GetInt32());
-    Assert.Equal(4, next.GetProperty("page_size").GetInt32());
-    Assert.Equal("full", next.GetProperty("detail").GetString());
-    Assert.Equal("2026-07-01T01:02:03+00:00", next.GetProperty("since").GetString());
+    (next.GetProperty("page").GetInt32()).Should().Be(3);
+    (next.GetProperty("page_size").GetInt32()).Should().Be(4);
+    (next.GetProperty("detail").GetString()).Should().Be("full");
+    (next.GetProperty("since").GetString()).Should().Be("2026-07-01T01:02:03+00:00");
   }
 
   [Fact]
@@ -227,13 +227,13 @@ public sealed class ReadToolTests
         Services(client), "template-1", 1, 7, new DateOnly(2026, 7, 1), new DateOnly(2026, 7, 25), "compact", CancellationToken.None);
     var next = result.Structured().GetProperty("meta").GetProperty("continuation");
 
-    Assert.Equal("template-1", next.GetProperty("exercise_template_id").GetString());
-    Assert.Equal(2, next.GetProperty("page").GetInt32());
-    Assert.Equal(7, next.GetProperty("page_size").GetInt32());
-    Assert.Equal("2026-07-01", next.GetProperty("start_date").GetString());
-    Assert.Equal("2026-07-25", next.GetProperty("end_date").GetString());
-    Assert.Equal("compact", next.GetProperty("detail").GetString());
-    Assert.InRange(result.Structured().GetProperty("meta").GetProperty("scanned_item_count").GetInt32(), 1, 1_000);
+    (next.GetProperty("exercise_template_id").GetString()).Should().Be("template-1");
+    (next.GetProperty("page").GetInt32()).Should().Be(2);
+    (next.GetProperty("page_size").GetInt32()).Should().Be(7);
+    (next.GetProperty("start_date").GetString()).Should().Be("2026-07-01");
+    (next.GetProperty("end_date").GetString()).Should().Be("2026-07-25");
+    (next.GetProperty("detail").GetString()).Should().Be("compact");
+    (result.Structured().GetProperty("meta").GetProperty("scanned_item_count").GetInt32()).Should().BeInRange(1, 1_000);
   }
 
   private static IServiceProvider Services(IHevyClient client) => new ServiceCollection()

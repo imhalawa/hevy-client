@@ -12,6 +12,8 @@ public enum HevyMcpTransport
 
 public sealed class HevyMcpOptions
 {
+  internal string ApiKey { get; }
+
   internal string? McpAuthToken { get; }
 
   public HevyMcpTransport Transport { get; }
@@ -20,8 +22,9 @@ public sealed class HevyMcpOptions
 
   public LogLevel LogLevel { get; }
 
-  private HevyMcpOptions(HevyMcpTransport transport, bool readOnly, LogLevel logLevel, string? mcpAuthToken)
+  private HevyMcpOptions(string apiKey, HevyMcpTransport transport, bool readOnly, LogLevel logLevel, string? mcpAuthToken)
   {
+    ApiKey = apiKey;
     Transport = transport;
     ReadOnly = readOnly;
     LogLevel = logLevel;
@@ -63,7 +66,7 @@ public sealed class HevyMcpOptions
       }
     }
 
-    return new HevyMcpOptions(transport, readOnly, logLevel, transport is HevyMcpTransport.Http ? authToken : null);
+    return new HevyMcpOptions(apiKey, transport, readOnly, logLevel, transport is HevyMcpTransport.Http ? authToken : null);
   }
 
   public override string ToString() => $"HevyMcpOptions {{ Transport = {Transport}, ReadOnly = {ReadOnly}, LogLevel = {LogLevel} }}";

@@ -42,6 +42,8 @@ The smoke tests build an image, inspect its non-root/no-port configuration, comp
 
 Test through public seams: typed HTTP requests through an injected handler, MCP calls through a fake `IHevyClient`, or real process/container transports. Avoid tests coupled to private implementation details or assertions that recompute the production result.
 
+Use FluentAssertions for every test assertion. The repository audit rejects `Assert.*`. C# source also rejects `//` comments; remove narration and stale implementation notes. When a non-obvious compatibility contract must survive refactoring, document the reason and re-audit condition with XML documentation.
+
 Keep `Hevy.Client` free of MCP dependencies. Keep environment and hosting concerns in `Hevy.Mcp`. Do not add telemetry, runtime documentation fetches, persistent fitness-data storage, configurable production API origins, API-key tool arguments, unbounded fetches, invented endpoints, or automatic mutation retries without a proof of idempotency.
 
 ## Updating the Hevy contract

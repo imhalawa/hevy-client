@@ -258,17 +258,17 @@ Unknown, blank, or differently cased custom values fail startup. HTTP startup al
 
 There is no telemetry, crash upload, update checker, analytics endpoint, or persistent fitness-data cache. Runtime traffic goes only to the fixed `https://api.hevyapp.com` origin. Process-local routine and exercise-template caches expire after 15 minutes and disappear on restart; cache keys never contain credentials.
 
-Diagnostics are off by default. When `HEVY_LOG_LEVEL` is enabled, allowlisted JSON records go to stderr and contain only server/runtime category data, operation category, bucketed duration, status, safe upstream request identifiers, local correlation identifiers, and exception category. They never contain headers, URLs with queries, request or response bodies, workout text, activity timestamps, or measurements. Sink failures are contained and cannot change a tool result.
+Diagnostics are off by default. When `HEVY_LOG_LEVEL` is enabled, allowlisted JSON records go to stderr and contain only server/runtime data, operation name and category, bucketed duration, status, safe upstream request identifiers, local correlation identifiers, and exception category. They never contain headers, URLs with queries, request or response bodies, workout text, activity timestamps, or measurements. Sink failures cannot change a tool result.
 
 Call `get_diagnostics` for a safe snapshot containing only server version, runtime version, transport, read-only state, diagnostics state, and health. Users choose whether to copy that output into an issue; the server uploads nothing.
 
 ## Bounds and current limitations
 
 - Low-level Hevy pages preserve explicit page semantics. Exercise-template pages accept the official maximum of 100 items; the other paged operations accept at most 10.
-- Composite calls default to 100 returned items and cap each invocation at 1,000 scanned or returned items. Continue with the exact returned continuation inputs when `truncated` is true.
+- Composite calls default to 100 returned items and cap each invocation at 1,000 scanned or returned items. A resumable partial result includes the exact continuation inputs.
 - Training windows default to 4 UTC weeks and cap at 52 weeks. Partial chunks label whether metrics cover the complete period or only that chunk.
-- Routine and exercise-template catalogs are each capped at 1,000 cached items.
-- Hevy's exercise-history endpoint is unpaginated. The response is streamed with independent 1,000-item and 16 MiB ceilings. Results state whether truncation is continuable or terminal; the server never silently claims completeness beyond those caps.
+- Routine and exercise-template searches page through catalogs in bounded calls, including catalogs larger than 1,000 items. Page caches remain process-local, size-bounded, and expire after 15 minutes.
+- Hevy's exercise-history endpoint is unpaginated. The response is streamed with independent 1,000-item and 16 MiB ceilings. Reaching either ceiling returns a terminal truncation reason because rereading a deeper offset would violate the same safety bound.
 - Every other JSON response is read through a 4 MiB ceiling. Required operation fields, page identity/count, and returned page cardinality are validated while unknown additive fields remain compatible.
 - Body-measurement replacement is force-only because the upstream response has no `updated_at` field.
 - This is single-tenant and has no OAuth server, browser credential capture, tunnels, multi-user storage, embedded LLM, subjective coaching, MCP bulk resources, or invented delete operations.
