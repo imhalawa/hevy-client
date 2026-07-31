@@ -275,7 +275,7 @@ Call `get_diagnostics` for a safe snapshot containing only server version, runti
 
 ## Version and image pinning
 
-Release users should prefer the exact image digest from the release. A semantic-version tag is a reviewed convenience reference, but GHCR does not enforce immutable tags; only the digest is content-addressed. Replace `hevy-client:local` in client configurations with the reviewed `registry/name@sha256:digest` reference.
+Release users should prefer the exact image digest from the release. A semantic-version tag is a reviewed convenience reference, but GHCR does not enforce immutable tags; only the digest is content-addressed. For v0.1.0, replace `hevy-client:local` in client configurations with `ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841`.
 
 Both Docker base images are pinned by multi-architecture manifest digest. To update them deliberately:
 
@@ -301,26 +301,29 @@ The canonical repository and private security intake are configured for `imhalaw
 
 The workflow itself has only `contents:read`, `packages:write`, `id-token:write`, and `attestations:write`. Before registry authentication it independently repeats every non-live build, test, audit, and real-container gate, including two registry-free no-cache multi-architecture exports whose index and platform digests must match exactly. CI runs the same reproducibility gate. The release then performs the GHCR Registry v2 Bearer challenge and scoped token exchange and stages the multi-architecture result under its digest only. Before any SBOM, provenance, or signature operation, the raw staged index must contain exactly two total descriptors (`linux/amd64` and `linux/arm64`), its content digest must equal both the build action result and the reproducibility gate, and both platform digests must equal the gate outputs. Only then does the workflow verify exact OCI labels and exercise the staged amd64 assembly over MCP. The staged index excludes invocation-specific inline attestations and uses the source commit timestamp for reproducible image metadata. Exact-checksum-pinned Syft generates separate SPDX 2.3 documents for both platform digests; GitHub provenance and SBOM attestations are then created and verified, and the manifest digest is keylessly signed and verified with Cosign.
 
-The final step repeats the authenticated tag lookup immediately before promotion. A tag already resolving to the verified digest is an idempotent success; a different digest fails. When the tag is absent, the Buildx tag creation is the workflow's last fallible command. The repository-wide concurrency group and protected `release` environment serialize this workflow, and maintainers must prevent every other workflow or credential from writing this package. This is race mitigation, not registry-enforced immutability: GHCR documents no atomic create-only or immutable-tag operation, so an independent package writer could still race or later move the tag. Consumers should pin `@sha256:DIGEST`.
+The final step repeats the authenticated tag lookup immediately before promotion. A tag already resolving to the verified digest is an idempotent success; a different digest fails. When the tag is absent, the Buildx tag creation is the workflow's last fallible command. The repository-wide concurrency group and protected `release` environment serialize this workflow, and maintainers must prevent every other workflow or credential from writing this package. This is race mitigation, not registry-enforced immutability: GHCR documents no atomic create-only or immutable-tag operation, so an independent package writer could still race or later move the tag. Consumers should pin the full digest shown above.
 
 The idempotent branch covers another writer selecting the same staged digest during the final race window and a rerun of the same source, version, and pinned toolchain. The separate provenance and SBOM attestations cannot perturb the staged image digest. If final promotion reports a transport failure, authenticate the tag lookup before deciding what to do: the original verified digest is already complete, a tag resolving to that digest is success, and an absent tag permits the serialized workflow to retry promotion. Only a genuinely different or unverifiable digest enters manual recovery and blocks release until its source, signature, and attestations have been investigated.
 
 The workflow deliberately cannot create or modify a GitHub Release because it has read-only repository-content permission. Its SBOMs remain workflow artifacts for 90 days. A maintainer downloads them, attaches them to a draft GitHub Release, repeats the documented digest verification, and only then publishes that GitHub Release immutably.
 
-After replacing the version, digest, and commit fields with values from the successful release run, verify the image rather than trusting a tag alone:
+Verify v0.1.0 by digest rather than trusting its convenience tag:
 
 ```sh
-cosign verify ghcr.io/imhalawa/hevy-client@sha256:DIGEST \
-  --certificate-identity https://github.com/imhalawa/hevy-client/.github/workflows/release.yml@refs/tags/vX.Y.Z \
-  --certificate-github-workflow-sha COMMIT_SHA \
+cosign verify ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841 \
+  --certificate-identity https://github.com/imhalawa/hevy-client/.github/workflows/release.yml@refs/tags/v0.1.0 \
+  --certificate-github-workflow-sha 9ec3223c6bfe72d57435a50c8d0f19eb92d0624e \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-gh attestation verify oci://ghcr.io/imhalawa/hevy-client@sha256:DIGEST \
+gh attestation verify oci://ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841 \
   --repo imhalawa/hevy-client \
-  --signer-workflow imhalawa/hevy-client/.github/workflows/release.yml
+  --signer-workflow imhalawa/hevy-client/.github/workflows/release.yml \
+  --source-digest 9ec3223c6bfe72d57435a50c8d0f19eb92d0624e \
+  --source-ref refs/tags/v0.1.0 \
+  --bundle-from-oci
 ```
 
-Every external GitHub Action is pinned by its complete commit SHA. Human-readable versions and reviewed source links live in [`.github/actions-lock.json`](.github/actions-lock.json); an action update must change the workflow pin and that lock document together. The actionlint, Syft, and Buildx binary checksums, the Buildx source commit, and the binfmt/BuildKit manifest digests are recorded separately in [`.github/tools-lock.json`](.github/tools-lock.json). The workflow installs Buildx into an isolated `DOCKER_CONFIG` before `setup-buildx-action`; the pinned action receives no `version` input, so its audited v4.2.0 control flow uses the available local plugin instead of its release downloader. A following exact version-and-source-commit check fails closed before any build. Dependabot groups weekly minor and patch NuGet, Docker, and Actions updates. Major updates remain separate and require explicit maintainer review; MCP 2.x is ignored until a deliberate SDK migration updates the central stable `1.4.1` pin and contract tests.
+Every external GitHub Action is pinned by its complete commit SHA. Human-readable versions and reviewed source links live in [`.github/actions-lock.json`](.github/actions-lock.json); an action update must change the workflow pin and that lock document together. The actionlint, Syft, and Buildx binary checksums, the Buildx source commit, and the binfmt/BuildKit manifest digests are recorded separately in [`.github/tools-lock.json`](.github/tools-lock.json). The workflow installs Buildx in Docker's standard per-user CLI plugin directory before `setup-buildx-action`, preserving the default credential location used by Docker and the attestation actions. The pinned action receives no `version` input, so its audited v4.2.0 control flow uses the available local plugin instead of its release downloader. A following exact version-and-source-commit check fails closed before any build. Dependabot groups weekly minor and patch NuGet, Docker, and Actions updates. Major updates remain separate and require explicit maintainer review; MCP 2.x is ignored until a deliberate SDK migration updates the central stable `1.4.1` pin and contract tests.
 
 ## Development
 
