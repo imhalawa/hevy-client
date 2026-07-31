@@ -27,7 +27,8 @@ fi
 cd "$repository_root"
 
 credential_values=$(mktemp)
-trap 'rm -f "$credential_values"' EXIT HUP INT TERM
+credential_errors=$(mktemp)
+trap 'rm -f "$credential_values" "$credential_errors"' EXIT HUP INT TERM
 credential_scan_status=0
 quoted_credential_pattern='[\x22\x27]?(HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*[\x22\x27]([A-Za-z0-9+/=_.~-]{20,})[\x22\x27]'
 unquoted_credential_pattern='[\x22\x27]?(HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*([A-Za-z0-9+/=_.~-]{20,})[[:space:]]*(#.*)?$'
@@ -39,9 +40,10 @@ rg -o --no-filename --replace '$3' -i --hidden \
   -g '!scripts/audit-repository.sh' \
   -e "$quoted_credential_pattern" \
   -e "$unquoted_credential_pattern" \
-  . > "$credential_values" 2>/dev/null || credential_scan_status=$?
+  . > "$credential_values" 2>"$credential_errors" || credential_scan_status=$?
 
 if [ "$credential_scan_status" -gt 1 ]; then
+  cat "$credential_errors" >&2
   report "Repository-wide credential scan could not complete."
 else
   credential_failure=0
