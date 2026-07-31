@@ -6,6 +6,8 @@ Security fixes are made on the default branch and the latest released semantic-v
 
 ## Report a vulnerability privately
 
+Private vulnerability reporting must be enabled before public distribution. It is enabled on the canonical repository.
+
 Use the repository-relative [private vulnerability report](../../security/advisories/new) to open a GitHub Security Advisory. Include the affected version or image digest, impact, minimal reproduction, and any suggested mitigation. Do not include a real Hevy API key, MCP bearer token, workout payload, activity timestamp, or body measurement.
 
 The canonical repository is [`imhalawa/hevy-client`](https://github.com/imhalawa/hevy-client), where private vulnerability reporting is enabled. Do not open a public issue for a suspected vulnerability and do not publish a working exploit before a fix is available. Maintainers will acknowledge private reports, assess scope, coordinate remediation, and credit the reporter when desired; response times are best effort for this volunteer project.
