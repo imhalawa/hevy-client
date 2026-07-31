@@ -27,23 +27,13 @@ fi
 cd "$repository_root"
 
 credential_values=$(mktemp)
-credential_errors=$(mktemp)
-trap 'rm -f "$credential_values" "$credential_errors"' EXIT HUP INT TERM
+trap 'rm -f "$credential_values"' EXIT HUP INT TERM
 credential_scan_status=0
-quoted_credential_pattern='[\x22\x27]?(HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*[\x22\x27]([A-Za-z0-9+/=_.~-]{20,})[\x22\x27]'
-unquoted_credential_pattern='[\x22\x27]?(HEVY_API_KEY|MCP_AUTH_TOKEN|api[-_]?key|auth(orization)?|bearer[-_]?token)[\x22\x27]?\]?[[:space:]]*[:=][[:space:]]*([A-Za-z0-9+/=_.~-]{20,})[[:space:]]*(#.*)?$'
-rg -o --no-filename --replace '$3' -i --hidden \
-  -g '!.git/**' \
-  -g '!**/bin/**' \
-  -g '!**/obj/**' \
-  -g '!**/TestResults/**' \
-  -g '!scripts/audit-repository.sh' \
-  -e "$quoted_credential_pattern" \
-  -e "$unquoted_credential_pattern" \
-  . > "$credential_values" 2>"$credential_errors" || credential_scan_status=$?
+credential_scanner=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/find-credential-values.awk
+git ls-files -z --cached --others --exclude-standard |
+  xargs -0 awk -f "$credential_scanner" > "$credential_values" || credential_scan_status=$?
 
-if [ "$credential_scan_status" -gt 1 ]; then
-  cat "$credential_errors" >&2
+if [ "$credential_scan_status" -ne 0 ]; then
   report "Repository-wide credential scan could not complete."
 else
   credential_failure=0
@@ -61,20 +51,22 @@ else
   fi
 fi
 
-if rg -l -i \
+if grep -Eirl \
   'OpenTelemetry|ApplicationInsights|TelemetryClient|Sentry|Datadog|NewRelic|Mixpanel|Segment\.Analytics' \
-  src Directory.Packages.props -g '*.cs' -g '*.csproj' -g '*.props' -g 'packages.lock.json' 2>/dev/null | grep -q .; then
+  src Directory.Packages.props \
+  --include='*.cs' --include='*.csproj' --include='*.props' --include='packages.lock.json' \
+  --exclude-dir=bin --exclude-dir=obj 2>/dev/null | grep -q .; then
   report "Telemetry package or runtime hook found."
 fi
 
-if rg -o --no-filename "https?://[^\"'[:space:])>]+" src 2>/dev/null | grep -Ev '^https://api\.hevyapp\.com/?$' | grep -q .; then
+if grep -Erho "https?://[^\"'[:space:])>]+" src --include='*.cs' --exclude-dir=bin --exclude-dir=obj 2>/dev/null | grep -Ev '^https://api\.hevyapp\.com/?$' | grep -q .; then
   report "Non-Hevy runtime origin found in production source."
 fi
 
-if rg -l -i \
+if grep -Eirl \
   'TODO|FIXME|TBD|HACK|NotImplementedException|PLACEHOLDER' \
   src scripts Dockerfile .github/workflows README.md SECURITY.md CONTRIBUTING.md \
-  -g '!scripts/audit-repository.sh' 2>/dev/null | grep -q .; then
+  --exclude='audit-repository.sh' --exclude-dir=bin --exclude-dir=obj 2>/dev/null | grep -q .; then
   report "Deferred placeholder marker found in release content."
 fi
 
@@ -83,7 +75,7 @@ if find src tests -type d \( -name bin -o -name obj \) -prune -o -type f -name '
   report "C# single-line comment found; retain only essential XML documentation."
 fi
 
-if rg -n '\bAssert\.' tests -g '*.cs' 2>/dev/null | grep -q .; then
+if find tests -type d \( -name bin -o -name obj \) -prune -o -type f -name '*.cs' -exec grep -En '(^|[^[:alnum:]_])Assert\.' {} + 2>/dev/null | grep -q .; then
   report "Non-FluentAssertions assertion found."
 fi
 

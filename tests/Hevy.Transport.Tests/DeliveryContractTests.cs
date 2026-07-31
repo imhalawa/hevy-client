@@ -464,7 +464,7 @@ public sealed class DeliveryContractTests
   }
 
   [Fact]
-  public async Task RepositoryAuditUsesThePortableRipgrepRegexEngine()
+  public async Task RepositoryAuditDoesNotRequireRipgrep()
   {
     var script = Path.Combine(RepositoryRoot, "scripts", "audit-repository.sh");
     var fixture = Path.Combine(Path.GetTempPath(), $"hevy-audit-portable-{Guid.NewGuid():N}");
@@ -473,12 +473,10 @@ public sealed class DeliveryContractTests
     {
       await GitAsync(fixture, "init", "--quiet");
       await File.WriteAllTextAsync(Path.Combine(fixture, "README.md"), "Safe fixture.\n");
-      var lookup = await RunProcessAsync(fixture, "/bin/sh", "-c", "command -v rg");
-      (lookup.ExitCode).Should().Be(0);
       var wrapper = Path.Combine(fixture, ".tools", "rg");
       await File.WriteAllTextAsync(
           wrapper,
-          $"#!/bin/sh\nfor argument do\n  if [ \"$argument\" = \"-P\" ]; then\n    exit 2\n  fi\ndone\nexec \"{lookup.StandardOutput.Trim()}\" \"$@\"\n");
+          "#!/bin/sh\nprintf '%s\\n' 'ripgrep must not be called' >&2\nexit 127\n");
       var chmod = await RunProcessAsync(fixture, "chmod", "+x", wrapper);
       (chmod.ExitCode).Should().Be(0);
       await GitAsync(fixture, "add", ".");
@@ -492,40 +490,6 @@ public sealed class DeliveryContractTests
           fixture);
 
       (result.ExitCode).Should().Be(0);
-    }
-    finally
-    {
-      Directory.Delete(fixture, recursive: true);
-    }
-  }
-
-  [Fact]
-  public async Task RepositoryAuditReportsCredentialScannerErrors()
-  {
-    var script = Path.Combine(RepositoryRoot, "scripts", "audit-repository.sh");
-    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-audit-error-{Guid.NewGuid():N}");
-    Directory.CreateDirectory(Path.Combine(fixture, ".tools"));
-    try
-    {
-      await GitAsync(fixture, "init", "--quiet");
-      await File.WriteAllTextAsync(Path.Combine(fixture, "README.md"), "Safe fixture.\n");
-      var wrapper = Path.Combine(fixture, ".tools", "rg");
-      await File.WriteAllTextAsync(wrapper, "#!/bin/sh\nprintf '%s\\n' 'fixture-ripgrep-error' >&2\nexit 2\n");
-      var chmod = await RunProcessAsync(fixture, "chmod", "+x", wrapper);
-      (chmod.ExitCode).Should().Be(0);
-      await GitAsync(fixture, "add", ".");
-      var path = Path.Combine(fixture, ".tools") + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
-
-      var result = await RunProcessAsync(
-          fixture,
-          "/bin/sh",
-          new Dictionary<string, string?> { ["PATH"] = path },
-          script,
-          fixture);
-
-      (result.ExitCode).Should().NotBe(0);
-      (result.StandardError).Should().Contain("fixture-ripgrep-error");
-      (result.StandardError).Should().Contain("Repository-wide credential scan could not complete.");
     }
     finally
     {
