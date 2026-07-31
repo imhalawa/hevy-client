@@ -23,7 +23,7 @@ if [[ ! $reference =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; th
   fail "The GHCR version reference is invalid."
 fi
 if [[ ! ${GITHUB_ACTOR:-} =~ ^[A-Za-z0-9-]+$ ]] ||
-   [[ ! ${GHCR_TOKEN:-} =~ ^[A-Za-z0-9_=-]+$ ]]; then
+   [[ ! ${GHCR_TOKEN:-} =~ ^[A-Za-z0-9._~+/-]+=*$ ]]; then
   fail "The GHCR credential environment is invalid."
 fi
 

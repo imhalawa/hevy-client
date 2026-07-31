@@ -24,7 +24,7 @@ public sealed class ReleaseSecurityContractTests
       string expectedOutput)
   {
     var script = GhcrProbeScript();
-    var secret = string.Concat("ghp_registry_", "fixture_7Qm4N2x9Vp6K8s3R5t1W");
+    var secret = string.Concat("ghs.fixture.segment_", "7Qm4N2x9Vp6K8s3R5t1W");
     await using var registry = RegistryFixture.Start(new RegistryScenario(AuthenticatedStatus: authenticatedStatus));
     await using var fixture = await CurlFixture.CreateAsync();
 

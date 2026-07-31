@@ -128,6 +128,7 @@ public sealed class DeliveryContractTests
     (Scalar(Step(steps, "Attest staged container provenance"), "uses")).Should().StartWith("actions/attest-build-provenance@");
 
     var tagCheck = Step(steps, "Authenticate GHCR version-tag lookup");
+    (Scalar(Map(tagCheck, "env"), "GITHUB_ACTOR")).Should().Be("${{ github.actor }}");
     (Scalar(Map(tagCheck, "env"), "GHCR_TOKEN")).Should().Be("${{ secrets.GITHUB_TOKEN }}");
     (Scalar(tagCheck, "run")).Should().Be("./scripts/ghcr-manifest.sh \"$IMAGE\" \"$RELEASE_VERSION\" >/dev/null");
 
@@ -159,6 +160,7 @@ public sealed class DeliveryContractTests
     (promotionIndex).Should().Be(steps.Length - 1);
     (promotionIndex > Array.IndexOf(steps, Step(steps, "Verify GitHub attestations"))).Should().BeTrue();
     (promotionIndex > Array.IndexOf(steps, Step(steps, "Keylessly sign and verify the staged digest"))).Should().BeTrue();
+    (Scalar(Map(promotion, "env"), "GITHUB_ACTOR")).Should().Be("${{ github.actor }}");
     var promotionRun = Scalar(promotion, "run");
     (promotionRun).Should().Be("exec ./scripts/promote-ghcr-tag.sh \"$IMAGE\" \"$RELEASE_VERSION\" \"$IMAGE_DIGEST\"");
 

@@ -102,6 +102,7 @@ jobs:
 
       - name: Authenticate GHCR version-tag lookup
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ${{ steps.release.outputs.image }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
@@ -279,6 +280,7 @@ jobs:
 
       - name: Promote verified digest to version tag
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ${{ steps.release.outputs.image }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
