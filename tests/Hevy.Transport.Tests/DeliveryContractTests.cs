@@ -181,7 +181,7 @@ public sealed class DeliveryContractTests
         (Scalar(environment, "IMAGE_DIGEST")).Should().Be("${{ steps.build.outputs.digest }}"));
 
     var readme = File.ReadAllText(Path.Combine(RepositoryRoot, "README.md"));
-    (readme).Should().Contain("--certificate-github-workflow-sha COMMIT_SHA");
+    (readme).Should().MatchRegex("--certificate-github-workflow-sha [0-9a-f]{40}");
   }
 
   [Fact]
