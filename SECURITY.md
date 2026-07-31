@@ -6,9 +6,9 @@ Security fixes are made on the default branch and the latest released semantic-v
 
 ## Report a vulnerability privately
 
-Private vulnerability reporting must be enabled before public distribution. Once enabled, use the repository-relative [private vulnerability report](../../security/advisories/new) to open a GitHub Security Advisory. Include the affected version or image digest, impact, minimal reproduction, and any suggested mitigation. Do not include a real Hevy API key, MCP bearer token, workout payload, activity timestamp, or body measurement.
+Use the repository-relative [private vulnerability report](../../security/advisories/new) to open a GitHub Security Advisory. Include the affected version or image digest, impact, minimal reproduction, and any suggested mitigation. Do not include a real Hevy API key, MCP bearer token, workout payload, activity timestamp, or body measurement.
 
-This checkout has no configured canonical remote, so the external advisory route cannot yet be verified. Public distribution is blocked until a maintainer establishes the canonical repository, enables GitHub private vulnerability reporting, and verifies the relative link while authenticated. See the [release checklist](docs/release-checklist.md). Do not open a public issue for a suspected vulnerability and do not publish a working exploit before a fix is available. Maintainers will acknowledge private reports, assess scope, coordinate remediation, and credit the reporter when desired; response times are best effort for this volunteer project.
+The canonical repository is [`imhalawa/hevy-client`](https://github.com/imhalawa/hevy-client), where private vulnerability reporting is enabled. Do not open a public issue for a suspected vulnerability and do not publish a working exploit before a fix is available. Maintainers will acknowledge private reports, assess scope, coordinate remediation, and credit the reporter when desired; response times are best effort for this volunteer project.
 
 Public issues are only for ordinary non-sensitive bugs. Attach only the allowlisted output of `get_diagnostics` or already-redacted stderr records.
 

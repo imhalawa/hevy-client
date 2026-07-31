@@ -292,11 +292,11 @@ Local builds label version, revision, and source as development values. Public d
 
 The release workflow accepts only an exact `vX.Y.Z` Git tag. Lightweight and annotated tags are both supported, but the checked-out commit, workflow source SHA, tag target, .NET assembly version, OCI revision, and OCI version must all agree. It publishes one `X.Y.Z` GHCR tag for `linux/amd64` and `linux/arm64`; it never publishes `latest`, major-only, or minor-only tags.
 
-Public distribution remains fail-closed until the canonical repository and private security intake have been verified. Before the first tag:
+The canonical repository and private security intake are configured for `imhalawa/hevy-client`. The release workflow still fails closed if those controls or their verification variables drift. Before a first tag in another repository:
 
 1. Complete every blocking item in [the public distribution checklist](docs/release-checklist.md).
 2. Create a protected GitHub Actions environment named `release`, require approval, and make this workflow its only package writer.
-3. Set `HEVY_CANONICAL_REPOSITORY` to the exact `OWNER/REPOSITORY` name as a repository or `release`-environment variable.
+3. Set `HEVY_CANONICAL_REPOSITORY` to the exact repository name as a repository or `release`-environment variable.
 4. Set `HEVY_PRIVATE_ADVISORY_VERIFIED=true` only after private vulnerability reporting is enabled and its link has been tested.
 
 The workflow itself has only `contents:read`, `packages:write`, `id-token:write`, and `attestations:write`. Before registry authentication it independently repeats every non-live build, test, audit, and real-container gate, including two registry-free no-cache multi-architecture exports whose index and platform digests must match exactly. CI runs the same reproducibility gate. The release then performs the GHCR Registry v2 Bearer challenge and scoped token exchange and stages the multi-architecture result under its digest only. Before any SBOM, provenance, or signature operation, the raw staged index must contain exactly two total descriptors (`linux/amd64` and `linux/arm64`), its content digest must equal both the build action result and the reproducibility gate, and both platform digests must equal the gate outputs. Only then does the workflow verify exact OCI labels and exercise the staged amd64 assembly over MCP. The staged index excludes invocation-specific inline attestations and uses the source commit timestamp for reproducible image metadata. Exact-checksum-pinned Syft generates separate SPDX 2.3 documents for both platform digests; GitHub provenance and SBOM attestations are then created and verified, and the manifest digest is keylessly signed and verified with Cosign.
@@ -307,17 +307,17 @@ The idempotent branch covers another writer selecting the same staged digest dur
 
 The workflow deliberately cannot create or modify a GitHub Release because it has read-only repository-content permission. Its SBOMs remain workflow artifacts for 90 days. A maintainer downloads them, attaches them to a draft GitHub Release, repeats the documented digest verification, and only then publishes that GitHub Release immutably.
 
-After replacing the example owner, repository, version, and digest with the values from the successful release run, verify the image rather than trusting a tag alone:
+After replacing the version, digest, and commit fields with values from the successful release run, verify the image rather than trusting a tag alone:
 
 ```sh
-cosign verify ghcr.io/OWNER/REPOSITORY@sha256:DIGEST \
-  --certificate-identity https://github.com/OWNER/REPOSITORY/.github/workflows/release.yml@refs/tags/vX.Y.Z \
+cosign verify ghcr.io/imhalawa/hevy-client@sha256:DIGEST \
+  --certificate-identity https://github.com/imhalawa/hevy-client/.github/workflows/release.yml@refs/tags/vX.Y.Z \
   --certificate-github-workflow-sha COMMIT_SHA \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-gh attestation verify oci://ghcr.io/OWNER/REPOSITORY@sha256:DIGEST \
-  --repo OWNER/REPOSITORY \
-  --signer-workflow OWNER/REPOSITORY/.github/workflows/release.yml
+gh attestation verify oci://ghcr.io/imhalawa/hevy-client@sha256:DIGEST \
+  --repo imhalawa/hevy-client \
+  --signer-workflow imhalawa/hevy-client/.github/workflows/release.yml
 ```
 
 Every external GitHub Action is pinned by its complete commit SHA. Human-readable versions and reviewed source links live in [`.github/actions-lock.json`](.github/actions-lock.json); an action update must change the workflow pin and that lock document together. The actionlint, Syft, and Buildx binary checksums, the Buildx source commit, and the binfmt/BuildKit manifest digests are recorded separately in [`.github/tools-lock.json`](.github/tools-lock.json). The workflow installs Buildx into an isolated `DOCKER_CONFIG` before `setup-buildx-action`; the pinned action receives no `version` input, so its audited v4.2.0 control flow uses the available local plugin instead of its release downloader. A following exact version-and-source-commit check fails closed before any build. Dependabot groups weekly minor and patch NuGet, Docker, and Actions updates. Major updates remain separate and require explicit maintainer review; MCP 2.x is ignored until a deliberate SDK migration updates the central stable `1.4.1` pin and contract tests.

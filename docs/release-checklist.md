@@ -4,14 +4,14 @@ This is a release-blocking handoff to Task 10. An unchecked blocking item means 
 
 ## Canonical repository and security intake
 
-- [ ] The canonical GitHub repository remote is configured and owned by the intended maintainer or organization.
-- [ ] GitHub **Private vulnerability reporting** is enabled under repository security settings.
-- [ ] While authenticated as a non-owner test user where practical, the `../../security/advisories/new` link in `SECURITY.md` opens the canonical repository's private advisory form.
-- [ ] `SECURITY.md` renders the same route and contains no invented email address, owner, or public-issue fallback for suspected vulnerabilities.
-- [ ] Public issues are enabled only as the documented path for non-sensitive bugs.
-- [ ] A protected GitHub Actions environment named `release` exists with required reviewer protection, and repository policy makes `.github/workflows/release.yml` the only GHCR package writer.
-- [ ] `HEVY_CANONICAL_REPOSITORY` exactly matches the canonical `OWNER/REPOSITORY`, and `HEVY_PRIVATE_ADVISORY_VERIFIED` is set to `true` only after the checks above pass.
-- [ ] Immutable GitHub releases are enabled where available; otherwise maintainers follow the draft-assets-first publication sequence and never move a published release tag.
+- [x] The canonical `imhalawa/hevy-client` GitHub remote is configured and owned by the intended maintainer.
+- [x] GitHub **Private vulnerability reporting** is enabled and confirmed through the repository API.
+- [x] The `../../security/advisories/new` route resolves on the canonical repository. A separate authenticated non-owner account was not available for this release.
+- [x] `SECURITY.md` renders the same route and contains no invented email address, owner, or public-issue fallback for suspected vulnerabilities.
+- [x] Public issues are enabled only as the documented path for non-sensitive bugs.
+- [x] A protected GitHub Actions environment named `release` has a required reviewer, and `.github/workflows/release.yml` is the repository's only workflow with `packages: write`.
+- [x] `HEVY_CANONICAL_REPOSITORY` is `imhalawa/hevy-client`, and `HEVY_PRIVATE_ADVISORY_VERIFIED` was set to `true` only after the checks above passed.
+- [x] Immutable GitHub releases are enabled for the repository.
 
 ## Release identity
 
@@ -19,7 +19,7 @@ This is a release-blocking handoff to Task 10. An unchecked blocking item means 
 - [ ] The container build receives `VERSION`, the full 40-character source `REVISION`, and the canonical HTTPS `SOURCE_URL` as non-secret build arguments.
 - [ ] Image inspection proves those exact values appear in OCI labels; no development `local` or `0.0.0-dev` value remains.
 - [ ] The README's final registry name, version tag, and immutable digest examples match the canonical repository.
-- [ ] From an authenticated maintainer shell, run `GITHUB_ACTOR=OWNER GHCR_TOKEN="$(gh auth token)" ./scripts/ghcr-manifest.sh ghcr.io/OWNER/REPOSITORY 0.0.0`; it performs only HEAD/token GET requests and must return `absent`. Do not place the token in an argument or capture shell tracing.
+- [x] From an authenticated maintainer shell, `GITHUB_ACTOR=imhalawa GHCR_TOKEN="$(gh auth token)" ./scripts/ghcr-manifest.sh ghcr.io/imhalawa/hevy-client 0.0.0` returned `absent`. The helper performed only HEAD/token GET requests; the token was neither passed as an argument nor captured through shell tracing.
 - [ ] Before the first supported release, use the protected `release` environment and a disposable repository/package under the same owner to validate the complete GHCR write, attestation, signature, same-digest idempotency, and conflicting-digest refusal paths. Record the run URL and remove the disposable package afterward. Local acceptance cannot authorize this external write.
 
 ## Required Task 10 verification
