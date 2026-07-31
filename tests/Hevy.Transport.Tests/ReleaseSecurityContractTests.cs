@@ -848,9 +848,8 @@ public sealed class ReleaseSecurityContractTests
       (File.Exists(fixture.InstalledExecutable)).Should().BeTrue();
       if (scriptName == "install-buildx.sh")
       {
-        var dockerConfig = Path.Combine(fixture.RunnerTemp, "hevy-buildx-bin");
-        (await File.ReadAllTextAsync(fixture.GitHubEnvironment)).Should().Be($"DOCKER_CONFIG={dockerConfig}\n");
-        (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"buildx_path={fixture.InstalledExecutable}\ndocker_config={dockerConfig}\n");
+        (File.Exists(fixture.GitHubEnvironment)).Should().BeFalse();
+        (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"buildx_path={fixture.InstalledExecutable}\n");
       }
     }
     finally
@@ -1427,6 +1426,7 @@ public sealed class ReleaseSecurityContractTests
       ChecksumLog = Path.Combine(root, "checksum.log");
       GitHubEnvironment = Path.Combine(root, "github-env.txt");
       GitHubOutput = Path.Combine(root, "github-output.txt");
+      DockerConfig = Path.Combine(root, "docker-config");
     }
 
     public string RunnerTemp { get; }
@@ -1434,9 +1434,10 @@ public sealed class ReleaseSecurityContractTests
     public string ChecksumLog { get; }
     public string GitHubEnvironment { get; }
     public string GitHubOutput { get; }
+    public string DockerConfig { get; }
     public string InstalledExecutable => scriptName == "install-syft.sh"
         ? Path.Combine(RunnerTemp, "hevy-syft-bin", "syft")
-        : Path.Combine(RunnerTemp, "hevy-buildx-bin", "cli-plugins", "docker-buildx");
+        : Path.Combine(DockerConfig, "cli-plugins", "docker-buildx");
 
     public static async Task<InstallerFixture> CreateAsync(
         string scriptName,
@@ -1521,6 +1522,7 @@ public sealed class ReleaseSecurityContractTests
             ["GITHUB_OUTPUT"] = GitHubOutput,
             ["GITHUB_PATH"] = githubPath,
             ["HEVY_CURL_PATH"] = Path.Combine(root, "bin", "curl"),
+            ["HEVY_DOCKER_CONFIG"] = DockerConfig,
             ["HEVY_SHA256SUM_PATH"] = Path.Combine(root, "bin", "sha256sum"),
             ["RUNNER_TEMP"] = RunnerTemp,
           });

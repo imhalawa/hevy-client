@@ -8,8 +8,8 @@ commit=a319e5b15052cf6557ceb666eb8ff6e32380b782
 download_url="https://github.com/docker/buildx/releases/download/v$version/$archive"
 expected_version="github.com/docker/buildx v$version $commit"
 
-if [ -z "${RUNNER_TEMP:-}" ] || [ -z "${GITHUB_ENV:-}" ] || [ -z "${GITHUB_OUTPUT:-}" ]; then
-  printf '%s\n' "RUNNER_TEMP, GITHUB_ENV, and GITHUB_OUTPUT are required." >&2
+if [ -z "${RUNNER_TEMP:-}" ] || [ -z "${GITHUB_OUTPUT:-}" ]; then
+  printf '%s\n' "RUNNER_TEMP and GITHUB_OUTPUT are required." >&2
   exit 1
 fi
 curl_command=${HEVY_CURL_PATH:-curl}
@@ -29,10 +29,15 @@ if [ "$actual_version" != "$expected_version" ]; then
   exit 1
 fi
 
-docker_config="$RUNNER_TEMP/hevy-buildx-bin"
+docker_config=${HEVY_DOCKER_CONFIG:-}
+if [ -z "$docker_config" ]; then
+  if [ -z "${HOME:-}" ]; then
+    printf '%s\n' "HOME is required when HEVY_DOCKER_CONFIG is not set." >&2
+    exit 1
+  fi
+  docker_config="$HOME/.docker"
+fi
 plugin_directory="$docker_config/cli-plugins"
 install -d -m 0755 "$plugin_directory"
 install -m 0755 "$temporary_directory/$archive" "$plugin_directory/docker-buildx"
-printf 'DOCKER_CONFIG=%s\n' "$docker_config" >> "$GITHUB_ENV"
 printf 'buildx_path=%s\n' "$plugin_directory/docker-buildx" >> "$GITHUB_OUTPUT"
-printf 'docker_config=%s\n' "$docker_config" >> "$GITHUB_OUTPUT"
