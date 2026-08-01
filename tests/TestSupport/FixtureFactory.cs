@@ -1,5 +1,5 @@
 using Hevy.Core.Models;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 
 namespace TestSupport;
 

@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using Hevy.Core.Models;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -18,7 +18,7 @@ internal static class WorkoutWriteTools
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
       {
         ArgumentNullException.ThrowIfNull(request);
-        var command = request.ToCommand();
+        CreateWorkoutCommand command = request;
         ToolValidation.Workout(command.Workout);
         if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateWorkoutRequest, Workout>(request), "Workout payload is valid; no request was sent.", ToolResults.DryRunMeta());
         var result = await ToolResults.Client(services).CreateWorkoutAsync(command, cancellationToken);
@@ -38,7 +38,7 @@ internal static class WorkoutWriteTools
       {
         ToolResults.ValidateIdentifier(workout_id, nameof(workout_id));
         ArgumentNullException.ThrowIfNull(request);
-        var command = request.ToCommand();
+        UpdateWorkoutCommand command = request;
         ToolValidation.Workout(command.Workout);
         ToolValidation.Guard(expected_updated_at, force);
         if (dry_run) return ToolResults.Success(ToolResults.DryRunData<UpdateWorkoutRequest, Workout>(request), "Workout replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));

@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using Hevy.Core.Models;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -14,7 +14,7 @@ internal static class ExerciseWriteTools
   internal static Task<CallToolResult> CreateExerciseTemplate(IServiceProvider services, CreateExerciseTemplateRequest request, bool dry_run = false, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
     ArgumentNullException.ThrowIfNull(request);
-    var command = request.ToCommand();
+    CreateExerciseTemplateCommand command = request;
     ToolValidation.Exercise(command.Exercise);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateExerciseTemplateRequest, ExerciseTemplate>(request), "Exercise-template payload is valid; no request was sent.", ToolResults.DryRunMeta());
     ToolResults.Cache(services)?.InvalidateExerciseTemplates();

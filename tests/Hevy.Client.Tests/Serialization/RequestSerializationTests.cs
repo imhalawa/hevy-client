@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Hevy.Core.Models;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 using Hevy.Client.Serialization;
 using TestSupport;
 using Xunit;
@@ -28,7 +28,7 @@ public sealed class RequestSerializationTests
   {
     var set = new CreateWorkoutSetWrite(SetType.Normal, null, null, null, null, null, default(WorkoutRpe));
 
-    FluentActions.Invoking(() => set.ToRequest()).Should().ThrowExactly<JsonException>();
+    FluentActions.Invoking(() => WorkoutSetWriteRequest.From(set)).Should().ThrowExactly<JsonException>();
   }
 
   [Fact]

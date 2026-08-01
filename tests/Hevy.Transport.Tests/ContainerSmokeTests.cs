@@ -10,13 +10,6 @@ using Xunit.Sdk;
 
 namespace Hevy.Transport.Tests;
 
-public enum DockerAvailabilityDecision
-{
-  Use,
-  Skip,
-  Fail,
-}
-
 public sealed record DockerProbeResult(
     int ExitCode,
     string StandardOutput,

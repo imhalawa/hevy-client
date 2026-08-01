@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using Hevy.Core.Models;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -16,7 +16,7 @@ internal static class MeasurementWriteTools
     ArgumentNullException.ThrowIfNull(request);
     Validate(request.Date, request.WeightKg, request.LeanMassKg, request.FatPercent, request.NeckCm, request.ShoulderCm, request.ChestCm, request.LeftBicepCm, request.RightBicepCm, request.LeftForearmCm, request.RightForearmCm, request.Abdomen, request.Waist, request.Hips, request.LeftThigh, request.RightThigh, request.LeftCalf, request.RightCalf);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateBodyMeasurementRequest, BodyMeasurement>(request), "Body-measurement payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    var result = await ToolResults.Client(services).CreateBodyMeasurementAsync(request.ToCommand(), cancellationToken);
+    var result = await ToolResults.Client(services).CreateBodyMeasurementAsync(request, cancellationToken);
     return ToolResults.Success(ToolResults.MutationResult<CreateBodyMeasurementRequest, BodyMeasurement>(result), $"Created body measurement for {result.Date:yyyy-MM-dd}.", new MutationMeta(false));
   });
 
@@ -45,7 +45,7 @@ internal static class MeasurementWriteTools
           "Hevy body measurements do not expose updated_at, so the guard cannot be verified; retry only with force after reviewing the current measurement.",
           new MutationMeta(false, false, expected_updated_at, GuardAvailable: false, GuardLimitation: guardLimitation));
     }
-    var result = await client.UpdateBodyMeasurementAsync(date, request.ToCommand(), cancellationToken);
+    var result = await client.UpdateBodyMeasurementAsync(date, request, cancellationToken);
     return ToolResults.Success(ToolResults.MutationResult<UpdateBodyMeasurementRequest, BodyMeasurement>(result), $"Updated body measurement for {result.Date:yyyy-MM-dd}.", new MutationMeta(false, true, expected_updated_at, GuardAvailable: false, GuardLimitation: guardLimitation));
   });
 

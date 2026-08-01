@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 using Hevy.Client.Serialization;
 using TestSupport;
 using Xunit;

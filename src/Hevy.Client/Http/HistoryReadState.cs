@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization.Metadata;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 
 namespace Hevy.Client.Http;
 

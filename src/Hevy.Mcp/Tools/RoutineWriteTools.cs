@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using Hevy.Core.Models;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -14,7 +14,7 @@ internal static class RoutineWriteTools
   internal static Task<CallToolResult> CreateRoutine(IServiceProvider services, CreateRoutineRequest request, bool dry_run = false, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
     ArgumentNullException.ThrowIfNull(request);
-    var command = request.ToCommand();
+    CreateRoutineCommand command = request;
     ToolValidation.Routine(command.Routine);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateRoutineRequest, Routine>(request), "Routine payload is valid; no request was sent.", ToolResults.DryRunMeta());
     ToolResults.Cache(services)?.InvalidateRoutines();
@@ -28,7 +28,7 @@ internal static class RoutineWriteTools
   {
     ToolResults.ValidateIdentifier(routine_id, nameof(routine_id));
     ArgumentNullException.ThrowIfNull(request);
-    var command = request.ToCommand();
+    UpdateRoutineCommand command = request;
     ToolValidation.Routine(command.Routine);
     ToolValidation.Guard(expected_updated_at, force);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<UpdateRoutineRequest, Routine>(request), "Routine replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));
@@ -51,7 +51,7 @@ internal static class RoutineWriteTools
     ArgumentNullException.ThrowIfNull(request.RoutineFolder);
     ToolValidation.Required(request.RoutineFolder.Title, "routine folder title");
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateRoutineFolderRequest, RoutineFolder>(request), "Routine-folder payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    var result = await ToolResults.Client(services).CreateRoutineFolderAsync(request.ToCommand(), cancellationToken);
+    var result = await ToolResults.Client(services).CreateRoutineFolderAsync(request, cancellationToken);
     return ToolResults.Success(ToolResults.MutationResult<CreateRoutineFolderRequest, RoutineFolder>(result), $"Created routine folder {result.Id}.", new MutationMeta(false));
   });
 }

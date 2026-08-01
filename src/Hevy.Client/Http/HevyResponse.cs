@@ -2,7 +2,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Hevy.Core.Exceptions;
-using Hevy.Client.Contracts;
+using Hevy.Client.Models;
 
 namespace Hevy.Client.Http;
 
