@@ -180,8 +180,9 @@ public sealed class DeliveryContractTests
     (digestConsumers).Should().AllSatisfy(static environment =>
         (Scalar(environment, "IMAGE_DIGEST")).Should().Be("${{ steps.build.outputs.digest }}"));
 
-    var readme = File.ReadAllText(Path.Combine(RepositoryRoot, "README.md"));
-    (readme).Should().MatchRegex("--certificate-github-workflow-sha [0-9a-f]{40}");
+    var releaseVerification = File.ReadAllText(Path.Combine(RepositoryRoot, "docs", "release-verification.md"));
+    (releaseVerification).Should().MatchRegex("--certificate-github-workflow-sha [0-9a-f]{40}");
+    (releaseVerification).Should().Contain("gh attestation verify oci://ghcr.io/imhalawa/hevy-client@sha256:");
   }
 
   [Fact]
