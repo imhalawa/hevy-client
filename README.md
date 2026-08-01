@@ -15,11 +15,13 @@ It does not run a model, provide coaching, store fitness data, or send telemetry
 
 You need Docker with Linux-container support, a Hevy API key, and an MCP client. The image contains no API key. `-e HEVY_API_KEY` passes your key to the container only when it starts.
 
-Pull the released image by digest:
+Pull release 0.1.0:
 
 ```sh
-docker pull ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841
+docker pull ghcr.io/imhalawa/hevy-client:0.1.0
 ```
+
+The version tag is convenient; use the digest in [release verification](docs/release-verification.md) when immutable pinning matters.
 
 In a private Bash session, enter the key without putting it in shell history:
 
@@ -32,7 +34,7 @@ Run the server:
 ```sh
 docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   -e HEVY_API_KEY \
-  ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841
+  ghcr.io/imhalawa/hevy-client:0.1.0
 ```
 
 The server will wait without output. That is expected: MCP uses JSON-RPC over standard input and output. Stdio mode publishes no network port.
@@ -42,7 +44,7 @@ The server will wait without output. That is expected: MCP uses JSON-RPC over st
 With Docker Desktop running, this prompts for the key, starts the same hardened container, and removes the host environment variable afterward:
 
 ```powershell
-docker pull ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841
+docker pull ghcr.io/imhalawa/hevy-client:0.1.0
 
 $secureKey = Read-Host -Prompt 'Hevy API key' -AsSecureString
 $keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
@@ -53,7 +55,7 @@ try {
   docker run --rm -i --read-only `
     --tmpfs /tmp:rw,noexec,nosuid,size=16m `
     -e HEVY_API_KEY `
-    ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841
+    ghcr.io/imhalawa/hevy-client:0.1.0
 }
 finally {
   [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPointer)
@@ -66,7 +68,7 @@ finally {
 For Codex CLI, run this from the shell that has `HEVY_API_KEY` set:
 
 ```sh
-codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841
+codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY ghcr.io/imhalawa/hevy-client:0.1.0
 ```
 
 Other stdio MCP clients use the same Docker command. The client process must have `HEVY_API_KEY` in its environment when it starts Docker.
@@ -94,7 +96,7 @@ docker run --rm --name hevy-client-http \
   -e ASPNETCORE_URLS=http://0.0.0.0:8080 \
   -e AllowedHosts=hevy.example.net \
   -p 127.0.0.1:8080:8080 \
-  ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841
+  ghcr.io/imhalawa/hevy-client:0.1.0
 ```
 
 Terminate TLS at the proxy, preserve the original `Host`, and configure `AllowedHosts` with explicit public authorities. The MCP endpoint is `https://hevy.example.net/mcp`; clients authenticate with `Authorization: Bearer <MCP_AUTH_TOKEN>`. `/healthz` is unauthenticated and only confirms that the process is running.
@@ -115,6 +117,7 @@ Unknown or malformed values fail startup. HTTP mode also fails if its bearer tok
 
 ## Project
 
+- [Architecture](docs/architecture.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Release verification](docs/release-verification.md)
