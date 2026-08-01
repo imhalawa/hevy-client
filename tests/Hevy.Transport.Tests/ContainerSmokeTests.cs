@@ -1594,17 +1594,4 @@ public sealed class ContainerSmokeInfrastructureTests
     (checklist).Should().Contain("../../security/advisories/new");
   }
 
-  [Fact]
-  public void DesktopClientDocumentationUsesOperationalSecretBackedLaunchers()
-  {
-    var readme = File.ReadAllText(Path.Combine(DockerProcess.RepositoryRoot, "README.md"));
-
-    (readme).Should().Contain("scripts/hevy-client-mcp");
-    (readme).Should().Contain("scripts/Start-HevyClient.ps1");
-    (readme).Should().Contain("macOS Keychain");
-    (readme).Should().Contain("Linux Secret Service");
-    (readme).Should().Contain("Windows");
-    (readme).Should().Contain("\"command\": \"/absolute/path/to/hevy-client-mcp\"");
-    (readme).Should().NotContainEquivalentOf("restart a desktop client after setting it");
-  }
 }

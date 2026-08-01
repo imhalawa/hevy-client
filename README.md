@@ -69,13 +69,7 @@ For Codex CLI, run this from the shell that has `HEVY_API_KEY` set:
 codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841
 ```
 
-Other stdio MCP clients use the same Docker command. A graphical client must obtain the key before it starts the container. The [secret-store launcher](scripts/hevy-client-mcp) reads from macOS Keychain or Linux Secret Service; Windows users can start their client with the [secure-prompt launcher](scripts/Start-HevyClient.ps1). Configure macOS/Linux desktop clients to run the launcher, not to store the key:
-
-```json
-{
-  "command": "/absolute/path/to/hevy-client-mcp"
-}
-```
+Other stdio MCP clients use the same Docker command. The client process must have `HEVY_API_KEY` in its environment when it starts Docker.
 
 ## Safe operation
 
