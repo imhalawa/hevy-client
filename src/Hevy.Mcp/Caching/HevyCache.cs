@@ -18,9 +18,9 @@ internal sealed class HevyCache
 
   public HevyCache(IHevyClient client, IMemoryCache memory, TimeProvider timeProvider)
   {
-    _client = client ?? throw new ArgumentNullException(nameof(client));
-    _memory = memory ?? throw new ArgumentNullException(nameof(memory));
-    _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    _client = client;
+    _memory = memory;
+    _timeProvider = timeProvider;
   }
 
   internal static ImmutableList<string> CacheKeyNames { get; } = [RoutinesKey, ExerciseTemplatesKey];

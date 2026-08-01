@@ -48,29 +48,6 @@ internal static class ToolResults
     return new PagedResult<T>(page, pageCount, items);
   }
 
-  internal static void ValidatePagination(int page, int pageSize, int maximumPageSize = 10)
-  {
-    ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
-    ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(pageSize, maximumPageSize);
-  }
-
-  internal static void ValidateDetail(string detail)
-  {
-    if (detail is not ("compact" or "full"))
-    {
-      throw new ArgumentException("detail must be either 'compact' or 'full'.", nameof(detail));
-    }
-  }
-
-  internal static void ValidateIdentifier(string value, string name)
-  {
-    if (string.IsNullOrWhiteSpace(value))
-    {
-      throw new ArgumentException("An identifier is required.", name);
-    }
-  }
-
   internal static PageMeta<PageContinuation> PageMeta(int page, int pageCount, int pageSize, string detail) =>
       new(page, pageCount, pageSize, detail, page < pageCount,
           page < pageCount ? new PageContinuation(page + 1, pageSize, detail) : null);

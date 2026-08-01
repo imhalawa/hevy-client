@@ -21,9 +21,6 @@ internal sealed class HevyRetryHandler : DelegatingHandler
 
   internal HevyRetryHandler(Func<TimeSpan, CancellationToken, Task> delayAsync, Func<double> jitter, TimeProvider timeProvider)
   {
-    ArgumentNullException.ThrowIfNull(delayAsync);
-    ArgumentNullException.ThrowIfNull(jitter);
-    ArgumentNullException.ThrowIfNull(timeProvider);
     this.delayAsync = delayAsync;
     this.jitter = jitter;
     this.timeProvider = timeProvider;
@@ -31,7 +28,6 @@ internal sealed class HevyRetryHandler : DelegatingHandler
 
   protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(request);
     var retryAllowed = request.Method == HttpMethod.Get ||
         (request.Method == HttpMethod.Put && request.Options.TryGetValue(RetrySafeMutation, out var retrySafe) && retrySafe);
     var mutation = request.Method == HttpMethod.Post || request.Method == HttpMethod.Put;

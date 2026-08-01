@@ -28,7 +28,6 @@ public sealed class HevyMcpOptions
 
   internal static HevyMcpOptions FromEnvironment(Func<string, string?> getEnvironmentVariable)
   {
-    ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
 
     var apiKey = getEnvironmentVariable("HEVY_API_KEY");
     if (string.IsNullOrWhiteSpace(apiKey))

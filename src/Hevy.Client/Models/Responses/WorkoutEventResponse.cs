@@ -7,18 +7,7 @@ namespace Hevy.Client.Models;
 [JsonDerivedType(typeof(DeletedWorkoutEventResponse), "deleted")]
 public abstract record WorkoutEventResponse
 {
-  internal WorkoutEvent ToDomain()
-  {
-    if (this is UpdatedWorkoutEventResponse updated)
-    {
-      return new UpdatedWorkoutEvent(updated.Workout.ToDomain());
-    }
+  public abstract void Validate();
 
-    if (this is DeletedWorkoutEventResponse deleted)
-    {
-      return new DeletedWorkoutEvent(deleted.Id, deleted.DeletedAt);
-    }
-
-    throw new InvalidOperationException("Unsupported workout event response.");
-  }
+  internal abstract WorkoutEvent ToDomain();
 }

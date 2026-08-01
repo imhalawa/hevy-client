@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
 using Hevy.Mcp.Caching;
-using Hevy.Mcp.Composite;
 using Hevy.Mcp.Diagnostics;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,8 +22,7 @@ public sealed class ToolOutputSchemaTests
         .AddMemoryCache(memory => memory.SizeLimit = 2)
         .AddSingleton(TimeProvider.System)
         .AddSingleton<HevyCache>()
-        .AddSingleton<SearchService>()
-        .AddSingleton<TrainingAnalysisService>()
+        .AddSingleton<TrainingAnalysisUseCase>()
         .AddSingleton(new DiagnosticSnapshot("test-version", "test-runtime", "stdio", false, false, "ready"))
         .BuildServiceProvider();
     var since = DateTimeOffset.Parse("2026-07-01T00:00:00Z");

@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using Hevy.Mcp.Composite;
+using Hevy.Mcp.Caching;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -17,7 +17,7 @@ internal static class CompositeTools
       string? continuation = null,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    var result = await ToolResults.Service<SearchService>(services).SearchRoutinesAsync(query, limit, continuation, cancellationToken);
+    var result = await Search(services).SearchRoutinesAsync(query, limit, continuation, cancellationToken);
     return ToolResults.Success(result, $"Returned {result.Items.Count} matching routines.");
   });
 
@@ -32,7 +32,7 @@ internal static class CompositeTools
       string? continuation = null,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    var result = await ToolResults.Service<SearchService>(services).SearchExerciseTemplatesAsync(query, equipment, muscle, limit, continuation, cancellationToken);
+    var result = await Search(services).SearchExerciseTemplatesAsync(query, equipment, muscle, limit, continuation, cancellationToken);
     return ToolResults.Success(result, $"Returned {result.Items.Count} matching exercise templates.");
   });
 
@@ -46,7 +46,7 @@ internal static class CompositeTools
       string? continuation = null,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    var result = await ToolResults.Service<TrainingAnalysisService>(services).GetWorkoutEvidenceAsync(weeks, range_end_utc, limit, continuation, cancellationToken);
+    var result = await ToolResults.Service<TrainingAnalysisUseCase>(services).GetWorkoutEvidenceAsync(weeks, range_end_utc, limit, continuation, cancellationToken);
     return ToolResults.Success(result, $"Returned {result.Items.Count} workout evidence records.");
   });
 
@@ -60,7 +60,7 @@ internal static class CompositeTools
       string? continuation = null,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    var result = await ToolResults.Service<TrainingAnalysisService>(services).SummarizeTrainingAsync(weeks, range_end_utc, limit, continuation, cancellationToken);
+    var result = await ToolResults.Service<TrainingAnalysisUseCase>(services).SummarizeTrainingAsync(weeks, range_end_utc, limit, continuation, cancellationToken);
     return ToolResults.Success(result, $"Calculated a deterministic {result.Weeks}-week {result.MetricScope} training summary chunk from {result.ChunkWorkoutFrequency} workouts.");
   });
 
@@ -75,7 +75,13 @@ internal static class CompositeTools
       string? continuation = null,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    var result = await ToolResults.Service<TrainingAnalysisService>(services).SummarizeExerciseHistoryAsync(exercise_template_id, weeks, range_end_utc, limit, continuation, cancellationToken);
+    var result = await ToolResults.Service<TrainingAnalysisUseCase>(services).SummarizeExerciseHistoryAsync(exercise_template_id, weeks, range_end_utc, limit, continuation, cancellationToken);
     return ToolResults.Success(result, $"Calculated {result.MetricScope} exercise history from {result.ChunkEntryCount} entries.");
   });
+
+  private static SearchUseCase Search(IServiceProvider services)
+  {
+    var cache = ToolResults.Service<HevyCache>(services);
+    return new SearchUseCase(cache.GetRoutinePageAsync, cache.GetExerciseTemplatePageAsync);
+  }
 }

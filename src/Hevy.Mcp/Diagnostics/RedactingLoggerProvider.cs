@@ -19,14 +19,10 @@ internal sealed class RedactingLoggerProvider : ILoggerProvider
     this.minimumLevel = minimumLevel;
   }
 
-  internal static RedactingLoggerProvider? Create(HevyMcpOptions options, TextWriter writer)
-  {
-    ArgumentNullException.ThrowIfNull(options);
-    ArgumentNullException.ThrowIfNull(writer);
-    return options.LogLevel is LogLevel.None
+  internal static RedactingLoggerProvider? Create(HevyMcpOptions options, TextWriter writer) =>
+      options.LogLevel is LogLevel.None
         ? null
         : new RedactingLoggerProvider(writer, DiagnosticSnapshot.Create(options), options.LogLevel);
-  }
 
   public ILogger CreateLogger(string categoryName) => new AllowlistLogger(this);
 

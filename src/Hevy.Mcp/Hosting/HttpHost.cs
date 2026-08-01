@@ -12,8 +12,6 @@ internal static class HttpHost
 {
   internal static async Task RunAsync(string[] args, HevyMcpOptions options, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(args);
-    ArgumentNullException.ThrowIfNull(options);
 
     var app = BuildApplication(args, options);
     await app.RunAsync(cancellationToken);

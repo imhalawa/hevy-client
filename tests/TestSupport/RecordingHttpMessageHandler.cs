@@ -8,7 +8,6 @@ public sealed class RecordingHttpMessageHandler : HttpMessageHandler
 
   public RecordingHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> responseFactory)
   {
-    ArgumentNullException.ThrowIfNull(responseFactory);
     this.responseFactory = responseFactory;
   }
 
@@ -16,7 +15,6 @@ public sealed class RecordingHttpMessageHandler : HttpMessageHandler
 
   protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(request);
 
     var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
     Requests.Add(new RecordedHttpRequest(

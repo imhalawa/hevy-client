@@ -42,8 +42,6 @@ public static class DockerAvailabilityPolicy
       string? configuredDockerHost = null,
       string? configuredDockerContext = null)
   {
-    ArgumentNullException.ThrowIfNull(probe);
-    ArgumentNullException.ThrowIfNull(runner);
 
     if (probe.ExitCode == 0)
     {
@@ -443,7 +441,7 @@ public sealed class ContainerImageCoordinator : IAsyncDisposable
 
   public ContainerImageCoordinator(DockerCommandRunner runner)
   {
-    this.runner = runner ?? throw new ArgumentNullException(nameof(runner));
+    this.runner = runner;
     OwnedTag = $"hevy-mcp:container-smoke-{Environment.ProcessId}-{RandomNumberGenerator.GetHexString(32).ToLowerInvariant()}";
   }
 

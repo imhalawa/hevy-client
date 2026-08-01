@@ -11,8 +11,7 @@ internal static class ExerciseReadTools
   [Description("Get one page of exercise templates.")]
   internal static Task<CallToolResult> GetExerciseTemplates(IServiceProvider services, [Range(1, int.MaxValue)] int page = 1, [Range(1, 100)] int page_size = 10, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidatePagination(page, page_size, 100);
-    ToolResults.ValidateDetail(detail);
+    new PageRequest(page, page_size, 100, detail).Validate();
     var cache = ToolResults.Cache(services);
     var result = cache is null
         ? await ToolResults.Client(services).GetExerciseTemplatesAsync(page, page_size, cancellationToken)
@@ -24,7 +23,6 @@ internal static class ExerciseReadTools
   [Description("Get one complete exercise template by identifier.")]
   internal static Task<CallToolResult> GetExerciseTemplate(IServiceProvider services, string exercise_template_id, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidateIdentifier(exercise_template_id, nameof(exercise_template_id));
     var client = ToolResults.Client(services);
     var cache = ToolResults.Cache(services);
     var item = cache is null
@@ -38,12 +36,8 @@ internal static class ExerciseReadTools
   [Description("Get one bounded local window of exercise history between optional inclusive calendar dates; units are kilograms, meters, and seconds. One official unpaginated response is streamed with 1,000-item and 16 MiB safety limits.")]
   internal static Task<CallToolResult> GetExerciseHistory(IServiceProvider services, string exercise_template_id, [Range(1, int.MaxValue)] int page = 1, [Range(1, 10)] int page_size = 10, DateOnly? start_date = null, DateOnly? end_date = null, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidateIdentifier(exercise_template_id, nameof(exercise_template_id));
-    ToolResults.ValidatePagination(page, page_size);
-    _ = ExerciseHistoryQuery.PageOffset(page, page_size);
-    ToolResults.ValidateDetail(detail);
-    if (start_date > end_date) throw new ArgumentException("start_date cannot be after end_date.", nameof(start_date));
-    var result = await ToolResults.Client(services).GetExerciseHistoryAsync(exercise_template_id, page, page_size, start_date, end_date, cancellationToken);
+    new PageRequest(page, page_size, 10, detail).Validate();
+    var result = await new GetExerciseHistoryUseCase(ToolResults.Client(services)).ExecuteAsync(exercise_template_id, page, page_size, start_date, end_date, cancellationToken);
     object items = detail == "full" ? result.Items : result.Items.Select(static entry => new { entry.WorkoutId, entry.WorkoutTitle, entry.WorkoutStartTime, entry.ExerciseTemplateId, entry.SetType }).ToArray();
     return ToolResults.Success(new { items }, $"Returned {result.Items.Count} exercise history entries.", ToolResults.ExerciseHistoryPageMeta(exercise_template_id, page, page_size, start_date, end_date, detail, result.ScannedItemCount, result.Truncated, result.TruncationReason));
   });

@@ -44,7 +44,7 @@ public interface IHevyClient
 
   Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateCommand command, CancellationToken cancellationToken);
 
-  Task<BodyMeasurement> CreateBodyMeasurementAsync(NewBodyMeasurement measurement, CancellationToken cancellationToken);
+  Task<BodyMeasurement> CreateBodyMeasurementAsync(CreateBodyMeasurementCommand command, CancellationToken cancellationToken);
 
-  Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, BodyMeasurementUpdate measurement, CancellationToken cancellationToken);
+  Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, UpdateBodyMeasurementCommand command, CancellationToken cancellationToken);
 }

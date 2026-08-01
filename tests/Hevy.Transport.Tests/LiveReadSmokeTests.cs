@@ -48,7 +48,6 @@ internal static class LiveTestGate
 {
   internal static LiveTestGateResult Evaluate(Func<string, string?> getEnvironmentVariable, bool mutation)
   {
-    ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
 
     var readEnabled = string.Equals(getEnvironmentVariable("HEVY_LIVE_TESTS"), "true", StringComparison.Ordinal);
     var mutationEnabled = !mutation ||

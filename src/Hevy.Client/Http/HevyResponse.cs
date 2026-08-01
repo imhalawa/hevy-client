@@ -12,7 +12,6 @@ internal static class HevyResponse
 
   public static void EnsureSuccess(HttpResponseMessage response)
   {
-    ArgumentNullException.ThrowIfNull(response);
     if (!response.IsSuccessStatusCode)
     {
       throw CreateException(response);
@@ -45,7 +44,7 @@ internal static class HevyResponse
       if (payload.Length > MaximumResponseBytes) throw UnexpectedResponse(response.StatusCode);
       var value = JsonSerializer.Deserialize(payload.GetBuffer().AsSpan(0, checked((int)payload.Length)), jsonTypeInfo)
           ?? throw UnexpectedResponse(response.StatusCode);
-      ValidateContract(value);
+      if (value is IHevyResponse contract) contract.Validate();
       return value;
     }
     catch (JsonException)
@@ -60,182 +59,6 @@ internal static class HevyResponse
 
   public static HevyException UnexpectedResponse(HttpStatusCode statusCode) =>
       new("unexpected_response", "The Hevy API returned an invalid response.", false, statusCode);
-
-  internal static void ValidateContract(object value)
-  {
-    switch (value)
-    {
-      case UserInfoResponse response:
-        Required(response.Data);
-        ValidateContract(response.Data);
-        break;
-      case UserInfoDataResponse user:
-        RequiredText(user.Id);
-        Required(user.Name);
-        Required(user.Url);
-        break;
-      case WorkoutPageResponse page:
-        Required(page.Workouts);
-        foreach (var workout in page.Workouts)
-        {
-          Required(workout);
-          ValidateContract(workout);
-        }
-        break;
-      case WorkoutEventsPageResponse page:
-        Required(page.Events);
-        foreach (var item in page.Events)
-        {
-          Required(item);
-          ValidateContract(item);
-        }
-        break;
-      case UpdatedWorkoutEventResponse updated:
-        Required(updated.Workout);
-        ValidateContract(updated.Workout);
-        break;
-      case DeletedWorkoutEventResponse deleted:
-        RequiredText(deleted.Id);
-        RequiredTimestamp(deleted.DeletedAt);
-        break;
-      case WorkoutResponse workout:
-        RequiredText(workout.Id);
-        Required(workout.Title);
-        Required(workout.RoutineId);
-        Required(workout.Description);
-        RequiredTimestamp(workout.StartTime);
-        RequiredTimestamp(workout.EndTime);
-        RequiredTimestamp(workout.UpdatedAt);
-        RequiredTimestamp(workout.CreatedAt);
-        Required(workout.Exercises);
-        foreach (var exercise in workout.Exercises)
-        {
-          Required(exercise);
-          ValidateContract(exercise);
-        }
-        break;
-      case WorkoutExerciseResponse exercise:
-        Required(exercise.Title);
-        Required(exercise.Notes);
-        RequiredText(exercise.ExerciseTemplateId);
-        Required(exercise.Sets);
-        foreach (var set in exercise.Sets)
-        {
-          Required(set);
-          ValidateContract(set);
-        }
-        break;
-      case WorkoutSetResponse set:
-        Required(set.Type);
-        break;
-      case RoutinePageResponse page:
-        Required(page.Routines);
-        foreach (var routine in page.Routines)
-        {
-          Required(routine);
-          ValidateContract(routine);
-        }
-        break;
-      case RoutineEnvelopeResponse response:
-        Required(response.Routine);
-        ValidateContract(response.Routine);
-        break;
-      case RoutineResponse routine:
-        RequiredText(routine.Id);
-        Required(routine.Title);
-        RequiredTimestamp(routine.UpdatedAt);
-        RequiredTimestamp(routine.CreatedAt);
-        Required(routine.Exercises);
-        foreach (var exercise in routine.Exercises)
-        {
-          Required(exercise);
-          ValidateContract(exercise);
-        }
-        break;
-      case RoutineExerciseResponse exercise:
-        Required(exercise.Title);
-        Required(exercise.RestSeconds);
-        Required(exercise.Notes);
-        RequiredText(exercise.ExerciseTemplateId);
-        Required(exercise.Sets);
-        foreach (var set in exercise.Sets)
-        {
-          Required(set);
-          ValidateContract(set);
-        }
-        break;
-      case RoutineSetResponse set:
-        Required(set.Type);
-        break;
-      case RoutineFolderPageResponse page:
-        Required(page.RoutineFolders);
-        foreach (var folder in page.RoutineFolders)
-        {
-          Required(folder);
-          ValidateContract(folder);
-        }
-        break;
-      case RoutineFolderResponse folder:
-        if (folder.Id <= 0) throw new JsonException();
-        Required(folder.Title);
-        RequiredTimestamp(folder.UpdatedAt);
-        RequiredTimestamp(folder.CreatedAt);
-        break;
-      case ExerciseTemplatePageResponse page:
-        Required(page.ExerciseTemplates);
-        foreach (var template in page.ExerciseTemplates)
-        {
-          Required(template);
-          ValidateContract(template);
-        }
-        break;
-      case ExerciseTemplateResponse template:
-        RequiredText(template.Id);
-        Required(template.Title);
-        Required(template.Type);
-        Required(template.PrimaryMuscleGroup);
-        Required(template.SecondaryMuscleGroups);
-        foreach (var muscle in template.SecondaryMuscleGroups) Required(muscle);
-        break;
-      case CreateExerciseTemplateResponse response when response.Id <= 0:
-        throw new JsonException();
-      case ExerciseHistoryEntryResponse entry:
-        RequiredText(entry.WorkoutId);
-        Required(entry.WorkoutTitle);
-        RequiredText(entry.ExerciseTemplateId);
-        RequiredTimestamp(entry.WorkoutStartTime);
-        RequiredTimestamp(entry.WorkoutEndTime);
-        Required(entry.SetType);
-        break;
-      case BodyMeasurementPageResponse page:
-        Required(page.BodyMeasurements);
-        foreach (var measurement in page.BodyMeasurements)
-        {
-          Required(measurement);
-          ValidateContract(measurement);
-        }
-        break;
-      case BodyMeasurementResponse measurement when measurement.Date == default:
-        throw new JsonException();
-      case WorkoutCountResponse count when count.WorkoutCount < 0:
-        throw new JsonException();
-    }
-  }
-
-  private static void Required(object? value)
-  {
-    if (value is null) throw new JsonException();
-  }
-
-  private static void RequiredText(string? value)
-  {
-    if (string.IsNullOrWhiteSpace(value)) throw new JsonException();
-  }
-
-  private static void RequiredTimestamp(DateTimeOffset value)
-  {
-    if (value == default) throw new JsonException();
-  }
 
   private static HevyException CreateException(HttpResponseMessage response)
   {

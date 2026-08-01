@@ -86,7 +86,7 @@ internal static class ExerciseHistoryStreamReader
       }
 
       var response = JsonSerializer.Deserialize(payload.ToArray(), history.EntryTypeInfo) ?? throw new JsonException();
-      HevyResponse.ValidateContract(response);
+      response.Validate();
       var truncated = history.Add(response.ToDomain());
       if (truncated is not null) return truncated;
     }

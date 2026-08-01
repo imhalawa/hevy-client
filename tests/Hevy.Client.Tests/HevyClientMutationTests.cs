@@ -24,30 +24,6 @@ public sealed class HevyClientMutationTests
   }
 
   [Fact]
-  public async Task Mutation_methods_reject_invalid_bodies_before_sending_a_request()
-  {
-    var handler = RespondingWith(Fixture.Read("workout.json"));
-    var client = CreateClient(handler);
-
-    await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(null!, CancellationToken.None)).Should().ThrowExactlyAsync<ArgumentNullException>();
-
-    var requestWithNullSet = new CreateWorkoutCommand(
-        new CreateWorkoutWrite(
-            "Valid title",
-            null,
-            new DateTimeOffset(2024, 8, 14, 12, 0, 0, TimeSpan.Zero),
-            new DateTimeOffset(2024, 8, 14, 12, 30, 0, 0, TimeSpan.Zero),
-            false,
-            [new CreateWorkoutExerciseWrite("D04AC939", null, null, [null!])]));
-
-    await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(requestWithNullSet, CancellationToken.None)).Should().ThrowExactlyAsync<ArgumentNullException>();
-
-    (handler.Requests).Should().BeEmpty();
-  }
-
-  [Fact]
   public async Task Mutation_methods_send_documented_verbs_paths_and_bodies()
   {
     var responses = new Queue<HttpResponseMessage>([

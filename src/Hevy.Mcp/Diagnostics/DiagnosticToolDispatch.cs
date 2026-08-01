@@ -12,7 +12,6 @@ internal static class DiagnosticToolDispatch
       CancellationToken cancellationToken,
       string operationName = "unknown")
   {
-    ArgumentNullException.ThrowIfNull(action);
 
     var started = Stopwatch.GetTimestamp();
     var correlationId = Guid.NewGuid();

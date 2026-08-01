@@ -11,8 +11,7 @@ internal static class MeasurementReadTools
   [Description("Get one page of body measurements. Dates are calendar dates; weight is kilograms and circumference is centimeters.")]
   internal static Task<CallToolResult> GetBodyMeasurements(IServiceProvider services, [Range(1, int.MaxValue)] int page = 1, [Range(1, 10)] int page_size = 10, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidatePagination(page, page_size);
-    ToolResults.ValidateDetail(detail);
+    new PageRequest(page, page_size, 10, detail).Validate();
     var result = await ToolResults.Client(services).GetBodyMeasurementsAsync(page, page_size, cancellationToken);
     return ToolResults.Success(new { items = result.Items }, $"Returned {result.Items.Count} body measurements.", ToolResults.PageMeta(result.Page, result.PageCount, page_size, detail));
   });

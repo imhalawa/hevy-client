@@ -16,8 +16,7 @@ internal static class WorkoutReadTools
       [Description("compact omits exercises; full returns complete nested workouts."), RegularExpression("^(compact|full)$")] string detail = "compact",
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
       {
-        ToolResults.ValidatePagination(page, page_size);
-        ToolResults.ValidateDetail(detail);
+        new PageRequest(page, page_size, 10, detail).Validate();
         var result = await ToolResults.Client(services).GetWorkoutsAsync(page, page_size, cancellationToken);
         object items = detail == "full"
             ? result.Items
@@ -54,8 +53,7 @@ internal static class WorkoutReadTools
       [Description("compact returns event summaries; full returns complete updated workouts."), RegularExpression("^(compact|full)$")] string detail = "compact",
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
       {
-        ToolResults.ValidatePagination(page, page_size);
-        ToolResults.ValidateDetail(detail);
+        new PageRequest(page, page_size, 10, detail).Validate();
         if (since == default) throw new ArgumentException("since is required.", nameof(since));
         var result = await ToolResults.Client(services).GetWorkoutEventsAsync(page, page_size, since, cancellationToken);
         var items = result.Items.Select(workoutEvent => ProjectEvent(workoutEvent, detail == "full")).ToArray();
@@ -69,7 +67,6 @@ internal static class WorkoutReadTools
       [Description("Hevy workout identifier.")] string workout_id,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
       {
-        ToolResults.ValidateIdentifier(workout_id, nameof(workout_id));
         var workout = await ToolResults.Client(services).GetWorkoutAsync(workout_id, cancellationToken);
         return ToolResults.Success(workout, $"Returned workout {workout.Id}.");
       });

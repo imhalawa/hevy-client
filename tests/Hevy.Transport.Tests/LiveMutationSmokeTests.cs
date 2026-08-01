@@ -16,7 +16,7 @@ public sealed class LiveMutationSmokeTests
     }
 
     var existing = measurements.Items[0];
-    var request = new BodyMeasurementUpdate(
+    var request = new UpdateBodyMeasurementCommand(new UpdateBodyMeasurementWrite(
         existing.WeightKg,
         existing.LeanMassKg,
         existing.FatPercent,
@@ -33,7 +33,7 @@ public sealed class LiveMutationSmokeTests
         existing.LeftThigh,
         existing.RightThigh,
         existing.LeftCalf,
-        existing.RightCalf);
+        existing.RightCalf));
 
     var updated = await client.UpdateBodyMeasurementAsync(existing.Date, request, CancellationToken.None);
 

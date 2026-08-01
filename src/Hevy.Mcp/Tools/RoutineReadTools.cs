@@ -11,8 +11,7 @@ internal static class RoutineReadTools
   [Description("Get one page of routines; compact output omits nested exercises unless detail is full.")]
   internal static Task<CallToolResult> GetRoutines(IServiceProvider services, [Range(1, int.MaxValue)] int page = 1, [Range(1, 10)] int page_size = 10, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidatePagination(page, page_size);
-    ToolResults.ValidateDetail(detail);
+    new PageRequest(page, page_size, 10, detail).Validate();
     var cache = ToolResults.Cache(services);
     var result = cache is null
         ? await ToolResults.Client(services).GetRoutinesAsync(page, page_size, cancellationToken)
@@ -25,7 +24,6 @@ internal static class RoutineReadTools
   [Description("Get one routine with complete nested exercises and sets; set units are kilograms, meters, and seconds.")]
   internal static Task<CallToolResult> GetRoutine(IServiceProvider services, string routine_id, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidateIdentifier(routine_id, nameof(routine_id));
     var client = ToolResults.Client(services);
     var cache = ToolResults.Cache(services);
     var item = cache is null
@@ -39,8 +37,7 @@ internal static class RoutineReadTools
   [Description("Get one page of routine folders with UTC updated and created timestamps.")]
   internal static Task<CallToolResult> GetRoutineFolders(IServiceProvider services, [Range(1, int.MaxValue)] int page = 1, [Range(1, 10)] int page_size = 10, [RegularExpression("^(compact|full)$")] string detail = "compact", CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidatePagination(page, page_size);
-    ToolResults.ValidateDetail(detail);
+    new PageRequest(page, page_size, 10, detail).Validate();
     var result = await ToolResults.Client(services).GetRoutineFoldersAsync(page, page_size, cancellationToken);
     return ToolResults.Success(new { items = result.Items }, $"Returned {result.Items.Count} routine folders.", ToolResults.PageMeta(result.Page, result.PageCount, page_size, detail));
   });

@@ -7,8 +7,6 @@ internal static class StdioHost
 {
   internal static async Task RunAsync(string[] args, HevyMcpOptions options, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(args);
-    ArgumentNullException.ThrowIfNull(options);
 
     var builder = Host.CreateApplicationBuilder(args);
     builder.Logging.ClearProviders();

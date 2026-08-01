@@ -29,9 +29,6 @@ public sealed class HevyClient : IHevyClient
 
   internal HevyClient(HttpClient httpClient, HevyClientOptions options, ExerciseHistoryReadLimits exerciseHistoryReadLimits)
   {
-    ArgumentNullException.ThrowIfNull(httpClient);
-    ArgumentNullException.ThrowIfNull(options);
-    ArgumentNullException.ThrowIfNull(exerciseHistoryReadLimits);
     exerciseHistoryReadLimits.Validate();
 
     httpClient.BaseAddress = HevyAuthenticationHandler.ApiOrigin;
@@ -42,20 +39,17 @@ public sealed class HevyClient : IHevyClient
     this.exerciseHistoryReadLimits = exerciseHistoryReadLimits;
   }
 
-  internal static HevyRetryHandler CreateProductionPipeline(HevyClientOptions options)
-  {
-    ArgumentNullException.ThrowIfNull(options);
-    return new HevyRetryHandler
-    {
-      InnerHandler = new HevyAuthenticationHandler(options)
+  internal static HevyRetryHandler CreateProductionPipeline(HevyClientOptions options) =>
+      new()
       {
-        InnerHandler = new HttpClientHandler
+        InnerHandler = new HevyAuthenticationHandler(options)
         {
-          AllowAutoRedirect = false,
+          InnerHandler = new HttpClientHandler
+          {
+            AllowAutoRedirect = false,
+          },
         },
-      },
-    };
-  }
+      };
 
   public async Task<PagedResult<Workout>> GetWorkoutsAsync(int page, int pageSize, CancellationToken cancellationToken)
   {
@@ -130,7 +124,6 @@ public sealed class HevyClient : IHevyClient
       ExerciseHistoryQuery request,
       CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(request);
     request.Validate();
     HevyAuthenticationHandler.EnsureSafeTarget(httpClient.BaseAddress);
 
@@ -191,48 +184,36 @@ public sealed class HevyClient : IHevyClient
 
   public async Task<Workout> CreateWorkoutAsync(CreateWorkoutCommand command, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(command);
-    command.Validate();
     CreateWorkoutRequest request = command;
     return (await SendMutationAsync(HttpMethod.Post, "v1/workouts", request, HevyJsonContext.Default.CreateWorkoutRequest, HevyJsonContext.Default.WorkoutResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
 
   public async Task<Workout> UpdateWorkoutAsync(string workoutId, UpdateWorkoutCommand command, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(command);
-    command.Validate();
     UpdateWorkoutRequest request = command;
     return (await SendMutationAsync(HttpMethod.Put, $"v1/workouts/{EscapeIdentifier(workoutId, nameof(workoutId))}", request, HevyJsonContext.Default.UpdateWorkoutRequest, HevyJsonContext.Default.WorkoutResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
 
   public async Task<Routine> CreateRoutineAsync(CreateRoutineCommand command, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(command);
-    command.Validate();
     CreateRoutineRequest request = command;
     return (await SendMutationAsync(HttpMethod.Post, "v1/routines", request, HevyJsonContext.Default.CreateRoutineRequest, HevyJsonContext.Default.RoutineResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
 
   public async Task<Routine> UpdateRoutineAsync(string routineId, UpdateRoutineCommand command, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(command);
-    command.Validate();
     UpdateRoutineRequest request = command;
     return (await SendMutationAsync(HttpMethod.Put, $"v1/routines/{EscapeIdentifier(routineId, nameof(routineId))}", request, HevyJsonContext.Default.UpdateRoutineRequest, HevyJsonContext.Default.RoutineResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
 
   public async Task<RoutineFolder> CreateRoutineFolderAsync(CreateRoutineFolderCommand command, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(command);
-    command.Validate();
     CreateRoutineFolderRequest request = command;
     return (await SendMutationAsync(HttpMethod.Post, "v1/routine_folders", request, HevyJsonContext.Default.CreateRoutineFolderRequest, HevyJsonContext.Default.RoutineFolderResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
 
   public async Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateCommand command, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(command);
-    command.Validate();
     CreateExerciseTemplateRequest request = command;
     var response = await SendMutationAsync(HttpMethod.Post, "v1/exercise_templates", request, HevyJsonContext.Default.CreateExerciseTemplateRequest, HevyJsonContext.Default.CreateExerciseTemplateResponse, retrySafe: false, cancellationToken);
     return await ReadCommittedResultAsync(
@@ -240,20 +221,16 @@ public sealed class HevyClient : IHevyClient
         cancellationToken);
   }
 
-  public async Task<BodyMeasurement> CreateBodyMeasurementAsync(NewBodyMeasurement measurement, CancellationToken cancellationToken)
+  public async Task<BodyMeasurement> CreateBodyMeasurementAsync(CreateBodyMeasurementCommand command, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(measurement);
-    measurement.Validate();
-    CreateBodyMeasurementRequest request = measurement;
+    CreateBodyMeasurementRequest request = command;
     await SendMutationWithoutResponseAsync(HttpMethod.Post, "v1/body_measurements", request, HevyJsonContext.Default.CreateBodyMeasurementRequest, retrySafe: false, cancellationToken);
-    return await ReadCommittedResultAsync(() => GetBodyMeasurementAsync(measurement.Date, cancellationToken), cancellationToken);
+    return await ReadCommittedResultAsync(() => GetBodyMeasurementAsync(command.Measurement.Date, cancellationToken), cancellationToken);
   }
 
-  public async Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, BodyMeasurementUpdate measurement, CancellationToken cancellationToken)
+  public async Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, UpdateBodyMeasurementCommand command, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(measurement);
-    measurement.Validate(date);
-    UpdateBodyMeasurementRequest request = measurement;
+    UpdateBodyMeasurementRequest request = command;
     await SendMutationWithoutResponseAsync(HttpMethod.Put, $"v1/body_measurements/{date:yyyy-MM-dd}", request, HevyJsonContext.Default.UpdateBodyMeasurementRequest, retrySafe: true, cancellationToken);
     return await ReadCommittedResultAsync(() => GetBodyMeasurementAsync(date, cancellationToken), cancellationToken);
   }

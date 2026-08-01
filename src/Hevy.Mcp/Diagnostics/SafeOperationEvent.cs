@@ -20,7 +20,6 @@ internal sealed record SafeOperationEvent(
       Guid fallbackCorrelationId,
       string operationName = "unknown")
   {
-    ArgumentNullException.ThrowIfNull(result);
 
     var correlationId = fallbackCorrelationId;
     var exceptionCategory = DiagnosticExceptionCategory.None;

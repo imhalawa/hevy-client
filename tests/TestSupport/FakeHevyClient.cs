@@ -131,8 +131,8 @@ public sealed class FakeHevyClient : IHevyClient
     Record(nameof(CreateExerciseTemplateAsync), request, cancellationToken);
     return CreateExerciseTemplateHandler?.Invoke(request, cancellationToken) ?? Task.FromResult(ExerciseTemplate);
   }
-  public Task<BodyMeasurement> CreateBodyMeasurementAsync(NewBodyMeasurement request, CancellationToken cancellationToken) => Return(nameof(CreateBodyMeasurementAsync), BodyMeasurement, cancellationToken, request);
-  public Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, BodyMeasurementUpdate request, CancellationToken cancellationToken) => Return(nameof(UpdateBodyMeasurementAsync), BodyMeasurement, cancellationToken, new { date, request });
+  public Task<BodyMeasurement> CreateBodyMeasurementAsync(CreateBodyMeasurementCommand request, CancellationToken cancellationToken) => Return(nameof(CreateBodyMeasurementAsync), BodyMeasurement, cancellationToken, request);
+  public Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, UpdateBodyMeasurementCommand request, CancellationToken cancellationToken) => Return(nameof(UpdateBodyMeasurementAsync), BodyMeasurement, cancellationToken, new { date, request });
 
   private Task<T> Return<T>(string operation, T result, CancellationToken token, object? request = null)
   {

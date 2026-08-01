@@ -5,6 +5,7 @@ namespace Hevy.Client.Serialization;
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
+    RespectNullableAnnotations = true,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(WorkoutResponse))]
 [JsonSerializable(typeof(WorkoutPageResponse))]

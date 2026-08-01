@@ -8,32 +8,32 @@ public sealed record ExerciseHistoryQuery(int Offset, int Limit, DateOnly? Start
 
   public void Validate()
   {
-    ArgumentOutOfRangeException.ThrowIfLessThan(Offset, 0, "Offset");
-    ArgumentOutOfRangeException.ThrowIfLessThan(Limit, 1, "Limit");
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(Limit, 1000, "Limit");
-    if ((long)Offset + (long)Limit > 1000)
+    ArgumentOutOfRangeException.ThrowIfLessThan(Offset, 0, nameof(Offset));
+    ArgumentOutOfRangeException.ThrowIfLessThan(Limit, 1, nameof(Limit));
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(Limit, MaximumLimit, nameof(Limit));
+    if ((long)Offset + Limit > MaximumScannedItems)
     {
-      throw new ArgumentOutOfRangeException("Offset", $"The requested history window exceeds the {1000}-item scan limit.");
+      throw new ArgumentOutOfRangeException(nameof(Offset), $"The requested history window exceeds the {MaximumScannedItems}-item scan limit.");
     }
     if (StartDate.HasValue && EndDate.HasValue && StartDate > EndDate)
     {
-      throw new ArgumentException("The start date cannot be after the end date.", "StartDate");
+      throw new ArgumentException("The start date cannot be after the end date.", nameof(StartDate));
     }
     if (EligibleStartTime.HasValue && EligibleEndTime.HasValue && EligibleStartTime >= EligibleEndTime)
     {
-      throw new ArgumentException("The eligible start time must be before the eligible end time.", "EligibleStartTime");
+      throw new ArgumentException("The eligible start time must be before the eligible end time.", nameof(EligibleStartTime));
     }
   }
 
   public static int PageOffset(int page, int pageSize)
   {
-    ArgumentOutOfRangeException.ThrowIfLessThan(page, 1, "page");
-    ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1, "pageSize");
-    long num = ((long)page - 1L) * pageSize;
-    if (num > int.MaxValue || num + pageSize > 1000)
+    ArgumentOutOfRangeException.ThrowIfLessThan(page, 1, nameof(page));
+    ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1, nameof(pageSize));
+    var offset = ((long)page - 1) * pageSize;
+    if (offset > int.MaxValue || offset + pageSize > MaximumScannedItems)
     {
-      throw new ArgumentOutOfRangeException("page", $"The requested history page exceeds the {1000}-item scan limit.");
+      throw new ArgumentOutOfRangeException(nameof(page), $"The requested history page exceeds the {MaximumScannedItems}-item scan limit.");
     }
-    return (int)num;
+    return (int)offset;
   }
 }

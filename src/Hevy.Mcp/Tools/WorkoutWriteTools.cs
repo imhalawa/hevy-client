@@ -15,12 +15,11 @@ internal static class WorkoutWriteTools
       [Description("Validate and return the exact normalized payload without contacting Hevy.")] bool dry_run = false,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
       {
-        ArgumentNullException.ThrowIfNull(request);
         CreateWorkoutCommand command = request;
-        var result = await command.ExecuteAsync(ToolResults.Client(services), dry_run, cancellationToken);
+        var result = await new CreateWorkoutUseCase(ToolResults.Client(services)).ExecuteAsync(command, dry_run, cancellationToken);
         if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateWorkoutRequest, Workout>(request), "Workout payload is valid; no request was sent.", ToolResults.DryRunMeta());
-        ArgumentNullException.ThrowIfNull(result);
-        return ToolResults.Success(ToolResults.MutationResult<CreateWorkoutRequest, Workout>(result), $"Created workout {result.Id}.", new MutationMeta(false));
+        var workout = result ?? throw new InvalidOperationException("The create-workout use case returned no result.");
+        return ToolResults.Success(ToolResults.MutationResult<CreateWorkoutRequest, Workout>(workout), $"Created workout {workout.Id}.", new MutationMeta(false));
       });
 
   [McpServerTool(Name = "update_workout", Destructive = true, Idempotent = false, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<MutationData<UpdateWorkoutRequest, Workout>, MutationMeta>))]
@@ -34,11 +33,10 @@ internal static class WorkoutWriteTools
       [Description("Validate and return the exact normalized payload without contacting Hevy.")] bool dry_run = false,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
       {
-        ArgumentNullException.ThrowIfNull(request);
         UpdateWorkoutCommand command = request;
-        var result = await command.ExecuteAsync(ToolResults.Client(services), workout_id, expected_updated_at, force, dry_run, cancellationToken);
+        var result = await new UpdateWorkoutUseCase(ToolResults.Client(services)).ExecuteAsync(workout_id, command, expected_updated_at, force, dry_run, cancellationToken);
         if (dry_run) return ToolResults.Success(ToolResults.DryRunData<UpdateWorkoutRequest, Workout>(request), "Workout replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));
-        ArgumentNullException.ThrowIfNull(result);
-        return ToolResults.Success(ToolResults.MutationResult<UpdateWorkoutRequest, Workout>(result), $"Updated workout {result.Id}.", new MutationMeta(false, force, expected_updated_at));
+        var workout = result ?? throw new InvalidOperationException("The update-workout use case returned no result.");
+        return ToolResults.Success(ToolResults.MutationResult<UpdateWorkoutRequest, Workout>(workout), $"Updated workout {workout.Id}.", new MutationMeta(false, force, expected_updated_at));
       });
 }

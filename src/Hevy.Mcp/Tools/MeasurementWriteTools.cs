@@ -11,12 +11,11 @@ internal static class MeasurementWriteTools
   [Description("Create body measurements for one calendar date; weight is kilograms and circumference is centimeters.")]
   internal static Task<CallToolResult> CreateBodyMeasurement(IServiceProvider services, CreateBodyMeasurementRequest request, bool dry_run = false, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ArgumentNullException.ThrowIfNull(request);
-    NewBodyMeasurement measurement = request;
-    var result = await measurement.ExecuteAsync(ToolResults.Client(services), dry_run, cancellationToken);
+    CreateBodyMeasurementCommand command = request;
+    var result = await new CreateBodyMeasurementUseCase(ToolResults.Client(services)).ExecuteAsync(command, dry_run, cancellationToken);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateBodyMeasurementRequest, BodyMeasurement>(request), "Body-measurement payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    ArgumentNullException.ThrowIfNull(result);
-    return ToolResults.Success(ToolResults.MutationResult<CreateBodyMeasurementRequest, BodyMeasurement>(result), $"Created body measurement for {result.Date:yyyy-MM-dd}.", new MutationMeta(false));
+    var measurement = result ?? throw new InvalidOperationException("The create-body-measurement use case returned no result.");
+    return ToolResults.Success(ToolResults.MutationResult<CreateBodyMeasurementRequest, BodyMeasurement>(measurement), $"Created body measurement for {measurement.Date:yyyy-MM-dd}.", new MutationMeta(false));
   });
 
   [McpServerTool(Name = "update_body_measurement", Destructive = true, Idempotent = true, OpenWorld = true, UseStructuredContent = true, OutputSchemaType = typeof(ToolOutput<MutationData<UpdateBodyMeasurementRequest, BodyMeasurement>, MutationMeta>))]
@@ -30,14 +29,13 @@ internal static class MeasurementWriteTools
       bool dry_run = false,
       CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ArgumentNullException.ThrowIfNull(request);
     var guardLimitation = "Hevy body measurements do not expose updated_at; writes require explicit force after reviewing current state.";
     var dryRunMeta = new MutationMeta(true, force, expected_updated_at, [], GuardAvailable: false, GuardLimitation: guardLimitation);
-    BodyMeasurementUpdate measurement = request;
+    UpdateBodyMeasurementCommand command = request;
     BodyMeasurement? result;
     try
     {
-      result = await measurement.ExecuteAsync(ToolResults.Client(services), date, expected_updated_at, force, dry_run, cancellationToken);
+      result = await new UpdateBodyMeasurementUseCase(ToolResults.Client(services)).ExecuteAsync(date, command, expected_updated_at, force, dry_run, cancellationToken);
     }
     catch (Hevy.Core.Exceptions.HevyConflictException exception)
     {
@@ -46,7 +44,7 @@ internal static class MeasurementWriteTools
           new MutationMeta(false, false, expected_updated_at, GuardAvailable: false, GuardLimitation: guardLimitation));
     }
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<UpdateBodyMeasurementRequest, BodyMeasurement>(request), "Body-measurement replacement payload is valid; no request was sent.", dryRunMeta);
-    ArgumentNullException.ThrowIfNull(result);
-    return ToolResults.Success(ToolResults.MutationResult<UpdateBodyMeasurementRequest, BodyMeasurement>(result), $"Updated body measurement for {result.Date:yyyy-MM-dd}.", new MutationMeta(false, true, expected_updated_at, GuardAvailable: false, GuardLimitation: guardLimitation));
+    var measurement = result ?? throw new InvalidOperationException("The update-body-measurement use case returned no result.");
+    return ToolResults.Success(ToolResults.MutationResult<UpdateBodyMeasurementRequest, BodyMeasurement>(measurement), $"Updated body measurement for {measurement.Date:yyyy-MM-dd}.", new MutationMeta(false, true, expected_updated_at, GuardAvailable: false, GuardLimitation: guardLimitation));
   });
 }
