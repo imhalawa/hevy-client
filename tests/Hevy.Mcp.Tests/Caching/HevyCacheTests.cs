@@ -1,4 +1,3 @@
-using Hevy.Core.Models;
 using Hevy.Mcp.Caching;
 using Microsoft.Extensions.Caching.Memory;
 using TestSupport;

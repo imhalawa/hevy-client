@@ -1,6 +1,4 @@
 using System.Text.Json;
-using Hevy.Client;
-using Hevy.Core.Models;
 using Hevy.Mcp.Composite;
 using TestSupport;
 using Xunit;

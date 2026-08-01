@@ -5,7 +5,6 @@ using Hevy.Mcp.Composite;
 using Hevy.Mcp.Diagnostics;
 using Hevy.Mcp.Prompts;
 using Hevy.Mcp.Tools;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.Reflection;

@@ -1,5 +1,3 @@
-using System.Collections.Immutable;
-
 namespace Hevy.Client.Models;
 
 public sealed record CreateRoutineWriteRequest(string Title, long? FolderId, string Notes, ImmutableList<CreateRoutineExerciseWriteRequest> Exercises)

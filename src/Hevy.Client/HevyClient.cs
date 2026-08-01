@@ -1,12 +1,10 @@
 using System.Globalization;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Hevy.Core.Exceptions;
 using Hevy.Client.Models;
 using Hevy.Client.Http;
-using Hevy.Core.Models;
 using Hevy.Client.Serialization;
 using Refit;
 
@@ -194,7 +192,7 @@ public sealed class HevyClient : IHevyClient
   public async Task<Workout> CreateWorkoutAsync(CreateWorkoutCommand command, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(command);
-    ValidateWorkout(command.Workout);
+    command.Validate();
     CreateWorkoutRequest request = command;
     return (await SendMutationAsync(HttpMethod.Post, "v1/workouts", request, HevyJsonContext.Default.CreateWorkoutRequest, HevyJsonContext.Default.WorkoutResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
@@ -202,7 +200,7 @@ public sealed class HevyClient : IHevyClient
   public async Task<Workout> UpdateWorkoutAsync(string workoutId, UpdateWorkoutCommand command, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(command);
-    ValidateWorkout(command.Workout);
+    command.Validate();
     UpdateWorkoutRequest request = command;
     return (await SendMutationAsync(HttpMethod.Put, $"v1/workouts/{EscapeIdentifier(workoutId, nameof(workoutId))}", request, HevyJsonContext.Default.UpdateWorkoutRequest, HevyJsonContext.Default.WorkoutResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
@@ -210,7 +208,7 @@ public sealed class HevyClient : IHevyClient
   public async Task<Routine> CreateRoutineAsync(CreateRoutineCommand command, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(command);
-    ValidateRoutine(command.Routine);
+    command.Validate();
     CreateRoutineRequest request = command;
     return (await SendMutationAsync(HttpMethod.Post, "v1/routines", request, HevyJsonContext.Default.CreateRoutineRequest, HevyJsonContext.Default.RoutineResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
@@ -218,7 +216,7 @@ public sealed class HevyClient : IHevyClient
   public async Task<Routine> UpdateRoutineAsync(string routineId, UpdateRoutineCommand command, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(command);
-    ValidateRoutine(command.Routine);
+    command.Validate();
     UpdateRoutineRequest request = command;
     return (await SendMutationAsync(HttpMethod.Put, $"v1/routines/{EscapeIdentifier(routineId, nameof(routineId))}", request, HevyJsonContext.Default.UpdateRoutineRequest, HevyJsonContext.Default.RoutineResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
@@ -226,8 +224,7 @@ public sealed class HevyClient : IHevyClient
   public async Task<RoutineFolder> CreateRoutineFolderAsync(CreateRoutineFolderCommand command, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(command);
-    ArgumentNullException.ThrowIfNull(command.RoutineFolder);
-    ValidateRequiredText(command.RoutineFolder.Title, "routine folder title");
+    command.Validate();
     CreateRoutineFolderRequest request = command;
     return (await SendMutationAsync(HttpMethod.Post, "v1/routine_folders", request, HevyJsonContext.Default.CreateRoutineFolderRequest, HevyJsonContext.Default.RoutineFolderResponse, retrySafe: false, cancellationToken)).ToDomain();
   }
@@ -235,7 +232,7 @@ public sealed class HevyClient : IHevyClient
   public async Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateCommand command, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(command);
-    ValidateExerciseTemplate(command.Exercise);
+    command.Validate();
     CreateExerciseTemplateRequest request = command;
     var response = await SendMutationAsync(HttpMethod.Post, "v1/exercise_templates", request, HevyJsonContext.Default.CreateExerciseTemplateRequest, HevyJsonContext.Default.CreateExerciseTemplateResponse, retrySafe: false, cancellationToken);
     return await ReadCommittedResultAsync(
@@ -246,8 +243,7 @@ public sealed class HevyClient : IHevyClient
   public async Task<BodyMeasurement> CreateBodyMeasurementAsync(NewBodyMeasurement measurement, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(measurement);
-    ValidateMeasurementDate(measurement.Date, nameof(measurement));
-    ValidateMeasurementValues(measurement.WeightKg, measurement.LeanMassKg, measurement.FatPercent, measurement.NeckCm, measurement.ShoulderCm, measurement.ChestCm, measurement.LeftBicepCm, measurement.RightBicepCm, measurement.LeftForearmCm, measurement.RightForearmCm, measurement.Abdomen, measurement.Waist, measurement.Hips, measurement.LeftThigh, measurement.RightThigh, measurement.LeftCalf, measurement.RightCalf);
+    measurement.Validate();
     CreateBodyMeasurementRequest request = measurement;
     await SendMutationWithoutResponseAsync(HttpMethod.Post, "v1/body_measurements", request, HevyJsonContext.Default.CreateBodyMeasurementRequest, retrySafe: false, cancellationToken);
     return await ReadCommittedResultAsync(() => GetBodyMeasurementAsync(measurement.Date, cancellationToken), cancellationToken);
@@ -256,8 +252,7 @@ public sealed class HevyClient : IHevyClient
   public async Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, BodyMeasurementUpdate measurement, CancellationToken cancellationToken)
   {
     ArgumentNullException.ThrowIfNull(measurement);
-    ValidateMeasurementDate(date, nameof(date));
-    ValidateMeasurementValues(measurement.WeightKg, measurement.LeanMassKg, measurement.FatPercent, measurement.NeckCm, measurement.ShoulderCm, measurement.ChestCm, measurement.LeftBicepCm, measurement.RightBicepCm, measurement.LeftForearmCm, measurement.RightForearmCm, measurement.Abdomen, measurement.Waist, measurement.Hips, measurement.LeftThigh, measurement.RightThigh, measurement.LeftCalf, measurement.RightCalf);
+    measurement.Validate(date);
     UpdateBodyMeasurementRequest request = measurement;
     await SendMutationWithoutResponseAsync(HttpMethod.Put, $"v1/body_measurements/{date:yyyy-MM-dd}", request, HevyJsonContext.Default.UpdateBodyMeasurementRequest, retrySafe: true, cancellationToken);
     return await ReadCommittedResultAsync(() => GetBodyMeasurementAsync(date, cancellationToken), cancellationToken);
@@ -411,119 +406,6 @@ public sealed class HevyClient : IHevyClient
         items.Count > requestedPageSize)
     {
       throw HevyResponse.UnexpectedResponse(System.Net.HttpStatusCode.OK);
-    }
-  }
-
-  private static void ValidateWorkout(CreateWorkoutWrite workout)
-  {
-    ArgumentNullException.ThrowIfNull(workout);
-    ValidateRequiredText(workout.Title, "workout title");
-    if (workout.EndTime < workout.StartTime)
-    {
-      throw new ArgumentException("Workout end time cannot be before its start time.", nameof(workout));
-    }
-
-    ArgumentNullException.ThrowIfNull(workout.Exercises);
-    foreach (var exercise in workout.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      ValidateRequiredText(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets)
-      {
-        ArgumentNullException.ThrowIfNull(set);
-      }
-    }
-  }
-
-  private static void ValidateWorkout(UpdateWorkoutWrite workout)
-  {
-    ArgumentNullException.ThrowIfNull(workout);
-    ValidateRequiredText(workout.Title, "workout title");
-    if (workout.EndTime < workout.StartTime)
-    {
-      throw new ArgumentException("Workout end time cannot be before its start time.", nameof(workout));
-    }
-
-    ArgumentNullException.ThrowIfNull(workout.Exercises);
-    foreach (var exercise in workout.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      ValidateRequiredText(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets)
-      {
-        ArgumentNullException.ThrowIfNull(set);
-      }
-    }
-  }
-
-  private static void ValidateRoutine(CreateRoutineWrite routine)
-  {
-    ArgumentNullException.ThrowIfNull(routine);
-    ValidateRequiredText(routine.Title, "routine title");
-    ArgumentNullException.ThrowIfNull(routine.Exercises);
-    foreach (var exercise in routine.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      ValidateRequiredText(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets)
-      {
-        ArgumentNullException.ThrowIfNull(set);
-      }
-    }
-  }
-
-  private static void ValidateRoutine(UpdateRoutineWrite routine)
-  {
-    ArgumentNullException.ThrowIfNull(routine);
-    ValidateRequiredText(routine.Title, "routine title");
-    ArgumentNullException.ThrowIfNull(routine.Exercises);
-    foreach (var exercise in routine.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      ValidateRequiredText(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets)
-      {
-        ArgumentNullException.ThrowIfNull(set);
-      }
-    }
-  }
-
-  private static void ValidateExerciseTemplate(CustomExerciseWrite exercise)
-  {
-    ArgumentNullException.ThrowIfNull(exercise);
-    ValidateRequiredText(exercise.Title, "exercise title");
-    ArgumentNullException.ThrowIfNull(exercise.OtherMuscles);
-    if (!Enum.IsDefined(exercise.ExerciseType) || !Enum.IsDefined(exercise.EquipmentCategory) || !Enum.IsDefined(exercise.MuscleGroup) || exercise.OtherMuscles.Any(muscle => !Enum.IsDefined(muscle)))
-    {
-      throw new ArgumentOutOfRangeException(nameof(exercise), "Exercise fields must use documented enum values.");
-    }
-  }
-
-  private static void ValidateMeasurementDate(DateOnly date, string parameterName)
-  {
-    if (date == DateOnly.MinValue)
-    {
-      throw new ArgumentOutOfRangeException(parameterName, "A measurement date is required.");
-    }
-  }
-
-  private static void ValidateMeasurementValues(params decimal?[] values)
-  {
-    if (values.Any(value => value is < 0))
-    {
-      throw new ArgumentOutOfRangeException(nameof(values), "Measurement values cannot be negative.");
-    }
-  }
-
-  private static void ValidateRequiredText(string value, string fieldName)
-  {
-    if (string.IsNullOrWhiteSpace(value))
-    {
-      throw new ArgumentException($"A {fieldName} is required.", fieldName);
     }
   }
 

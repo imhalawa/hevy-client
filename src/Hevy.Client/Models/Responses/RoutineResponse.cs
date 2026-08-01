@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 
 namespace Hevy.Client.Models;

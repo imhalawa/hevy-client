@@ -1,8 +1,5 @@
 using Hevy.Mcp.Configuration;
 using Hevy.Mcp.Diagnostics;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace Hevy.Mcp.Hosting;
 

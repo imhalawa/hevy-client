@@ -1,5 +1,3 @@
-using System;
-
 namespace Hevy.Core.UseCases;
 
 public sealed record ExerciseHistoryQuery(int Offset, int Limit, DateOnly? StartDate = null, DateOnly? EndDate = null, DateTimeOffset? EligibleStartTime = null, DateTimeOffset? EligibleEndTime = null)

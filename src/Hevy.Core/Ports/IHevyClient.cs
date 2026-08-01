@@ -1,8 +1,3 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Hevy.Core.Models;
-
 namespace Hevy.Core.Ports;
 
 public interface IHevyClient

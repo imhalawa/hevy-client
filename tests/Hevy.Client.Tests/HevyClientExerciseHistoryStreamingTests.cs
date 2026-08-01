@@ -1,9 +1,7 @@
 using System.Net;
 using System.Text;
-using Hevy.Client;
 using Hevy.Core.Exceptions;
 using Hevy.Client.Http;
-using Hevy.Core.Models;
 using TestSupport;
 using Xunit;
 

@@ -1,6 +1,4 @@
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
-using Hevy.Core.Models;
 using Hevy.Client.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -15,10 +13,10 @@ internal static class ExerciseWriteTools
   {
     ArgumentNullException.ThrowIfNull(request);
     CreateExerciseTemplateCommand command = request;
-    ToolValidation.Exercise(command.Exercise);
+    if (!dry_run) ToolResults.Cache(services)?.InvalidateExerciseTemplates();
+    var result = await command.ExecuteAsync(ToolResults.Client(services), dry_run, cancellationToken);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateExerciseTemplateRequest, ExerciseTemplate>(request), "Exercise-template payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    ToolResults.Cache(services)?.InvalidateExerciseTemplates();
-    var result = await ToolResults.Client(services).CreateExerciseTemplateAsync(command, cancellationToken);
+    ArgumentNullException.ThrowIfNull(result);
     return ToolResults.Success(ToolResults.MutationResult<CreateExerciseTemplateRequest, ExerciseTemplate>(result), $"Created exercise template {result.Id}.", new MutationMeta(false));
   });
 }

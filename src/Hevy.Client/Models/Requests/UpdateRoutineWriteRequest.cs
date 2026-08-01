@@ -1,5 +1,3 @@
-using System.Collections.Immutable;
-
 namespace Hevy.Client.Models;
 
 public sealed record UpdateRoutineWriteRequest(string Title, string? Notes, ImmutableList<UpdateRoutineExerciseWriteRequest> Exercises)

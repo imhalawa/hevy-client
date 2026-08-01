@@ -5,7 +5,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Using Include="Hevy.Client.Models" />
     <ProjectReference Include="../../src/Hevy.Client/Hevy.Client.csproj" />
+    <PackageReference Include="AutoFixture" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="FluentAssertions.Analyzers">
       <PrivateAssets>all</PrivateAssets>

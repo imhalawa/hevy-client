@@ -1,5 +1,4 @@
 using System.Net;
-using Hevy.Client;
 using Hevy.Core.Exceptions;
 using TestSupport;
 using Xunit;

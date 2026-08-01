@@ -1,5 +1,3 @@
-using Hevy.Core.Models;
-
 namespace Hevy.Client.Models;
 
 public sealed record UpdateWorkoutRequest(WorkoutWriteRequest Workout)

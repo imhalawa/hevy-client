@@ -51,6 +51,10 @@ internal static class ToolExceptionFilter
           exception.StatusCode is null ? null : (int)exception.StatusCode.Value,
           exception.RequestId));
     }
+    catch (HevyConflictException exception)
+    {
+      return Conflict(exception.Message);
+    }
     catch (ArgumentException exception)
     {
       return Validation(exception.Message);

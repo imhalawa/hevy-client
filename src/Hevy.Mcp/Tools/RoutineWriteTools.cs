@@ -1,6 +1,4 @@
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
-using Hevy.Core.Models;
 using Hevy.Client.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -15,10 +13,10 @@ internal static class RoutineWriteTools
   {
     ArgumentNullException.ThrowIfNull(request);
     CreateRoutineCommand command = request;
-    ToolValidation.Routine(command.Routine);
+    if (!dry_run) ToolResults.Cache(services)?.InvalidateRoutines();
+    var result = await command.ExecuteAsync(ToolResults.Client(services), dry_run, cancellationToken);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateRoutineRequest, Routine>(request), "Routine payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    ToolResults.Cache(services)?.InvalidateRoutines();
-    var result = await ToolResults.Client(services).CreateRoutineAsync(command, cancellationToken);
+    ArgumentNullException.ThrowIfNull(result);
     return ToolResults.Success(ToolResults.MutationResult<CreateRoutineRequest, Routine>(result), $"Created routine {result.Id}.", new MutationMeta(false));
   });
 
@@ -26,20 +24,12 @@ internal static class RoutineWriteTools
   [Description("Replace a routine after an updated_at guard, or explicitly bypass the guard with force.")]
   internal static Task<CallToolResult> UpdateRoutine(IServiceProvider services, string routine_id, UpdateRoutineRequest request, DateTimeOffset? expected_updated_at = null, bool force = false, bool dry_run = false, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
-    ToolResults.ValidateIdentifier(routine_id, nameof(routine_id));
     ArgumentNullException.ThrowIfNull(request);
     UpdateRoutineCommand command = request;
-    ToolValidation.Routine(command.Routine);
-    ToolValidation.Guard(expected_updated_at, force);
+    if (!dry_run) ToolResults.Cache(services)?.InvalidateRoutines();
+    var result = await command.ExecuteAsync(ToolResults.Client(services), routine_id, expected_updated_at, force, dry_run, cancellationToken);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<UpdateRoutineRequest, Routine>(request), "Routine replacement payload is valid; no request was sent.", ToolResults.DryRunMeta(force, expected_updated_at));
-    var client = ToolResults.Client(services);
-    if (!force)
-    {
-      var current = await client.GetRoutineAsync(routine_id, cancellationToken);
-      if (current.UpdatedAt != expected_updated_at) return ToolExceptionFilter.Conflict("The routine changed since expected_updated_at; read it again before replacing it.");
-    }
-    ToolResults.Cache(services)?.InvalidateRoutines();
-    var result = await client.UpdateRoutineAsync(routine_id, command, cancellationToken);
+    ArgumentNullException.ThrowIfNull(result);
     return ToolResults.Success(ToolResults.MutationResult<UpdateRoutineRequest, Routine>(result), $"Updated routine {result.Id}.", new MutationMeta(false, force, expected_updated_at));
   });
 
@@ -48,10 +38,10 @@ internal static class RoutineWriteTools
   internal static Task<CallToolResult> CreateRoutineFolder(IServiceProvider services, CreateRoutineFolderRequest request, bool dry_run = false, CancellationToken cancellationToken = default) => ToolExceptionFilter.ExecuteAsync(async () =>
   {
     ArgumentNullException.ThrowIfNull(request);
-    ArgumentNullException.ThrowIfNull(request.RoutineFolder);
-    ToolValidation.Required(request.RoutineFolder.Title, "routine folder title");
+    CreateRoutineFolderCommand command = request;
+    var result = await command.ExecuteAsync(ToolResults.Client(services), dry_run, cancellationToken);
     if (dry_run) return ToolResults.Success(ToolResults.DryRunData<CreateRoutineFolderRequest, RoutineFolder>(request), "Routine-folder payload is valid; no request was sent.", ToolResults.DryRunMeta());
-    var result = await ToolResults.Client(services).CreateRoutineFolderAsync(request, cancellationToken);
+    ArgumentNullException.ThrowIfNull(result);
     return ToolResults.Success(ToolResults.MutationResult<CreateRoutineFolderRequest, RoutineFolder>(result), $"Created routine folder {result.Id}.", new MutationMeta(false));
   });
 }

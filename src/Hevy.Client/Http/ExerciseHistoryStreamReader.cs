@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Hevy.Core.Models;
 using Hevy.Client.Models;
 
 namespace Hevy.Client.Http;

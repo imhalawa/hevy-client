@@ -1,5 +1,3 @@
-using Hevy.Client;
-using Hevy.Core.Models;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Hevy.Mcp.Caching;

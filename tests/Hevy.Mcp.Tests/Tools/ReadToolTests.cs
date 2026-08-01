@@ -1,5 +1,3 @@
-using Hevy.Client;
-using Hevy.Core.Models;
 using Hevy.Mcp.Caching;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -127,9 +125,9 @@ public sealed class ReadToolTests
     await ExerciseReadTools.GetExerciseTemplates(services, 1, 10, "compact", default);
     (client.CallCount).Should().Be(4);
 
-    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineCommand(), false, default);
+    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineRequest>(), false, default);
     await RoutineReadTools.GetRoutine(services, "routine-1", default);
-    await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateCommand(), false, default);
+    await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateRequest>(), false, default);
     await ExerciseReadTools.GetExerciseTemplate(services, "template-1", default);
     (client.CallCount).Should().Be(8);
   }

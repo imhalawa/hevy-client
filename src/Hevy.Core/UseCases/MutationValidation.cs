@@ -1,27 +1,13 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using ModelContextProtocol.Protocol;
-using Hevy.Client;
-using Hevy.Core.Models;
-using Hevy.Mcp.Caching;
+namespace Hevy.Core.UseCases;
 
-namespace Hevy.Mcp.Tools;
-
-internal static class ToolValidation
+internal static class MutationValidation
 {
   internal static void Workout(CreateWorkoutWrite workout)
   {
     ArgumentNullException.ThrowIfNull(workout);
     Required(workout.Title, "workout title");
     if (workout.EndTime < workout.StartTime) throw new ArgumentException("Workout end time cannot be before its start time.", nameof(workout));
-    ArgumentNullException.ThrowIfNull(workout.Exercises);
-    foreach (var exercise in workout.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      Required(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets) ArgumentNullException.ThrowIfNull(set);
-    }
+    Exercises(workout.Exercises, static exercise => exercise.ExerciseTemplateId, static exercise => exercise.Sets);
   }
 
   internal static void Workout(UpdateWorkoutWrite workout)
@@ -29,42 +15,21 @@ internal static class ToolValidation
     ArgumentNullException.ThrowIfNull(workout);
     Required(workout.Title, "workout title");
     if (workout.EndTime < workout.StartTime) throw new ArgumentException("Workout end time cannot be before its start time.", nameof(workout));
-    ArgumentNullException.ThrowIfNull(workout.Exercises);
-    foreach (var exercise in workout.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      Required(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets) ArgumentNullException.ThrowIfNull(set);
-    }
+    Exercises(workout.Exercises, static exercise => exercise.ExerciseTemplateId, static exercise => exercise.Sets);
   }
 
   internal static void Routine(CreateRoutineWrite routine)
   {
     ArgumentNullException.ThrowIfNull(routine);
     Required(routine.Title, "routine title");
-    ArgumentNullException.ThrowIfNull(routine.Exercises);
-    foreach (var exercise in routine.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      Required(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets) ArgumentNullException.ThrowIfNull(set);
-    }
+    Exercises(routine.Exercises, static exercise => exercise.ExerciseTemplateId, static exercise => exercise.Sets);
   }
 
   internal static void Routine(UpdateRoutineWrite routine)
   {
     ArgumentNullException.ThrowIfNull(routine);
     Required(routine.Title, "routine title");
-    ArgumentNullException.ThrowIfNull(routine.Exercises);
-    foreach (var exercise in routine.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      Required(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets) ArgumentNullException.ThrowIfNull(set);
-    }
+    Exercises(routine.Exercises, static exercise => exercise.ExerciseTemplateId, static exercise => exercise.Sets);
   }
 
   internal static void Exercise(CustomExerciseWrite exercise)
@@ -87,14 +52,35 @@ internal static class ToolValidation
 
   internal static void Guard(DateTimeOffset? expectedUpdatedAt, bool force)
   {
-    if (!force && expectedUpdatedAt is null)
-    {
-      throw new ArgumentException("expected_updated_at is required unless force is true.", nameof(expectedUpdatedAt));
-    }
+    if (!force && expectedUpdatedAt is null) throw new ArgumentException("expected_updated_at is required unless force is true.", nameof(expectedUpdatedAt));
+  }
+
+  internal static string Identifier(string value, string parameterName)
+  {
+    if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException("An identifier is required.", parameterName);
+    return value;
   }
 
   internal static void Required(string value, string field)
   {
     if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException($"A {field} is required.", field);
+  }
+
+  private static void Exercises<TExercise, TSet>(
+      IEnumerable<TExercise> exercises,
+      Func<TExercise, string> identifier,
+      Func<TExercise, IEnumerable<TSet>> sets)
+      where TExercise : class
+      where TSet : class
+  {
+    ArgumentNullException.ThrowIfNull(exercises);
+    foreach (var exercise in exercises)
+    {
+      ArgumentNullException.ThrowIfNull(exercise);
+      Required(identifier(exercise), "exercise template id");
+      var exerciseSets = sets(exercise);
+      ArgumentNullException.ThrowIfNull(exerciseSets);
+      foreach (var set in exerciseSets) ArgumentNullException.ThrowIfNull(set);
+    }
   }
 }

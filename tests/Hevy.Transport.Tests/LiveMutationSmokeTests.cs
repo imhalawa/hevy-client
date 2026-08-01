@@ -1,5 +1,4 @@
 using Hevy.Client;
-using Hevy.Core.Models;
 using Xunit;
 
 namespace Hevy.Transport.Tests;

@@ -1,6 +1,3 @@
-using Hevy.Client;
-using Hevy.Core.Models;
-
 namespace TestSupport;
 
 public sealed class FakeHevyClient : IHevyClient

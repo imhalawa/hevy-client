@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using Hevy.Client;
 using Hevy.Mcp.Configuration;
 using Hevy.Mcp.Diagnostics;
 using Hevy.Mcp.Tests.Tools;
@@ -109,7 +108,7 @@ public sealed class RedactingLoggerTests
     var result = await DiagnosticToolDispatch.InvokeAsync(
         cancellationToken => WorkoutWriteTools.CreateWorkout(
             services,
-            FixtureFactory.CreateWorkoutCommand(),
+            FixtureFactory.Create<CreateWorkoutRequest>(),
             dry_run: false,
             cancellationToken),
         DiagnosticOperationCategory.Mutation,

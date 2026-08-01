@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Immutable;
-
 namespace Hevy.Client.Models;
 
 public sealed record WorkoutWriteRequest(string Title, string? Description, DateTimeOffset StartTime, DateTimeOffset EndTime, bool IsPrivate, ImmutableList<WorkoutExerciseWriteRequest> Exercises)

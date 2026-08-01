@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using Hevy.Mcp.Configuration;
-using Microsoft.Extensions.Logging;
 
 namespace Hevy.Mcp.Diagnostics;
 

@@ -1,5 +1,3 @@
-using System.Collections.Immutable;
-
 namespace Hevy.Core.UseCases;
 
 public sealed record ExerciseHistoryWindow(ImmutableList<ExerciseHistoryEntry> Items, bool Truncated, int ScannedItemCount, string? TruncationReason = null)

@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging;
-
 namespace Hevy.Mcp.Diagnostics;
 
 internal sealed class AllowlistLogger(RedactingLoggerProvider provider) : ILogger

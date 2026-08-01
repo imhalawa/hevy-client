@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using Hevy.Core.Models;
 
 namespace Hevy.Client.Models;
 
