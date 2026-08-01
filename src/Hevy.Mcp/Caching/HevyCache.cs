@@ -1,5 +1,5 @@
 using Hevy.Client;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Hevy.Mcp.Caching;
@@ -25,12 +25,12 @@ internal sealed class HevyCache
     _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
   }
 
-  internal static IReadOnlyList<string> CacheKeyNames { get; } = [RoutinesKey, ExerciseTemplatesKey];
+  internal static ImmutableList<string> CacheKeyNames { get; } = [RoutinesKey, ExerciseTemplatesKey];
 
-  internal Task<IReadOnlyList<Routine>> GetRoutinesAsync(CancellationToken cancellationToken) =>
+  internal Task<ImmutableList<Routine>> GetRoutinesAsync(CancellationToken cancellationToken) =>
       GetCatalogAsync(RoutinesKey, _client.GetRoutinesAsync, cancellationToken);
 
-  internal Task<IReadOnlyList<ExerciseTemplate>> GetExerciseTemplatesAsync(CancellationToken cancellationToken) =>
+  internal Task<ImmutableList<ExerciseTemplate>> GetExerciseTemplatesAsync(CancellationToken cancellationToken) =>
       GetCatalogAsync(ExerciseTemplatesKey, _client.GetExerciseTemplatesAsync, cancellationToken);
 
   internal Task<PagedResult<Routine>> GetRoutinePageAsync(int page, CancellationToken cancellationToken) =>
@@ -64,14 +64,14 @@ internal sealed class HevyCache
     return result;
   }
 
-  private async Task<IReadOnlyList<T>> GetCatalogAsync<T>(
+  private async Task<ImmutableList<T>> GetCatalogAsync<T>(
       string key,
       Func<int, int, CancellationToken, Task<PagedResult<T>>> readPage,
       CancellationToken cancellationToken)
       where T : class
   {
     CacheEntry<T> entry;
-    Task<IReadOnlyList<T>> load;
+    Task<ImmutableList<T>> load;
     lock (_sync)
     {
       var now = _timeProvider.GetUtcNow();
@@ -142,14 +142,14 @@ internal sealed class HevyCache
   {
     var fillCancellation = new CancellationTokenSource();
     var entry = new CacheEntry<T>(
-        new Lazy<Task<IReadOnlyList<T>>>(() => LoadCompleteCatalogAsync(readPage, fillCancellation.Token), LazyThreadSafetyMode.ExecutionAndPublication),
+        new Lazy<Task<ImmutableList<T>>>(() => LoadCompleteCatalogAsync(readPage, fillCancellation.Token), LazyThreadSafetyMode.ExecutionAndPublication),
         fillCancellation,
         now);
     _memory.Set(key, entry, new MemoryCacheEntryOptions { Size = 1 });
     return entry;
   }
 
-  private static async Task<IReadOnlyList<T>> LoadCompleteCatalogAsync<T>(
+  private static async Task<ImmutableList<T>> LoadCompleteCatalogAsync<T>(
       Func<int, int, CancellationToken, Task<PagedResult<T>>> readPage,
       CancellationToken cancellationToken)
       where T : class
@@ -191,20 +191,9 @@ internal sealed class HevyCache
 
       if (page >= expectedPageCount)
       {
-        return items.AsReadOnly();
+        return items.ToImmutableList();
       }
     }
   }
 
-  private sealed class CacheEntry<T>(
-      Lazy<Task<IReadOnlyList<T>>> load,
-      CancellationTokenSource fillCancellation,
-      DateTimeOffset lastAccess)
-      where T : class
-  {
-    internal Lazy<Task<IReadOnlyList<T>>> Load { get; } = load;
-    internal CancellationTokenSource FillCancellation { get; } = fillCancellation;
-    internal DateTimeOffset LastAccess { get; set; } = lastAccess;
-    internal int WaiterCount { get; set; }
-  }
 }

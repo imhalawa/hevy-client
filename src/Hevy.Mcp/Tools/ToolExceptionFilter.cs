@@ -1,4 +1,4 @@
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
 using ModelContextProtocol.Protocol;
 
 namespace Hevy.Mcp.Tools;

@@ -3,6 +3,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-noble@sha256:ed034a8bf0b24ded0cbbac07e178
 WORKDIR /source
 
 COPY global.json Directory.Build.props Directory.Packages.props ./
+COPY src/Hevy.Core/Hevy.Core.csproj src/Hevy.Core/packages.lock.json src/Hevy.Core/
 COPY src/Hevy.Client/Hevy.Client.csproj src/Hevy.Client/packages.lock.json src/Hevy.Client/
 COPY src/Hevy.Mcp/Hevy.Mcp.csproj src/Hevy.Mcp/packages.lock.json src/Hevy.Mcp/
 RUN dotnet restore src/Hevy.Mcp/Hevy.Mcp.csproj --locked-mode
@@ -24,7 +25,7 @@ ARG VERSION=0.0.0-dev
 ARG REVISION=local
 ARG SOURCE_URL=local
 
-LABEL org.opencontainers.image.title="hevy-client" \
+LABEL org.opencontainers.image.title="hevy-mcp" \
       org.opencontainers.image.description="Local-first Model Context Protocol server for the official Hevy API" \
       org.opencontainers.image.source="${SOURCE_URL}" \
       org.opencontainers.image.revision="${REVISION}" \

@@ -1,5 +1,6 @@
 using System.Text.Json;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
+using Hevy.Client.Contracts;
 using Hevy.Client.Serialization;
 using TestSupport;
 using Xunit;
@@ -11,9 +12,9 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Workout_set_write_rejects_unknown_set_type()
   {
-    var set = new WorkoutSetWrite((SetType)999, null, null, null, null, null, new WorkoutRpe(8m));
+    var set = new WorkoutSetWriteRequest((SetTypeApi)999, null, null, null, null, null, new WorkoutRpe(8m));
 
-    FluentActions.Invoking(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWrite)).Should().ThrowExactly<JsonException>();
+    FluentActions.Invoking(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWriteRequest)).Should().ThrowExactly<JsonException>();
   }
 
   [Fact]
@@ -25,15 +26,15 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Workout_rpe_default_value_fails_safely_during_serialization()
   {
-    var set = new WorkoutSetWrite(SetType.Normal, null, null, null, null, null, default(WorkoutRpe));
+    var set = new CreateWorkoutSetWrite(SetType.Normal, null, null, null, null, null, default(WorkoutRpe));
 
-    FluentActions.Invoking(() => JsonSerializer.Serialize(set, HevyJsonContext.Default.WorkoutSetWrite)).Should().ThrowExactly<JsonException>();
+    FluentActions.Invoking(() => set.ToRequest()).Should().ThrowExactly<JsonException>();
   }
 
   [Fact]
   public void Create_workout_serializes_only_writable_snake_case_fields()
   {
-    var json = JsonSerializer.Serialize(FixtureFactory.CreateWorkoutRequest(), HevyJsonContext.Default.CreateWorkoutRequest);
+    var json = JsonSerializer.Serialize(FixtureFactory.CreateWorkoutCommand(), HevyJsonContext.Default.CreateWorkoutRequest);
 
     AssertJsonTreeEqual(
         """
@@ -45,7 +46,7 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Update_workout_preserves_workout_envelope()
   {
-    var json = JsonSerializer.Serialize(FixtureFactory.UpdateWorkoutRequest(), HevyJsonContext.Default.UpdateWorkoutRequest);
+    var json = JsonSerializer.Serialize(FixtureFactory.UpdateWorkoutCommand(), HevyJsonContext.Default.UpdateWorkoutRequest);
 
     AssertJsonTreeEqual(
         """
@@ -57,7 +58,7 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Create_routine_serializes_documented_fields()
   {
-    var json = JsonSerializer.Serialize(FixtureFactory.CreateRoutineRequest(), HevyJsonContext.Default.CreateRoutineRequest);
+    var json = JsonSerializer.Serialize(FixtureFactory.CreateRoutineCommand(), HevyJsonContext.Default.CreateRoutineRequest);
 
     AssertJsonTreeEqual(
         """
@@ -69,7 +70,7 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Update_routine_omits_create_only_folder_field()
   {
-    var json = JsonSerializer.Serialize(FixtureFactory.UpdateRoutineRequest(), HevyJsonContext.Default.UpdateRoutineRequest);
+    var json = JsonSerializer.Serialize(FixtureFactory.UpdateRoutineCommand(), HevyJsonContext.Default.UpdateRoutineRequest);
 
     AssertJsonTreeEqual(
         """
@@ -81,7 +82,7 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Create_routine_folder_serializes_routine_folder_envelope()
   {
-    var json = JsonSerializer.Serialize(FixtureFactory.CreateRoutineFolderRequest(), HevyJsonContext.Default.CreateRoutineFolderRequest);
+    var json = JsonSerializer.Serialize(FixtureFactory.CreateRoutineFolderCommand(), HevyJsonContext.Default.CreateRoutineFolderRequest);
 
     AssertJsonTreeEqual("""{"routine_folder":{"title":"Push Pull"}}""", json);
   }
@@ -89,7 +90,7 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Create_exercise_template_serializes_enum_wire_values()
   {
-    var json = JsonSerializer.Serialize(FixtureFactory.CreateExerciseTemplateRequest(), HevyJsonContext.Default.CreateExerciseTemplateRequest);
+    var json = JsonSerializer.Serialize(FixtureFactory.CreateExerciseTemplateCommand(), HevyJsonContext.Default.CreateExerciseTemplateRequest);
 
     AssertJsonTreeEqual(
         """
@@ -101,7 +102,7 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Create_body_measurement_serializes_date_and_metrics()
   {
-    var json = JsonSerializer.Serialize(FixtureFactory.CreateBodyMeasurementRequest(), HevyJsonContext.Default.CreateBodyMeasurementRequest);
+    var json = JsonSerializer.Serialize(FixtureFactory.NewBodyMeasurement(), HevyJsonContext.Default.CreateBodyMeasurementRequest);
 
     AssertJsonTreeEqual(
         """
@@ -113,7 +114,7 @@ public sealed class RequestSerializationTests
   [Fact]
   public void Update_body_measurement_omits_path_owned_date()
   {
-    var json = JsonSerializer.Serialize(FixtureFactory.UpdateBodyMeasurementRequest(), HevyJsonContext.Default.UpdateBodyMeasurementRequest);
+    var json = JsonSerializer.Serialize(FixtureFactory.BodyMeasurementUpdate(), HevyJsonContext.Default.UpdateBodyMeasurementRequest);
 
     AssertJsonTreeEqual(
         """

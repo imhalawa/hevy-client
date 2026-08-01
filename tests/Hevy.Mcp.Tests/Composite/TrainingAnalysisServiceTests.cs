@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Hevy.Client;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using Hevy.Mcp.Composite;
 using TestSupport;
 using Xunit;
@@ -36,12 +36,12 @@ public sealed class TrainingAnalysisServiceTests
   [Fact]
   public async Task TrainingSummaryCalculatesUtcWeeksVolumeProgressionGapsAndMeasurementDeltas()
   {
-    var workouts = new[]
-    {
+    ImmutableList<Workout> workouts =
+    [
       Workout("workout-3", "2026-07-21T10:00:00Z", 110),
       Workout("workout-2", "2026-07-07T10:00:00Z", 105),
       Workout("workout-1", "2026-06-30T10:00:00Z", 100),
-    };
+    ];
     var client = new FakeHevyClient
     {
       Workouts = new(1, 1, workouts),
@@ -232,7 +232,7 @@ public sealed class TrainingAnalysisServiceTests
     var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
     var history = Enumerable.Range(1, 150)
         .Select(index => History($"workout-{index:D3}", start.AddMinutes(index).ToString("O"), 100 + index, 5))
-        .ToArray();
+        .ToImmutableList();
     var client = new FakeHevyClient { AllExerciseHistory = history };
     var service = new TrainingAnalysisService(client, new FixedTimeProvider(Now));
 
@@ -240,7 +240,7 @@ public sealed class TrainingAnalysisServiceTests
     var second = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 100, first.Continuation, default);
 
     (first.ChunkEntryCount).Should().Be(100);
-    (first.ScannedEntryCount).Should().BeInRange(1, ExerciseHistoryWindowRequest.MaximumScannedItems);
+    (first.ScannedEntryCount).Should().BeInRange(1, ExerciseHistoryQuery.MaximumScannedItems);
     (first.Truncated).Should().BeTrue();
     (first.TruncationReason).Should().BeNull();
     (first.ContinuationInputs).Should().NotBeNull();
@@ -256,7 +256,7 @@ public sealed class TrainingAnalysisServiceTests
     var start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
     var history = Enumerable.Range(1, 1_050)
         .Select(index => History($"workout-{index:D4}", start.AddMinutes(index).ToString("O"), 100 + index, 5))
-        .ToArray();
+        .ToImmutableList();
     var client = new FakeHevyClient { AllExerciseHistory = history };
     var service = new TrainingAnalysisService(client, new FixedTimeProvider(Now));
 
@@ -376,21 +376,21 @@ public sealed class TrainingAnalysisServiceTests
   public async Task PartialSummaryChunksComposeToTheSamePeriodMetricsAsOneCompleteCall()
   {
     var end = DateTimeOffset.Parse("2026-07-27T00:00:00Z");
-    var workouts = new[]
-    {
+    ImmutableList<Workout> workouts =
+    [
       Workout("workout-1", "2026-06-30T10:00:00Z", 100),
       Workout("workout-2", "2026-07-01T10:00:00Z", 102),
       Workout("workout-3", "2026-07-07T10:00:00Z", 104),
       Workout("workout-4", "2026-07-08T10:00:00Z", 106),
       Workout("workout-5", "2026-07-21T10:00:00Z", 108),
       Workout("workout-6", "2026-07-22T10:00:00Z", 110),
-    };
-    var measurements = new[]
-    {
+    ];
+    ImmutableList<BodyMeasurement> measurements =
+    [
       FakeHevyClient.SampleMeasurement() with { Date = new DateOnly(2026, 7, 1), WeightKg = 80 },
       FakeHevyClient.SampleMeasurement() with { Date = new DateOnly(2026, 7, 10), WeightKg = null },
       FakeHevyClient.SampleMeasurement() with { Date = new DateOnly(2026, 7, 20), WeightKg = 79 },
-    };
+    ];
     var client = new FakeHevyClient
     {
       GetWorkoutsHandler = (page, pageSize, _) => Task.FromResult(Page(workouts, page, pageSize)),
@@ -449,7 +449,7 @@ public sealed class TrainingAnalysisServiceTests
     var client = new FakeHevyClient
     {
       Workouts = new(1, 0, []),
-      GetBodyMeasurementsHandler = (page, pageSize, _) => Task.FromResult(new PagedResult<BodyMeasurement>(page, 101, Enumerable.Repeat(measurement, pageSize).ToArray())),
+      GetBodyMeasurementsHandler = (page, pageSize, _) => Task.FromResult(new PagedResult<BodyMeasurement>(page, 101, Enumerable.Repeat(measurement, pageSize).ToImmutableList())),
     };
     var service = new TrainingAnalysisService(client, new FixedTimeProvider(Now));
 
@@ -475,10 +475,10 @@ public sealed class TrainingAnalysisServiceTests
   private static ExerciseHistoryEntry History(string workoutId, string start, decimal weight, int reps) =>
       new(workoutId, "Workout", DateTimeOffset.Parse(start), DateTimeOffset.Parse(start).AddHours(1), "template-1", weight, reps, null, null, null, null, "normal");
 
-  private static PagedResult<T> Page<T>(IReadOnlyList<T> items, int page, int pageSize)
+  private static PagedResult<T> Page<T>(ImmutableList<T> items, int page, int pageSize)
   {
     var pageCount = items.Count == 0 ? 0 : (items.Count + pageSize - 1) / pageSize;
-    return new PagedResult<T>(page, pageCount, items.Skip((page - 1) * pageSize).Take(pageSize).ToArray());
+    return new PagedResult<T>(page, pageCount, items.Skip((page - 1) * pageSize).Take(pageSize).ToImmutableList());
   }
 
   private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

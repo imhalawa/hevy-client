@@ -30,7 +30,7 @@ public sealed class ReleaseSecurityContractTests
 
     var result = await RunScriptAsync(
         script,
-        ["ghcr.io/example/hevy-client", "1.2.3"],
+        ["ghcr.io/example/hevy-mcp", "1.2.3"],
         fixture.Environment(registry.BaseUri, secret));
 
     (result.ExitCode).Should().Be(0);
@@ -59,7 +59,7 @@ public sealed class ReleaseSecurityContractTests
 
     var result = await RunScriptAsync(
         script,
-        ["ghcr.io/example/hevy-client", "1.2.3"],
+        ["ghcr.io/example/hevy-mcp", "1.2.3"],
         fixture.Environment(registry.BaseUri, "fixture-registry-secret"));
 
     (result.ExitCode).Should().NotBe(0);
@@ -82,7 +82,7 @@ public sealed class ReleaseSecurityContractTests
 
     var result = await RunScriptAsync(
         script,
-        ["ghcr.io/example/hevy-client", "1.2.3"],
+        ["ghcr.io/example/hevy-mcp", "1.2.3"],
         fixture.Environment(registry.BaseUri, "fixture-registry-secret"));
 
     (result.ExitCode).Should().NotBe(0);
@@ -98,7 +98,7 @@ public sealed class ReleaseSecurityContractTests
 
     var result = await RunScriptAsync(
         script,
-        ["ghcr.io/example/hevy-client", "1.2.3"],
+        ["ghcr.io/example/hevy-mcp", "1.2.3"],
         fixture.Environment(registry.BaseUri, "fixture-registry-secret"));
 
     (result.ExitCode).Should().Be(0);
@@ -114,7 +114,7 @@ public sealed class ReleaseSecurityContractTests
 
     var result = await RunScriptAsync(
         script,
-        ["ghcr.io/example/hevy-client", "1.2.3"],
+        ["ghcr.io/example/hevy-mcp", "1.2.3"],
         fixture.Environment(registry.BaseUri, "fixture-registry-secret"));
 
     (result.ExitCode).Should().NotBe(0);
@@ -133,7 +133,7 @@ public sealed class ReleaseSecurityContractTests
 
     var result = await RunScriptAsync(
         script,
-        ["ghcr.io/example/hevy-client", "1.2.3"],
+        ["ghcr.io/example/hevy-mcp", "1.2.3"],
         fixture.Environment(new Uri($"http://127.0.0.1:{port}"), "fixture-registry-secret"));
 
     (result.ExitCode).Should().NotBe(0);
@@ -157,16 +157,16 @@ public sealed class ReleaseSecurityContractTests
             "SPDXID": "SPDXRef-DOCUMENT",
             "spdxVersion": "SPDX-2.3",
             "dataLicense": "CC0-1.0",
-            "name": "hevy-client-linux-amd64",
-            "documentNamespace": "https://example.invalid/spdx/hevy-client/fixture",
+            "name": "hevy-mcp-linux-amd64",
+            "documentNamespace": "https://example.invalid/spdx/hevy-mcp/fixture",
             "creationInfo": {
               "created": "2026-07-26T09:00:00Z",
               "creators": ["Tool: fixture-generator-1.0"]
             },
             "packages": [
               {
-                "SPDXID": "SPDXRef-Package-hevy-client",
-                "name": "hevy-client",
+                "SPDXID": "SPDXRef-Package-hevy-mcp",
+                "name": "hevy-mcp",
                 "downloadLocation": "NOASSERTION",
                 "filesAnalyzed": false
               }
@@ -175,7 +175,7 @@ public sealed class ReleaseSecurityContractTests
               {
                 "spdxElementId": "SPDXRef-DOCUMENT",
                 "relationshipType": "DESCRIBES",
-                "relatedSpdxElement": "SPDXRef-Package-hevy-client"
+                "relatedSpdxElement": "SPDXRef-Package-hevy-mcp"
               }
             ]
           }
@@ -195,7 +195,7 @@ public sealed class ReleaseSecurityContractTests
         "{\"spdxVersion\":\"SPDX-2.3\"}\n",
         validSpdx.Replace("SPDX-2.3", "SPDX-2.2", StringComparison.Ordinal),
         validSpdx.Replace(
-            "\"relatedSpdxElement\": \"SPDXRef-Package-hevy-client\"",
+            "\"relatedSpdxElement\": \"SPDXRef-Package-hevy-mcp\"",
             "\"relatedSpdxElement\": \"SPDXRef-Package-missing\"",
             StringComparison.Ordinal),
       })
@@ -950,14 +950,14 @@ public sealed class ReleaseSecurityContractTests
 
       var result = await RunScriptAsync(
           promotion,
-          ["ghcr.io/example/hevy-client", "1.2.3", IntendedDigest],
+          ["ghcr.io/example/hevy-mcp", "1.2.3", IntendedDigest],
           environment);
 
       (result.ExitCode).Should().Be(expectedExitCode);
       (File.Exists(dockerLog)).Should().Be(expectsDocker);
       if (expectsDocker)
       {
-        (await File.ReadAllTextAsync(dockerLog)).Should().Be($"buildx\nimagetools\ncreate\n--tag\nghcr.io/example/hevy-client:1.2.3\nghcr.io/example/hevy-client@{IntendedDigest}\n");
+        (await File.ReadAllTextAsync(dockerLog)).Should().Be($"buildx\nimagetools\ncreate\n--tag\nghcr.io/example/hevy-mcp:1.2.3\nghcr.io/example/hevy-mcp@{IntendedDigest}\n");
       }
     }
     finally
@@ -1107,7 +1107,7 @@ public sealed class ReleaseSecurityContractTests
       TemporaryRoot = temporaryRoot;
       IndexDigest = indexDigest;
       var repositoryRoot = RepositoryRoot;
-      var oneBuild = $"BEGIN\nSOURCE_DATE_EPOCH=1770000000\nbuild\n--platform\nlinux/amd64,linux/arm64\n--pull\n--no-cache\n--build-arg\nVERSION=1.2.3\n--build-arg\nREVISION={Revision}\n--build-arg\nSOURCE_URL=https://github.com/example/hevy-client\n--provenance=false\n--sbom=false\n--output\ntype=oci,dest=ARCHIVE,rewrite-timestamp=true,compatibility-version=30,oci-mediatypes=true\n{repositoryRoot}\nEND\n";
+      var oneBuild = $"BEGIN\nSOURCE_DATE_EPOCH=1770000000\nbuild\n--platform\nlinux/amd64,linux/arm64\n--pull\n--no-cache\n--build-arg\nVERSION=1.2.3\n--build-arg\nREVISION={Revision}\n--build-arg\nSOURCE_URL=https://github.com/example/hevy-mcp\n--provenance=false\n--sbom=false\n--output\ntype=oci,dest=ARCHIVE,rewrite-timestamp=true,compatibility-version=30,oci-mediatypes=true\n{repositoryRoot}\nEND\n";
       ExpectedBuildLog = oneBuild.Replace("ARCHIVE", "1", StringComparison.Ordinal) +
           oneBuild.Replace("ARCHIVE", "2", StringComparison.Ordinal);
     }
@@ -1221,7 +1221,7 @@ public sealed class ReleaseSecurityContractTests
               ["HEVY_BUILDX_PATH"] = buildx,
               ["REVISION"] = Revision,
               ["SOURCE_DATE_EPOCH"] = "1770000000",
-              ["SOURCE_URL"] = "https://github.com/example/hevy-client",
+              ["SOURCE_URL"] = "https://github.com/example/hevy-mcp",
               ["TMPDIR"] = TemporaryRoot,
               ["VERSION"] = "1.2.3",
             });
@@ -1540,7 +1540,7 @@ public sealed class ReleaseSecurityContractTests
 
   private static Task<DeliveryContractTests.ProcessResult> RunScriptAsync(
       string script,
-      IReadOnlyList<string> arguments,
+      ImmutableList<string> arguments,
       IReadOnlyDictionary<string, string?>? environment) =>
       DeliveryContractTests.RunProcessAsync(RepositoryRoot, script, environment, arguments.ToArray());
 
@@ -1690,10 +1690,10 @@ public sealed class ReleaseSecurityContractTests
           var challenge = scenario.MalformedChallenge
               ? $"Basic realm=\"{tokenRealm}\""
               : scenario.ReorderedChallenge
-                  ? $"Bearer scope=\"repository:example/hevy-client:pull\",nonce=\"safe-extension\",realm=\"{tokenRealm}\",service=\"{BaseUri.Authority}\""
+                  ? $"Bearer scope=\"repository:example/hevy-mcp:pull\",nonce=\"safe-extension\",realm=\"{tokenRealm}\",service=\"{BaseUri.Authority}\""
                   : scenario.DuplicateScope
-                      ? $"Bearer realm=\"{tokenRealm}\",scope=\"repository:example/hevy-client:pull\",service=\"{BaseUri.Authority}\",scope=\"repository:example/hevy-client:pull\""
-                      : $"Bearer realm=\"{tokenRealm}\",service=\"{BaseUri.Authority}\",scope=\"repository:example/hevy-client:pull\"";
+                      ? $"Bearer realm=\"{tokenRealm}\",scope=\"repository:example/hevy-mcp:pull\",service=\"{BaseUri.Authority}\",scope=\"repository:example/hevy-mcp:pull\""
+                      : $"Bearer realm=\"{tokenRealm}\",service=\"{BaseUri.Authority}\",scope=\"repository:example/hevy-mcp:pull\"";
           await RespondAsync(
               stream,
               401,
@@ -1711,8 +1711,8 @@ public sealed class ReleaseSecurityContractTests
         }
         else
         {
-          var headers = scenario.AuthenticatedStatus == 200
-              ? new[] { ("Docker-Content-Digest", ExistingDigest) }
+          ImmutableList<(string Name, string Value)> headers = scenario.AuthenticatedStatus == 200
+              ? [("Docker-Content-Digest", ExistingDigest)]
               : [];
           await RespondAsync(stream, scenario.AuthenticatedStatus, string.Empty, headers, cancellation.Token);
         }
@@ -1740,7 +1740,7 @@ public sealed class ReleaseSecurityContractTests
         NetworkStream stream,
         int status,
         string body,
-        IReadOnlyList<(string Name, string Value)> headers,
+        ImmutableList<(string Name, string Value)> headers,
         CancellationToken cancellationToken,
         int? declaredContentLength = null)
     {

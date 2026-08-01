@@ -1,5 +1,5 @@
 using Hevy.Client;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using Xunit;
 
 namespace Hevy.Transport.Tests;
@@ -17,7 +17,7 @@ public sealed class LiveMutationSmokeTests
     }
 
     var existing = measurements.Items[0];
-    var request = new UpdateBodyMeasurementRequest(
+    var request = new BodyMeasurementUpdate(
         existing.WeightKg,
         existing.LeanMassKg,
         existing.FatPercent,

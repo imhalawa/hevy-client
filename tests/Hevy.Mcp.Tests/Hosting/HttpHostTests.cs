@@ -103,7 +103,7 @@ public sealed class HttpHostTests
     (response.StatusCode).Should().Be(HttpStatusCode.OK);
     (body).Should().Contain("\"jsonrpc\":\"2.0\"");
     (body).Should().Contain("\"id\":1");
-    (body).Should().Contain("\"name\":\"hevy-client\"");
+    (body).Should().Contain("\"name\":\"hevy-mcp\"");
     (response.Headers.Contains("MCP-Session-Id")).Should().BeFalse();
   }
 

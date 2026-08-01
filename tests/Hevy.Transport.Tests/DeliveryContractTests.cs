@@ -14,27 +14,33 @@ public sealed class DeliveryContractTests
   public void CiWorkflowIsParsedAndEnforcesTheCompleteSecretFreeAcceptanceSequence()
   {
     var workflow = Workflow("ci.yml");
+    var ciGateSteps = Steps(Workflow("ci-gates.yml")).ToArray();
+    var verifyJob = Map(Map(workflow, "jobs"), "verify");
+
+    (Scalar(verifyJob, "uses")).Should().Be("./.github/workflows/ci-gates.yml");
+    (verifyJob.Children.ContainsKey(new YamlScalarNode("runs-on"))).Should().BeFalse();
 
     (Keys(Map(workflow, "on")).Order(StringComparer.Ordinal).ToArray()).Should().Equal(["pull_request", "push"]);
     AssertPermissions(workflow, ("contents", "read"));
     (Map(workflow, "on").Children.ContainsKey(new YamlScalarNode("pull_request_target"))).Should().BeFalse();
 
-    var runs = Steps(workflow)
+    var runs = ciGateSteps
         .Where(static step => step.Children.ContainsKey(new YamlScalarNode("run")))
         .Select(static step => Scalar(step, "run"))
         .ToArray();
     (runs).Should().Contain("./scripts/run-actionlint.sh");
     (runs).Should().Contain("./scripts/validate-openapi.sh");
-    (runs).Should().Contain("dotnet restore HevyClient.slnx --locked-mode");
-    (runs).Should().Contain("dotnet format HevyClient.slnx --verify-no-changes --no-restore");
-    (runs).Should().Contain("dotnet build HevyClient.slnx --configuration Release --no-restore -warnaserror");
+    (runs).Should().Contain("dotnet restore HevyMcp.slnx --locked-mode");
+    (runs).Should().Contain("dotnet format HevyMcp.slnx --verify-no-changes --no-restore");
+    (runs).Should().Contain((static run => run.Contains("dotnet build HevyMcp.slnx --configuration", StringComparison.Ordinal)));
     (runs).Should().Contain((static run =>
         run.Contains("env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN", StringComparison.Ordinal) &&
-        run.Contains("dotnet test HevyClient.slnx --configuration Release --no-build", StringComparison.Ordinal)));
-    (runs).Should().Contain("docker build --pull --tag hevy-client:ci .");
-    (runs).Should().Contain("docker image inspect hevy-client:ci");
-    (runs).Should().Contain("./scripts/verify-reproducible-image.sh");
+        run.Contains("dotnet test HevyMcp.slnx --configuration", StringComparison.Ordinal) &&
+        run.Contains("--no-build", StringComparison.Ordinal)));
+    (runs).Should().Contain("docker build --pull --tag hevy-mcp:ci .");
+    (runs).Should().Contain("docker image inspect hevy-mcp:ci");
     (runs).Should().Contain((static run => run.Contains("FullyQualifiedName~ContainerSmokeTests", StringComparison.Ordinal)));
+    (Scalar(Step(ciGateSteps, "Run real container smokes"), "if")).Should().Be("${{ inputs.run_container_smokes }}");
     (runs).Should().NotContain((static run =>
         run.Contains("HEVY_LIVE_TESTS=true", StringComparison.Ordinal) ||
         run.Contains("HEVY_LIVE_MUTATION_TESTS=true", StringComparison.Ordinal) ||
@@ -45,6 +51,7 @@ public sealed class DeliveryContractTests
   public void ReleaseWorkflowPublishesOnlyAnExactVerifiedVersionAndDigest()
   {
     var workflow = Workflow("release.yml");
+    var publishSteps = Steps(Workflow("release-publish.yml")).ToArray();
 
     var tagPatterns = Sequence(Map(Map(workflow, "on"), "push"), "tags")
         .Children.Cast<YamlScalarNode>().Select(static value => value.Value!).ToArray();
@@ -59,17 +66,16 @@ public sealed class DeliveryContractTests
     (Scalar(Map(workflow, "concurrency"), "cancel-in-progress")).Should().Be("false");
 
     var publishJob = Map(Map(workflow, "jobs"), "publish");
-    (Scalar(publishJob, "environment")).Should().Be("release");
+    (Scalar(publishJob, "uses")).Should().Be("./.github/workflows/release-publish.yml");
 
-    var steps = Steps(workflow).ToArray();
-    var validate = Step(steps, "Validate release identity and security gate");
+    var validate = Step(publishSteps, "Validate release identity and security gate");
     (Scalar(validate, "id")).Should().Be("release");
     (Scalar(validate, "run")).Should().Be("./scripts/validate-release.sh");
     var validateEnvironment = Map(validate, "env");
     (Scalar(validateEnvironment, "HEVY_CANONICAL_REPOSITORY")).Should().Be("${{ vars.HEVY_CANONICAL_REPOSITORY }}");
     (Scalar(validateEnvironment, "HEVY_PRIVATE_ADVISORY_VERIFIED")).Should().Be("${{ vars.HEVY_PRIVATE_ADVISORY_VERIFIED }}");
 
-    var reproducibility = Step(steps, "Verify reproducible multi-architecture image");
+    var reproducibility = Step(publishSteps, "Verify reproducible multi-architecture image");
     (Scalar(reproducibility, "id")).Should().Be("reproducibility");
     var reproducibilityEnvironment = Map(reproducibility, "env");
     (Scalar(reproducibilityEnvironment, "REVISION")).Should().Be("${{ steps.release.outputs.revision }}");
@@ -77,7 +83,7 @@ public sealed class DeliveryContractTests
     (Scalar(reproducibilityEnvironment, "VERSION")).Should().Be("${{ steps.release.outputs.version }}");
     (Scalar(reproducibility, "run")).Should().Be("./scripts/verify-reproducible-image.sh");
 
-    var build = Step(steps, "Build and stage multi-architecture digest");
+    var build = Step(publishSteps, "Build and stage multi-architecture digest");
     (Scalar(build, "id")).Should().Be("build");
     (Scalar(Map(build, "env"), "SOURCE_DATE_EPOCH")).Should().Be("${{ steps.reproducibility.outputs.source_date_epoch }}");
     var buildWith = Map(build, "with");
@@ -98,7 +104,7 @@ public sealed class DeliveryContractTests
     (buildArguments).Should().Contain("REVISION=${{ steps.release.outputs.revision }}");
     (buildArguments).Should().Contain("SOURCE_URL=${{ steps.release.outputs.source }}");
 
-    var imageVerification = Step(steps, "Verify published digest platforms labels and assembly version");
+    var imageVerification = Step(publishSteps, "Verify published digest platforms labels and assembly version");
     (Scalar(imageVerification, "id")).Should().Be("image");
     var imageVerificationEnvironment = Map(imageVerification, "env");
     (Scalar(imageVerificationEnvironment, "REPRO_INDEX_DIGEST")).Should().Be("${{ steps.reproducibility.outputs.index_digest }}");
@@ -108,8 +114,8 @@ public sealed class DeliveryContractTests
     (imageVerificationRun).Should().Contain("./scripts/capture-bounded-output.sh \"$index_file\" docker buildx imagetools inspect --raw \"$IMAGE@$IMAGE_DIGEST\"");
     (imageVerificationRun).Should().NotContain("imagetools inspect --raw \"$IMAGE@$IMAGE_DIGEST\" > \"$index_file\"");
     (imageVerificationRun).Should().Contain("./scripts/verify-staged-index.sh");
-    var amd64Attestation = Step(steps, "Attest amd64 container SBOM");
-    var arm64Attestation = Step(steps, "Attest arm64 container SBOM");
+    var amd64Attestation = Step(publishSteps, "Attest amd64 container SBOM");
+    var arm64Attestation = Step(publishSteps, "Attest arm64 container SBOM");
     (Scalar(amd64Attestation, "uses")).Should().StartWith("actions/attest-sbom@");
     (Scalar(arm64Attestation, "uses")).Should().StartWith("actions/attest-sbom@");
     (Map(amd64Attestation, "with").Children.Keys).Should().NotContain(new YamlScalarNode("create-storage-record"));
@@ -117,22 +123,22 @@ public sealed class DeliveryContractTests
     (Scalar(Map(amd64Attestation, "with"), "subject-digest")).Should().Be("${{ steps.image.outputs.amd64_digest }}");
     (Scalar(Map(arm64Attestation, "with"), "subject-digest")).Should().Be("${{ steps.image.outputs.arm64_digest }}");
 
-    var installSyft = Step(steps, "Install pinned Syft");
+    var installSyft = Step(publishSteps, "Install pinned Syft");
     (Scalar(installSyft, "run")).Should().Be("./scripts/install-syft.sh");
-    var extractSboms = Step(steps, "Generate platform SPDX SBOMs");
+    var extractSboms = Step(publishSteps, "Generate platform SPDX SBOMs");
     var extractSbomsRun = Scalar(extractSboms, "run");
     (extractSbomsRun).Should().Contain("syft \"registry:$IMAGE@$AMD64_DIGEST\"");
     (extractSbomsRun).Should().Contain("syft \"registry:$IMAGE@$ARM64_DIGEST\"");
     (extractSbomsRun).Should().Contain("./scripts/validate-spdx.sh");
 
-    (Scalar(Step(steps, "Attest staged container provenance"), "uses")).Should().StartWith("actions/attest-build-provenance@");
+    (Scalar(Step(publishSteps, "Attest staged container provenance"), "uses")).Should().StartWith("actions/attest-build-provenance@");
 
-    var tagCheck = Step(steps, "Authenticate GHCR version-tag lookup");
+    var tagCheck = Step(publishSteps, "Authenticate GHCR version-tag lookup");
     (Scalar(Map(tagCheck, "env"), "GITHUB_ACTOR")).Should().Be("${{ github.actor }}");
     (Scalar(Map(tagCheck, "env"), "GHCR_TOKEN")).Should().Be("${{ secrets.GITHUB_TOKEN }}");
     (Scalar(tagCheck, "run")).Should().Be("./scripts/ghcr-manifest.sh \"$IMAGE\" \"$RELEASE_VERSION\" >/dev/null");
 
-    var runs = steps
+    var runs = publishSteps
         .Where(static step => step.Children.ContainsKey(new YamlScalarNode("run")))
         .Select(static step => Scalar(step, "run"))
         .ToArray();
@@ -149,29 +155,28 @@ public sealed class DeliveryContractTests
     (runs).Should().Contain((static run => run.Contains("coproc MCP_SERVER", StringComparison.Ordinal)));
     (Scalar(buildWith, "tags")).Should().NotContainEquivalentOf("latest");
 
-    var loginIndex = Array.IndexOf(steps, Step(steps, "Log in to GHCR"));
-    (Array.IndexOf(steps, Step(steps, "Run real release container smokes")) < loginIndex).Should().BeTrue();
-    (Array.IndexOf(steps, Step(steps, "Verify reproducible multi-architecture image")) < loginIndex).Should().BeTrue();
-    (steps.Any(static step =>
+    var loginIndex = Array.IndexOf(publishSteps, Step(publishSteps, "Log in to GHCR"));
+    (Array.IndexOf(publishSteps, Step(publishSteps, "Verify reproducible multi-architecture image")) < loginIndex).Should().BeTrue();
+    (publishSteps.Any(static step =>
         Scalar(step, "name") is "Build local release-check image" or "Inspect local release-check image")).Should().BeFalse();
 
-    var promotion = Step(steps, "Promote verified digest to version tag");
-    var promotionIndex = Array.IndexOf(steps, promotion);
-    (promotionIndex).Should().Be(steps.Length - 1);
-    (promotionIndex > Array.IndexOf(steps, Step(steps, "Verify GitHub attestations"))).Should().BeTrue();
-    (promotionIndex > Array.IndexOf(steps, Step(steps, "Keylessly sign and verify the staged digest"))).Should().BeTrue();
+    var promotion = Step(publishSteps, "Promote verified digest to version tag");
+    var promotionIndex = Array.IndexOf(publishSteps, promotion);
+    (promotionIndex).Should().Be(publishSteps.Length - 1);
+    (promotionIndex > Array.IndexOf(publishSteps, Step(publishSteps, "Verify GitHub attestations"))).Should().BeTrue();
+    (promotionIndex > Array.IndexOf(publishSteps, Step(publishSteps, "Keylessly sign and verify the staged digest"))).Should().BeTrue();
     (Scalar(Map(promotion, "env"), "GITHUB_ACTOR")).Should().Be("${{ github.actor }}");
     var promotionRun = Scalar(promotion, "run");
     (promotionRun).Should().Be("exec ./scripts/promote-ghcr-tag.sh \"$IMAGE\" \"$RELEASE_VERSION\" \"$IMAGE_DIGEST\"");
 
-    (steps.Any(static step =>
+    (publishSteps.Any(static step =>
         step.Children.TryGetValue(new YamlScalarNode("uses"), out var uses) &&
         ((YamlScalarNode)uses).Value!.StartsWith("actions/attest-build-provenance@", StringComparison.Ordinal))).Should().BeTrue();
-    (steps.Any(static step =>
+    (publishSteps.Any(static step =>
         step.Children.TryGetValue(new YamlScalarNode("uses"), out var uses) &&
         ((YamlScalarNode)uses).Value!.StartsWith("sigstore/cosign-installer@", StringComparison.Ordinal))).Should().BeTrue();
 
-    var digestConsumers = steps
+    var digestConsumers = publishSteps
         .Where(static step => step.Children.TryGetValue(new YamlScalarNode("env"), out _))
         .Select(static step => Map(step, "env"))
         .Where(static environment => environment.Children.ContainsKey(new YamlScalarNode("IMAGE_DIGEST")))
@@ -182,7 +187,7 @@ public sealed class DeliveryContractTests
 
     var releaseVerification = File.ReadAllText(Path.Combine(RepositoryRoot, "docs", "release-verification.md"));
     (releaseVerification).Should().MatchRegex("--certificate-github-workflow-sha [0-9a-f]{40}");
-    (releaseVerification).Should().Contain("gh attestation verify oci://ghcr.io/imhalawa/hevy-client@sha256:");
+    (releaseVerification).Should().Contain("gh attestation verify oci://ghcr.io/imhalawa/hevy-mcp@sha256:");
   }
 
   [Fact]
@@ -191,24 +196,16 @@ public sealed class DeliveryContractTests
     using var document = JsonDocument.Parse(
         File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "tools-lock.json")));
     var tools = document.RootElement.GetProperty("tools");
-    var workflow = Workflow("release.yml");
-    var steps = Steps(workflow).ToArray();
+    var ciGateSteps = Steps(Workflow("ci-gates.yml")).ToArray();
 
     var binfmt = tools.GetProperty("binfmt");
-    var qemuWith = Map(Step(steps, "Set up QEMU"), "with");
-    (Scalar(qemuWith, "image")).Should().Be($"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}");
-
     var buildx = tools.GetProperty("buildx");
     var buildkit = tools.GetProperty("buildkit");
-    var buildxWith = Map(Step(steps, "Set up Docker Buildx"), "with");
+    var buildxWith = Map(Step(ciGateSteps, "Set up Docker Buildx"), "with");
     (buildxWith.Children.Keys).Should().NotContain(new YamlScalarNode("version"));
     (Scalar(buildxWith, "driver-opts")).Should().Be($"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}");
 
-    var ciSteps = Steps(Workflow("ci.yml")).ToArray();
-    (Scalar(Map(Step(ciSteps, "Set up QEMU"), "with"), "image")).Should().Be($"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}");
-    var ciBuildxWith = Map(Step(ciSteps, "Set up Docker Buildx"), "with");
-    (ciBuildxWith.Children.Keys).Should().NotContain(new YamlScalarNode("version"));
-    (Scalar(ciBuildxWith, "driver-opts")).Should().Be($"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}");
+    (Scalar(Map(Step(ciGateSteps, "Set up QEMU"), "with"), "image")).Should().Be($"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}");
 
     foreach (var tool in new[] { binfmt, buildkit })
     {
@@ -219,14 +216,10 @@ public sealed class DeliveryContractTests
     (buildx.GetProperty("commit").GetString()!).Should().MatchRegex("^[0-9a-f]{40}$");
     (buildx.GetProperty("sha256").GetString()!).Should().MatchRegex("^[0-9a-f]{64}$");
     (buildx.GetProperty("archive").GetString()).Should().Be($"buildx-v{buildx.GetProperty("version").GetString()}.linux-amd64");
-    (Scalar(Step(steps, "Install pinned Buildx"), "run")).Should().Be("./scripts/install-buildx.sh");
-    (Scalar(Step(ciSteps, "Install pinned Buildx"), "run")).Should().Be("./scripts/install-buildx.sh");
-    (Scalar(Step(steps, "Verify pinned Buildx"), "run")).Should().Be("./scripts/verify-buildx-version.sh");
-    (Scalar(Step(ciSteps, "Verify pinned Buildx"), "run")).Should().Be("./scripts/verify-buildx-version.sh");
-    (Array.IndexOf(steps, Step(steps, "Install pinned Buildx")) < Array.IndexOf(steps, Step(steps, "Set up Docker Buildx"))).Should().BeTrue();
-    (Array.IndexOf(steps, Step(steps, "Set up Docker Buildx")) < Array.IndexOf(steps, Step(steps, "Verify pinned Buildx"))).Should().BeTrue();
-    (Array.IndexOf(ciSteps, Step(ciSteps, "Install pinned Buildx")) < Array.IndexOf(ciSteps, Step(ciSteps, "Set up Docker Buildx"))).Should().BeTrue();
-    (Array.IndexOf(ciSteps, Step(ciSteps, "Set up Docker Buildx")) < Array.IndexOf(ciSteps, Step(ciSteps, "Verify pinned Buildx"))).Should().BeTrue();
+    (Scalar(Step(ciGateSteps, "Install pinned Buildx"), "run")).Should().Be("./scripts/install-buildx.sh");
+    (Scalar(Step(ciGateSteps, "Verify pinned Buildx"), "run")).Should().Be("./scripts/verify-buildx-version.sh");
+    (Array.IndexOf(ciGateSteps, Step(ciGateSteps, "Install pinned Buildx")) < Array.IndexOf(ciGateSteps, Step(ciGateSteps, "Set up Docker Buildx"))).Should().BeTrue();
+    (Array.IndexOf(ciGateSteps, Step(ciGateSteps, "Set up Docker Buildx")) < Array.IndexOf(ciGateSteps, Step(ciGateSteps, "Verify pinned Buildx"))).Should().BeTrue();
 
     var syft = tools.GetProperty("syft");
     (syft.GetProperty("sha256").GetString()!).Should().MatchRegex("^[0-9a-f]{64}$");
@@ -242,7 +235,7 @@ public sealed class DeliveryContractTests
     using var lockDocument = JsonDocument.Parse(File.ReadAllText(lockPath));
     var actions = lockDocument.RootElement.GetProperty("actions");
 
-    var usesValues = new[] { Workflow("ci.yml"), Workflow("release.yml") }
+    var usesValues = new[] { Workflow("ci.yml"), Workflow("ci-gates.yml"), Workflow("release.yml"), Workflow("release-publish.yml") }
         .SelectMany(Steps)
         .Where(static step => step.Children.ContainsKey(new YamlScalarNode("uses")))
         .Select(static step => Scalar(step, "uses"))
@@ -362,9 +355,9 @@ public sealed class DeliveryContractTests
       var result = await repository.RunValidatorAsync(script, tag, securityVerified: "true");
       (result.ExitCode).Should().Be(0);
       (result.OutputFile).Should().Contain($"version={tag[1..]}");
-      (result.OutputFile).Should().Contain("image=ghcr.io/example/hevy-client");
+      (result.OutputFile).Should().Contain("image=ghcr.io/example/hevy-mcp");
       (result.OutputFile).Should().Contain($"revision={repository.Commit}");
-      (result.OutputFile).Should().Contain("source=https://github.com/Example/Hevy-Client");
+      (result.OutputFile).Should().Contain("source=https://github.com/Example/Hevy-Mcp");
     }
 
     foreach (var invalidTag in new[] { "v1.2", "v1.2.3-rc.1", "v01.2.3", "1.2.3" })
@@ -516,6 +509,7 @@ public sealed class DeliveryContractTests
   private static IEnumerable<YamlMappingNode> Steps(YamlMappingNode workflow) =>
       Map(workflow, "jobs").Children.Values
           .Cast<YamlMappingNode>()
+          .Where(static job => job.Children.ContainsKey(new YamlScalarNode("steps")))
           .SelectMany(static job => Sequence(job, "steps").Children.Cast<YamlMappingNode>());
 
   private static YamlMappingNode Step(IEnumerable<YamlMappingNode> steps, string name) =>
@@ -648,9 +642,9 @@ public sealed class DeliveryContractTests
       startInfo.Environment["GITHUB_REF_TYPE"] = "tag";
       startInfo.Environment["GITHUB_REF_NAME"] = tag;
       startInfo.Environment["GITHUB_SHA"] = Commit;
-      startInfo.Environment["GITHUB_REPOSITORY"] = "Example/Hevy-Client";
+      startInfo.Environment["GITHUB_REPOSITORY"] = "Example/Hevy-Mcp";
       startInfo.Environment["GITHUB_SERVER_URL"] = "https://github.com";
-      startInfo.Environment["HEVY_CANONICAL_REPOSITORY"] = "Example/Hevy-Client";
+      startInfo.Environment["HEVY_CANONICAL_REPOSITORY"] = "Example/Hevy-Mcp";
       startInfo.Environment["HEVY_PRIVATE_ADVISORY_VERIFIED"] = securityVerified;
       startInfo.Environment["GITHUB_OUTPUT"] = output;
       using var process = Process.Start(startInfo)!;

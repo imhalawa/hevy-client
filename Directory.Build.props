@@ -10,4 +10,11 @@
     <Deterministic>true</Deterministic>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System.Collections.Immutable" />
+    <Using Include="Hevy.Core.Models" />
+    <Using Include="Hevy.Core.Ports" />
+    <Using Include="Hevy.Core.UseCases" />
+  </ItemGroup>
 </Project>

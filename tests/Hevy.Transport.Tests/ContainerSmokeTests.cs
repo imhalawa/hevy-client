@@ -30,7 +30,7 @@ public sealed record DockerCommandResult(
     bool ExecutableMissing);
 
 public delegate Task<DockerCommandResult> DockerCommandRunner(
-    IReadOnlyList<string> arguments,
+    ImmutableList<string> arguments,
     string? workingDirectory,
     TimeSpan? timeout);
 
@@ -451,7 +451,7 @@ public sealed class ContainerImageCoordinator : IAsyncDisposable
   public ContainerImageCoordinator(DockerCommandRunner runner)
   {
     this.runner = runner ?? throw new ArgumentNullException(nameof(runner));
-    OwnedTag = $"hevy-client:container-smoke-{Environment.ProcessId}-{RandomNumberGenerator.GetHexString(32).ToLowerInvariant()}";
+    OwnedTag = $"hevy-mcp:container-smoke-{Environment.ProcessId}-{RandomNumberGenerator.GetHexString(32).ToLowerInvariant()}";
   }
 
   public string OwnedTag { get; }
@@ -478,7 +478,7 @@ public sealed class ContainerImageCoordinator : IAsyncDisposable
             "--pull",
             "--build-arg", "VERSION=1.2.3-smoke.1",
             "--build-arg", "REVISION=0123456789abcdef0123456789abcdef01234567",
-            "--build-arg", "SOURCE_URL=https://github.com/example/hevy-client",
+            "--build-arg", "SOURCE_URL=https://github.com/example/hevy-mcp",
             "--tag", OwnedTag,
             ".",
           ],
@@ -590,7 +590,7 @@ public static class DockerProcess
   }
 
   public static async Task<DockerCommandResult> RunAsync(
-      IReadOnlyList<string> arguments,
+      ImmutableList<string> arguments,
       string? workingDirectory = null,
       TimeSpan? timeout = null)
   {
@@ -629,13 +629,13 @@ public static class DockerProcess
   {
     for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
     {
-      if (File.Exists(Path.Combine(directory.FullName, "HevyClient.slnx")))
+      if (File.Exists(Path.Combine(directory.FullName, "HevyMcp.slnx")))
       {
         return directory.FullName;
       }
     }
 
-    throw new InvalidOperationException("Could not locate the hevy-client repository root.");
+    throw new InvalidOperationException("Could not locate the hevy-mcp repository root.");
   }
 }
 
@@ -682,8 +682,8 @@ public sealed class ContainerSmokeTests
 
     var labels = config.GetProperty("Labels");
     (labels.GetProperty("org.opencontainers.image.licenses").GetString()).Should().Be("MIT");
-    (labels.GetProperty("org.opencontainers.image.title").GetString()).Should().Be("hevy-client");
-    (labels.GetProperty("org.opencontainers.image.source").GetString()).Should().Be("https://github.com/example/hevy-client");
+    (labels.GetProperty("org.opencontainers.image.title").GetString()).Should().Be("hevy-mcp");
+    (labels.GetProperty("org.opencontainers.image.source").GetString()).Should().Be("https://github.com/example/hevy-mcp");
     (labels.GetProperty("org.opencontainers.image.revision").GetString()).Should().Be("0123456789abcdef0123456789abcdef01234567");
     (labels.GetProperty("org.opencontainers.image.version").GetString()).Should().Be("1.2.3-smoke.1");
     foreach (var label in new[]
@@ -721,7 +721,7 @@ public sealed class ContainerSmokeTests
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
 
-    (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-client");
+    (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-mcp");
     (tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength()).Should().Be(28);
     (process.ExitCode).Should().Be(0);
     (await process.StandardOutput.ReadToEndAsync()).Should().Be(string.Empty);
@@ -741,7 +741,7 @@ public sealed class ContainerSmokeTests
     }
 
     var imageId = await fixture.EnsureImageAsync();
-    var wrapper = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "hevy-client-mcp");
+    var wrapper = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "hevy-mcp");
     (File.Exists(wrapper)).Should().BeTrue("The documented POSIX secret-backed MCP wrapper is required.");
     var fakeSecret = $"fixture-{RandomNumberGenerator.GetHexString(24)}";
     var temporaryDirectory = Path.Combine(Path.GetTempPath(), $"hevy-wrapper-{RandomNumberGenerator.GetHexString(16)}");
@@ -765,7 +765,7 @@ public sealed class ContainerSmokeTests
         UseShellExecute = false,
       };
       startInfo.Environment.Remove("HEVY_API_KEY");
-      startInfo.Environment["HEVY_CLIENT_IMAGE"] = imageId;
+      startInfo.Environment["HEVY_MCP_IMAGE"] = imageId;
       startInfo.Environment["HEVY_WRAPPER_TEST_SECRET"] = fakeSecret;
       startInfo.Environment["PATH"] = temporaryDirectory + Path.PathSeparator + startInfo.Environment["PATH"];
 
@@ -780,7 +780,7 @@ public sealed class ContainerSmokeTests
       process.StandardInput.Close();
       await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
 
-      (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-client");
+      (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-mcp");
       (tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength()).Should().Be(28);
       (process.ExitCode).Should().Be(0);
       (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
@@ -797,6 +797,10 @@ public sealed class ContainerSmokeTests
   public void WindowsSecurePromptLauncherUsesProcessOnlyInheritanceAndRestoresTheEnvironment()
   {
     var launcher = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "Start-HevyClient.ps1");
+    if (!File.Exists(launcher))
+    {
+      launcher = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "Start-HevyClient.ps1");
+    }
     (File.Exists(launcher)).Should().BeTrue("The documented Windows secure-prompt GUI launcher is required.");
     var script = File.ReadAllText(launcher);
 
@@ -938,7 +942,7 @@ public sealed class ContainerSmokeInfrastructureTests
           configuredDockerContext: null);
 
   private static Task<DockerCommandResult> UnexpectedDocker(
-      IReadOnlyList<string> arguments,
+      ImmutableList<string> arguments,
       string? workingDirectory,
       TimeSpan? timeout) => throw new InvalidOperationException(
           $"Configured DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
@@ -1074,7 +1078,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => arguments switch
         {
@@ -1110,7 +1114,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => arguments switch
         {
@@ -1138,7 +1142,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => arguments switch
         {
@@ -1167,7 +1171,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FailingDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => throw new TimeoutException("context command timed out");
 
@@ -1237,7 +1241,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {
@@ -1327,7 +1331,7 @@ public sealed class ContainerSmokeInfrastructureTests
 
     var commandCount = 0;
     Task<DockerCommandResult> FakeDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {
@@ -1357,7 +1361,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {
@@ -1396,7 +1400,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> UnexpectedDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => throw new InvalidOperationException(
             $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
@@ -1427,7 +1431,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> UnexpectedDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => throw new InvalidOperationException(
             $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
@@ -1462,7 +1466,7 @@ public sealed class ContainerSmokeInfrastructureTests
         ExecutableMissing: false);
 
     Task<DockerCommandResult> UnexpectedDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => throw new InvalidOperationException(
             $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
@@ -1495,7 +1499,7 @@ public sealed class ContainerSmokeInfrastructureTests
     var builtTags = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
     var removedTags = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
     async Task<DockerCommandResult> FakeDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {
@@ -1530,7 +1534,7 @@ public sealed class ContainerSmokeInfrastructureTests
         second.EnsureBuiltAsync(DockerProcess.RepositoryRoot));
 
     (second.OwnedTag).Should().NotBe(first.OwnedTag);
-    (first.OwnedTag).Should().MatchRegex("^hevy-client:container-smoke-[0-9]+-[0-9a-f]{32}$");
+    (first.OwnedTag).Should().MatchRegex("^hevy-mcp:container-smoke-[0-9]+-[0-9a-f]{32}$");
     (first.ImmutableImageId).Should().MatchRegex("^sha256:[0-9a-f]{64}$");
     (first.ImmutableImageId).Should().Be(ids[0]);
     (second.ImmutableImageId).Should().Be(ids[1]);
@@ -1546,7 +1550,7 @@ public sealed class ContainerSmokeInfrastructureTests
   {
     string? removedTag = null;
     Task<DockerCommandResult> FakeDocker(
-        IReadOnlyList<string> arguments,
+        ImmutableList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {

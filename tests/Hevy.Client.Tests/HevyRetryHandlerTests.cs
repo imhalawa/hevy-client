@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
 using Hevy.Client.Http;
 using TestSupport;
 using Xunit;

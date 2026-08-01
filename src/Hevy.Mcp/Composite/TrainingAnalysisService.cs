@@ -1,106 +1,8 @@
 using System.Globalization;
 using Hevy.Client;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 
 namespace Hevy.Mcp.Composite;
-
-internal sealed record CompositeContinuationInputs(
-    int Weeks,
-    DateTimeOffset RangeEndUtc,
-    int Limit,
-    string Continuation);
-
-internal sealed record WorkoutEvidenceResult(
-    IReadOnlyList<WorkoutEvidenceItem> Items,
-    int Weeks,
-    DateTimeOffset RangeStartUtc,
-    DateTimeOffset RangeEndUtc,
-    bool Truncated,
-    string? Continuation,
-    CompositeContinuationInputs? ContinuationInputs);
-
-internal sealed record WorkoutEvidenceItem(
-    string WorkoutId,
-    string Title,
-    DateTimeOffset StartTime,
-    DateTimeOffset EndTime,
-    IReadOnlyList<ExerciseEvidenceItem> Exercises);
-
-internal sealed record ExerciseEvidenceItem(
-    string ExerciseTemplateId,
-    string Title,
-    decimal VolumeKgReps,
-    int CountedSets);
-
-internal sealed record WorkoutEvidenceReference(string WorkoutId, DateTimeOffset StartTime);
-
-internal sealed record WeeklyFrequency(
-    DateTimeOffset PeriodStartUtc,
-    DateTimeOffset PeriodEndUtc,
-    int ChunkWorkoutCount,
-    IReadOnlyList<WorkoutEvidenceReference> Evidence);
-
-internal sealed record ExerciseVolumeObservation(
-    string WorkoutId,
-    DateTimeOffset StartTime,
-    decimal VolumeKgReps);
-
-internal sealed record ExerciseTrainingSummary(
-    string ExerciseTemplateId,
-    string Title,
-    decimal ChunkVolumeKgReps,
-    decimal? ChunkProgressionKgReps,
-    ExerciseVolumeObservation FirstObservation,
-    ExerciseVolumeObservation LastObservation,
-    IReadOnlyList<WorkoutEvidenceReference> Evidence);
-
-internal sealed record MissingWeekGap(DateTimeOffset PeriodStartUtc, DateTimeOffset PeriodEndUtc);
-
-internal sealed record MeasurementDelta(
-    string Metric,
-    decimal FirstValue,
-    decimal LastValue,
-    decimal Delta,
-    IReadOnlyList<DateOnly> EvidenceDates);
-
-internal sealed record TrainingSummary(
-    string MetricScope,
-    int Weeks,
-    DateTimeOffset RangeStartUtc,
-    DateTimeOffset RangeEndUtc,
-    int ChunkWorkoutFrequency,
-    IReadOnlyList<WeeklyFrequency> WeeklyFrequency,
-    IReadOnlyList<ExerciseTrainingSummary> Exercises,
-    bool GapsComplete,
-    IReadOnlyList<MissingWeekGap> MissingWeekGaps,
-    IReadOnlyList<MeasurementDelta> MeasurementDeltas,
-    IReadOnlyList<WorkoutEvidenceReference> Evidence,
-    bool Truncated,
-    string? Continuation,
-    CompositeContinuationInputs? ContinuationInputs);
-
-internal sealed record ExerciseHistoryEvidence(
-    string WorkoutId,
-    DateTimeOffset WorkoutStartTime,
-    decimal? VolumeKgReps);
-
-internal sealed record ExerciseHistorySummary(
-    string MetricScope,
-    string ExerciseTemplateId,
-    int Weeks,
-    DateTimeOffset RangeStartUtc,
-    DateTimeOffset RangeEndUtc,
-    int ChunkEntryCount,
-    int ScannedEntryCount,
-    decimal ChunkVolumeKgReps,
-    decimal? ChunkProgressionKgReps,
-    ExerciseVolumeObservation? FirstObservation,
-    ExerciseVolumeObservation? LastObservation,
-    IReadOnlyList<ExerciseHistoryEvidence> Evidence,
-    bool Truncated,
-    string? TruncationReason,
-    string? Continuation,
-    CompositeContinuationInputs? ContinuationInputs);
 
 internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider timeProvider)
 {
@@ -122,7 +24,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
     var fetch = await FetchWorkoutChunkAsync(cursor, limit, Continuation.MaximumItemBudget, cancellationToken).ConfigureAwait(false);
     var next = fetch.More ? Next(cursor, WorkoutsPhase, fetch.NextPage) : null;
     return new WorkoutEvidenceResult(
-        fetch.Items.Select(ProjectWorkout).ToArray(),
+        fetch.Items.Select(ProjectWorkout).ToImmutableList(),
         cursor.Range.Weeks,
         cursor.Range.Start,
         cursor.Range.End,
@@ -179,7 +81,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
     }
 
     var completePeriod = cursor.IsInitial && next is null;
-    return BuildTrainingSummary(cursor, workouts, measurements, completePeriod, workoutPhaseCompleteInThisCall, next);
+    return BuildTrainingSummary(cursor, workouts.ToImmutableList(), measurements.ToImmutableList(), completePeriod, workoutPhaseCompleteInThisCall, next);
   }
 
   internal async Task<ExerciseHistorySummary> SummarizeExerciseHistoryAsync(
@@ -201,12 +103,12 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
         [HistoryPhase],
         exerciseTemplateId,
         Continuation.MaximumItemBudget);
-    var offset = ExerciseHistoryWindowRequest.PageOffset(cursor.NextPage, cursor.PageSize);
+    var offset = ExerciseHistoryQuery.PageOffset(cursor.NextPage, cursor.PageSize);
     var startDate = DateOnly.FromDateTime(cursor.Range.Start.UtcDateTime);
     var endDate = DateOnly.FromDateTime(cursor.Range.End.AddTicks(-1).UtcDateTime);
     var result = await client.GetExerciseHistoryWindowAsync(
         exerciseTemplateId,
-        new ExerciseHistoryWindowRequest(offset, cursor.PageSize, startDate, endDate, cursor.Range.Start, cursor.Range.End),
+        new ExerciseHistoryQuery(offset, cursor.PageSize, startDate, endDate, cursor.Range.Start, cursor.Range.End),
         cancellationToken).ConfigureAwait(false);
     var entries = result.Items.OrderBy(static entry => entry.WorkoutStartTime)
         .ThenBy(static entry => entry.WorkoutId, StringComparer.Ordinal).ToArray();
@@ -234,7 +136,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
         observations.Length < 2 ? null : observations[^1].VolumeKgReps - observations[0].VolumeKgReps,
         firstObservation,
         lastObservation,
-        observations.Select(static observation => new ExerciseHistoryEvidence(observation.WorkoutId, observation.StartTime, observation.VolumeKgReps)).ToArray(),
+        observations.Select(static observation => new ExerciseHistoryEvidence(observation.WorkoutId, observation.StartTime, observation.VolumeKgReps)).ToImmutableList(),
         more,
         result.TruncationReason,
         next,
@@ -243,8 +145,8 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
 
   private TrainingSummary BuildTrainingSummary(
       AnalysisCursor cursor,
-      IReadOnlyList<Workout> workoutChunk,
-      IReadOnlyList<BodyMeasurement> measurementChunk,
+      ImmutableList<Workout> workoutChunk,
+      ImmutableList<BodyMeasurement> measurementChunk,
       bool completePeriod,
       bool gapsComplete,
       string? continuation)
@@ -257,10 +159,10 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
           var periodEnd = periodStart.AddDays(7);
           var evidence = workouts.Where(workout => workout.StartTime >= periodStart && workout.StartTime < periodEnd)
               .Select(static workout => new WorkoutEvidenceReference(workout.Id, workout.StartTime))
-              .DistinctBy(static item => item.WorkoutId, StringComparer.Ordinal).ToArray();
-          return new WeeklyFrequency(periodStart, periodEnd, evidence.Length, evidence);
+              .DistinctBy(static item => item.WorkoutId, StringComparer.Ordinal).ToImmutableList();
+          return new WeeklyFrequency(periodStart, periodEnd, evidence.Count, evidence);
         })
-        .ToArray();
+        .ToImmutableList();
     var exercises = workouts.SelectMany(workout => workout.Exercises.Select(exercise => new
     {
       Workout = workout,
@@ -279,7 +181,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
               .OrderBy(static item => item.StartTime)
               .ThenBy(static item => item.WorkoutId, StringComparer.Ordinal)
               .ToArray();
-          var evidence = observations.Select(static item => new WorkoutEvidenceReference(item.WorkoutId, item.StartTime)).ToArray();
+          var evidence = observations.Select(static item => new WorkoutEvidenceReference(item.WorkoutId, item.StartTime)).ToImmutableList();
           return new ExerciseTrainingSummary(
               group.Key,
               ordered[^1].Exercise.Title,
@@ -290,10 +192,10 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
               evidence);
         })
         .OrderBy(static item => item.Title, StringComparer.OrdinalIgnoreCase)
-        .ThenBy(static item => item.ExerciseTemplateId, StringComparer.Ordinal).ToArray();
+        .ThenBy(static item => item.ExerciseTemplateId, StringComparer.Ordinal).ToImmutableList();
     var gaps = gapsComplete
         ? weeksResult.Where(static week => week.ChunkWorkoutCount == 0)
-            .Select(static week => new MissingWeekGap(week.PeriodStartUtc, week.PeriodEndUtc)).ToArray()
+            .Select(static week => new MissingWeekGap(week.PeriodStartUtc, week.PeriodEndUtc)).ToImmutableList()
         : [];
     return new TrainingSummary(
         completePeriod ? "complete_period" : "partial_chunk",
@@ -307,7 +209,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
         gaps,
         MeasurementDeltas(measurementChunk),
         workouts.Select(static workout => new WorkoutEvidenceReference(workout.Id, workout.StartTime))
-            .DistinctBy(static item => item.WorkoutId, StringComparer.Ordinal).ToArray(),
+            .DistinctBy(static item => item.WorkoutId, StringComparer.Ordinal).ToImmutableList(),
         continuation is not null,
         continuation,
         Inputs(cursor, continuation));
@@ -332,7 +234,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
       items.AddRange(result.Items.Where(workout => workout.StartTime >= cursor.Range.Start && workout.StartTime < cursor.Range.End));
       page++;
     }
-    return new PageChunk<Workout>(items, page <= pageCount, page, scanned);
+    return new PageChunk<Workout>(items.ToImmutableList(), page <= pageCount, page, scanned);
   }
 
   private async Task<PageChunk<BodyMeasurement>> FetchMeasurementChunkAsync(
@@ -358,7 +260,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
       }));
       page++;
     }
-    return new PageChunk<BodyMeasurement>(items, page <= pageCount, page, scanned);
+    return new PageChunk<BodyMeasurement>(items.ToImmutableList(), page <= pageCount, page, scanned);
   }
 
   private AnalysisCursor ResolveCursor(
@@ -368,7 +270,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
       DateTimeOffset? rangeEndUtc,
       int limit,
       string? continuation,
-      IReadOnlyList<string> allowedPhases,
+      ImmutableList<string> allowedPhases,
       string? exerciseTemplateId = null,
       int maximumPageSize = 10)
   {
@@ -453,7 +355,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
           exercise.ExerciseTemplateId,
           exercise.Title,
           Volume(exercise.Sets),
-          exercise.Sets.Count(static set => set.WeightKg is not null && set.Reps is not null))).ToArray());
+          exercise.Sets.Count(static set => set.WeightKg is not null && set.Reps is not null))).ToImmutableList());
 
   private static decimal Volume(IEnumerable<WorkoutSet> sets) =>
       sets.Where(static set => set.WeightKg is not null && set.Reps is not null)
@@ -462,7 +364,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
   private static decimal? EntryVolume(ExerciseHistoryEntry entry) =>
       entry.WeightKg is not null && entry.Reps is not null ? entry.WeightKg.Value * entry.Reps.Value : null;
 
-  private static IReadOnlyList<MeasurementDelta> MeasurementDeltas(IReadOnlyList<BodyMeasurement> measurements)
+  private static ImmutableList<MeasurementDelta> MeasurementDeltas(ImmutableList<BodyMeasurement> measurements)
   {
     var ordered = measurements.OrderBy(static measurement => measurement.Date).ToArray();
     var deltas = new List<MeasurementDelta>();
@@ -483,7 +385,7 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
     Add("right_thigh", static measurement => measurement.RightThigh);
     Add("left_calf", static measurement => measurement.LeftCalf);
     Add("right_calf", static measurement => measurement.RightCalf);
-    return deltas;
+    return deltas.ToImmutableList();
 
     void Add(string metric, Func<BodyMeasurement, decimal?> selector)
     {
@@ -530,17 +432,4 @@ internal sealed class TrainingAnalysisService(IHevyClient client, TimeProvider t
     }
   }
 
-  private sealed record UtcRange(int Weeks, DateTimeOffset Start, DateTimeOffset End);
-
-  private sealed record AnalysisCursor(
-      string Endpoint,
-      string Phase,
-      int NextPage,
-      UtcRange Range,
-      int Limit,
-      int PageSize,
-      IReadOnlyDictionary<string, string?> Filters,
-      bool IsInitial);
-
-  private sealed record PageChunk<T>(IReadOnlyList<T> Items, bool More, int NextPage, int ScannedCapacity);
 }

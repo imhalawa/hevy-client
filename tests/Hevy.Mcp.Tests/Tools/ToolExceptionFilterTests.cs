@@ -1,5 +1,5 @@
 using Hevy.Mcp.Tools;
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
 using Xunit;
 
 namespace Hevy.Mcp.Tests.Tools;

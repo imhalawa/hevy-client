@@ -1,5 +1,5 @@
 using Hevy.Client;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using Hevy.Mcp.Caching;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,8 +17,8 @@ public sealed class ReadToolTests
     var templates = Enumerable.Range(1, 12).Select(index => new ExerciseTemplate($"template-{index:D2}", $"Template {index:D2}", "weight_reps", "quadriceps", [], EquipmentCategory.Barbell, false)).ToArray();
     var client = new FakeHevyClient
     {
-      GetRoutinesHandler = (page, pageSize, _) => Task.FromResult(new PagedResult<Routine>(page, 2, routines.Skip((page - 1) * pageSize).Take(pageSize).ToArray())),
-      GetExerciseTemplatesHandler = (page, pageSize, _) => Task.FromResult(new PagedResult<ExerciseTemplate>(page, 2, templates.Skip((page - 1) * pageSize).Take(pageSize).ToArray())),
+      GetRoutinesHandler = (page, pageSize, _) => Task.FromResult(new PagedResult<Routine>(page, 2, routines.Skip((page - 1) * pageSize).Take(pageSize).ToImmutableList())),
+      GetExerciseTemplatesHandler = (page, pageSize, _) => Task.FromResult(new PagedResult<ExerciseTemplate>(page, 2, templates.Skip((page - 1) * pageSize).Take(pageSize).ToImmutableList())),
     };
     using var services = CachedServices(client);
 
@@ -73,7 +73,7 @@ public sealed class ReadToolTests
       GetExerciseTemplatesHandler = (page, pageSize, _) =>
       {
         upstreamPageSizes.Add(pageSize);
-        return Task.FromResult(new PagedResult<ExerciseTemplate>(page, 2, templates.Skip((page - 1) * pageSize).Take(pageSize).ToArray()));
+        return Task.FromResult(new PagedResult<ExerciseTemplate>(page, 2, templates.Skip((page - 1) * pageSize).Take(pageSize).ToImmutableList()));
       },
     };
     using var services = CachedServices(client);
@@ -127,9 +127,9 @@ public sealed class ReadToolTests
     await ExerciseReadTools.GetExerciseTemplates(services, 1, 10, "compact", default);
     (client.CallCount).Should().Be(4);
 
-    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), false, default);
+    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineCommand(), false, default);
     await RoutineReadTools.GetRoutine(services, "routine-1", default);
-    await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, default);
+    await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateCommand(), false, default);
     await ExerciseReadTools.GetExerciseTemplate(services, "template-1", default);
     (client.CallCount).Should().Be(8);
   }
@@ -187,7 +187,7 @@ public sealed class ReadToolTests
   {
     var client = new FakeHevyClient
     {
-      GetWorkoutHandler = (_, _) => throw new Hevy.Client.Errors.HevyException("not_found", "The workout was not found.", false, System.Net.HttpStatusCode.NotFound),
+      GetWorkoutHandler = (_, _) => throw new Hevy.Core.Exceptions.HevyException("not_found", "The workout was not found.", false, System.Net.HttpStatusCode.NotFound),
     };
 
     var result = await WorkoutReadTools.GetWorkout(Services(client), "missing", CancellationToken.None);

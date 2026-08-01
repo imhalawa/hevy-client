@@ -4,12 +4,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Hevy.Mcp.Configuration;
 
-public enum HevyMcpTransport
-{
-  Stdio,
-  Http,
-}
-
 public sealed class HevyMcpOptions
 {
   internal string ApiKey { get; }

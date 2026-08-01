@@ -1,4 +1,4 @@
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using Hevy.Mcp.Caching;
 using Hevy.Mcp.Composite;
 using Microsoft.Extensions.Caching.Memory;
@@ -57,7 +57,7 @@ public sealed class SearchServiceTests
   [Fact]
   public async Task SearchReturnsReusableOpaqueContinuationAndMarksEveryPartialResult()
   {
-    var routines = Enumerable.Range(1, 4).Select(index => Routine($"routine-{index}", $"Day {index}")).ToArray();
+    var routines = Enumerable.Range(1, 4).Select(index => Routine($"routine-{index}", $"Day {index}")).ToImmutableList();
     var client = new FakeHevyClient { Routines = new(1, 1, routines) };
     using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
     var service = new SearchService(new HevyCache(client, memory, TimeProvider.System));
@@ -85,7 +85,7 @@ public sealed class SearchServiceTests
         var start = (page - 1) * pageSize + 1;
         var items = Enumerable.Range(start, Math.Min(pageSize, count - start + 1))
             .Select(index => Routine($"routine-{index:D4}", index == count ? "Needle" : $"Day {index:D4}"))
-            .ToArray();
+            .ToImmutableList();
         return Task.FromResult(new PagedResult<Routine>(page, 101, items));
       },
     };
@@ -110,7 +110,7 @@ public sealed class SearchServiceTests
       GetRoutinesHandler = (page, _, _) => Task.FromResult(page switch
       {
         1 => new PagedResult<Routine>(1, 3, [Routine("skip", "Other")]),
-        2 => new PagedResult<Routine>(2, 3, Enumerable.Range(1, 10).Select(index => Routine($"routine-{index}", $"Day {index}")).ToArray()),
+        2 => new PagedResult<Routine>(2, 3, Enumerable.Range(1, 10).Select(index => Routine($"routine-{index}", $"Day {index}")).ToImmutableList()),
         _ => new PagedResult<Routine>(3, 3, [Routine("routine-11", "Day 11")]),
       }),
     };
@@ -148,6 +148,6 @@ public sealed class SearchServiceTests
 
   private static Routine Routine(string id, string title) => FakeHevyClient.SampleRoutine() with { Id = id, Title = title };
 
-  private static ExerciseTemplate Template(string id, string title, EquipmentCategory equipment, string primary, IReadOnlyList<string> secondary) =>
+  private static ExerciseTemplate Template(string id, string title, EquipmentCategory equipment, string primary, ImmutableList<string> secondary) =>
       new(id, title, "weight_reps", primary, secondary, equipment, false);
 }

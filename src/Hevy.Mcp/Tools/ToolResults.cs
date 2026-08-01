@@ -2,20 +2,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Protocol;
 using Hevy.Client;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using Hevy.Mcp.Caching;
 
 namespace Hevy.Mcp.Tools;
-
-internal sealed record ToolResultEnvelope(bool Ok, object? Data = null, ToolError? Error = null, object? Meta = null);
-
-internal sealed record ToolError(
-    string Code,
-    string Message,
-    bool Retryable,
-    string CorrelationId,
-    int? HevyStatus = null,
-    string? HevyRequestId = null);
 
 internal static class ToolResults
 {
@@ -48,7 +38,7 @@ internal static class ToolResults
 
   internal static HevyCache? Cache(IServiceProvider services) => services.GetService(typeof(HevyCache)) as HevyCache;
 
-  internal static PagedResult<T> LocalPage<T>(IReadOnlyList<T> catalog, int page, int pageSize)
+  internal static PagedResult<T> LocalPage<T>(ImmutableList<T> catalog, int page, int pageSize)
   {
     var pageCount = catalog.Count == 0 ? 0 : (catalog.Count + pageSize - 1) / pageSize;
     if ((pageCount == 0 && page != 1) || (pageCount > 0 && page > pageCount))
@@ -56,7 +46,7 @@ internal static class ToolResults
       throw new ArgumentOutOfRangeException(nameof(page), "page cannot exceed the cached catalog page count.");
     }
     var skip = (long)(page - 1) * pageSize;
-    var items = skip > int.MaxValue ? [] : catalog.Skip((int)skip).Take(pageSize).ToArray();
+    var items = skip > int.MaxValue ? [] : catalog.Skip((int)skip).Take(pageSize).ToImmutableList();
     return new PagedResult<T>(page, pageCount, items);
   }
 
@@ -117,81 +107,4 @@ internal static class ToolResults
   internal static MutationData<TPayload, TResult> MutationResult<TPayload, TResult>(TResult result)
       where TPayload : class
       where TResult : class => new(Result: result);
-}
-
-internal static class ToolValidation
-{
-  internal static void Workout(Hevy.Client.Models.WorkoutWrite workout)
-  {
-    ArgumentNullException.ThrowIfNull(workout);
-    Required(workout.Title, "workout title");
-    if (workout.EndTime < workout.StartTime) throw new ArgumentException("Workout end time cannot be before its start time.", nameof(workout));
-    ArgumentNullException.ThrowIfNull(workout.Exercises);
-    foreach (var exercise in workout.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      Required(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets) ArgumentNullException.ThrowIfNull(set);
-    }
-  }
-
-  internal static void Routine(Hevy.Client.Models.CreateRoutineWrite routine)
-  {
-    ArgumentNullException.ThrowIfNull(routine);
-    Required(routine.Title, "routine title");
-    ArgumentNullException.ThrowIfNull(routine.Exercises);
-    foreach (var exercise in routine.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      Required(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets) ArgumentNullException.ThrowIfNull(set);
-    }
-  }
-
-  internal static void Routine(Hevy.Client.Models.UpdateRoutineWrite routine)
-  {
-    ArgumentNullException.ThrowIfNull(routine);
-    Required(routine.Title, "routine title");
-    ArgumentNullException.ThrowIfNull(routine.Exercises);
-    foreach (var exercise in routine.Exercises)
-    {
-      ArgumentNullException.ThrowIfNull(exercise);
-      Required(exercise.ExerciseTemplateId, "exercise template id");
-      ArgumentNullException.ThrowIfNull(exercise.Sets);
-      foreach (var set in exercise.Sets) ArgumentNullException.ThrowIfNull(set);
-    }
-  }
-
-  internal static void Exercise(Hevy.Client.Models.CustomExerciseWrite exercise)
-  {
-    ArgumentNullException.ThrowIfNull(exercise);
-    Required(exercise.Title, "exercise title");
-    ArgumentNullException.ThrowIfNull(exercise.OtherMuscles);
-    if (!Enum.IsDefined(exercise.ExerciseType) || !Enum.IsDefined(exercise.EquipmentCategory) ||
-        !Enum.IsDefined(exercise.MuscleGroup) || exercise.OtherMuscles.Any(static muscle => !Enum.IsDefined(muscle)))
-    {
-      throw new ArgumentOutOfRangeException(nameof(exercise), "Exercise fields must use documented enum values.");
-    }
-  }
-
-  internal static void Measurement(DateOnly date, params decimal?[] values)
-  {
-    if (date == DateOnly.MinValue) throw new ArgumentException("A measurement date is required.", nameof(date));
-    if (values.Any(static value => value is < 0)) throw new ArgumentOutOfRangeException(nameof(values), "Measurement values cannot be negative.");
-  }
-
-  internal static void Guard(DateTimeOffset? expectedUpdatedAt, bool force)
-  {
-    if (!force && expectedUpdatedAt is null)
-    {
-      throw new ArgumentException("expected_updated_at is required unless force is true.", nameof(expectedUpdatedAt));
-    }
-  }
-
-  internal static void Required(string value, string field)
-  {
-    if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException($"A {field} is required.", field);
-  }
 }

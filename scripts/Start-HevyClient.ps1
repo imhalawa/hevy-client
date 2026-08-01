@@ -6,7 +6,7 @@ param(
 )
 
 $secureKey = Read-Host -Prompt 'Hevy API key' -AsSecureString
-$credential = [System.Management.Automation.PSCredential]::new('hevy-client', $secureKey)
+$credential = [System.Management.Automation.PSCredential]::new('hevy-mcp', $secureKey)
 $plainKey = $credential.GetNetworkCredential().Password
 if ([string]::IsNullOrWhiteSpace($plainKey)) {
   throw 'A non-empty Hevy API key is required.'

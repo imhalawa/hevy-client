@@ -15,7 +15,7 @@ if [[ -z $source_url ]]; then
   if [[ -n ${GITHUB_SERVER_URL:-} && -n ${GITHUB_REPOSITORY:-} ]]; then
     source_url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY
   else
-    source_url=https://github.com/example/hevy-client
+    source_url=https://github.com/example/hevy-mcp
   fi
 fi
 source_date_epoch=${SOURCE_DATE_EPOCH:-$(git -C "$repository_root" show -s --format=%ct "$revision")}

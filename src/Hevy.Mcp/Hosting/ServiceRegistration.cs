@@ -35,7 +35,7 @@ internal static class ServiceRegistration
 
     var builder = services.AddMcpServer(serverOptions => serverOptions.ServerInfo = new Implementation
     {
-      Name = "hevy-client",
+      Name = "hevy-mcp",
       Version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0",
     });
 

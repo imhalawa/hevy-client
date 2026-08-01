@@ -1,4 +1,5 @@
-using Hevy.Client.Models;
+using Hevy.Core.Models;
+using Hevy.Client.Contracts;
 using Hevy.Client.Serialization;
 using System.Collections;
 using System.Reflection;
@@ -16,34 +17,34 @@ public sealed class OpenApiSchemaContractTests
   {
     OpenApiContract.AssertAllComponentsMatch(new Dictionary<string, Type>(StringComparer.Ordinal)
     {
-      ["PostWorkoutsRequestSet"] = typeof(WorkoutSetWrite),
-      ["PostWorkoutsRequestExercise"] = typeof(WorkoutExerciseWrite),
+      ["PostWorkoutsRequestSet"] = typeof(WorkoutSetWriteRequest),
+      ["PostWorkoutsRequestExercise"] = typeof(WorkoutExerciseWriteRequest),
       ["PostWorkoutsRequestBody"] = typeof(CreateWorkoutRequest),
-      ["PostRoutinesRequestSet"] = typeof(CreateRoutineSetWrite),
-      ["PostRoutinesRequestExercise"] = typeof(CreateRoutineExerciseWrite),
+      ["PostRoutinesRequestSet"] = typeof(CreateRoutineSetWriteRequest),
+      ["PostRoutinesRequestExercise"] = typeof(CreateRoutineExerciseWriteRequest),
       ["PostRoutinesRequestBody"] = typeof(CreateRoutineRequest),
-      ["PutRoutinesRequestSet"] = typeof(UpdateRoutineSetWrite),
-      ["PutRoutinesRequestExercise"] = typeof(UpdateRoutineExerciseWrite),
+      ["PutRoutinesRequestSet"] = typeof(UpdateRoutineSetWriteRequest),
+      ["PutRoutinesRequestExercise"] = typeof(UpdateRoutineExerciseWriteRequest),
       ["PutRoutinesRequestBody"] = typeof(UpdateRoutineRequest),
       ["PostRoutineFolderRequestBody"] = typeof(CreateRoutineFolderRequest),
-      ["BodyMeasurement"] = typeof(BodyMeasurement),
+      ["BodyMeasurement"] = typeof(BodyMeasurementResponse),
       ["PutBodyMeasurement"] = typeof(UpdateBodyMeasurementRequest),
-      ["Set"] = typeof(WorkoutSet),
-      ["Exercise"] = typeof(WorkoutExercise),
-      ["ExerciseHistoryEntry"] = typeof(ExerciseHistoryEntry),
-      ["CustomExerciseType"] = typeof(CustomExerciseType),
-      ["MuscleGroup"] = typeof(MuscleGroup),
-      ["EquipmentCategory"] = typeof(EquipmentCategory),
-      ["ExerciseTemplate"] = typeof(ExerciseTemplate),
+      ["Set"] = typeof(WorkoutSetResponse),
+      ["Exercise"] = typeof(WorkoutExerciseResponse),
+      ["ExerciseHistoryEntry"] = typeof(ExerciseHistoryEntryResponse),
+      ["CustomExerciseType"] = typeof(CustomExerciseTypeApi),
+      ["MuscleGroup"] = typeof(MuscleGroupApi),
+      ["EquipmentCategory"] = typeof(EquipmentCategoryApi),
+      ["ExerciseTemplate"] = typeof(ExerciseTemplateResponse),
       ["CreateCustomExerciseRequestBody"] = typeof(CreateExerciseTemplateRequest),
-      ["RoutineFolder"] = typeof(RoutineFolder),
-      ["Routine"] = typeof(Routine),
-      ["UserInfo"] = typeof(UserInfo),
+      ["RoutineFolder"] = typeof(RoutineFolderResponse),
+      ["Routine"] = typeof(RoutineResponse),
+      ["UserInfo"] = typeof(UserInfoDataResponse),
       ["UserInfoResponse"] = typeof(UserInfoResponse),
-      ["Workout"] = typeof(Workout),
-      ["UpdatedWorkout"] = typeof(UpdatedWorkoutEvent),
-      ["DeletedWorkout"] = typeof(DeletedWorkoutEvent),
-      ["PaginatedWorkoutEvents"] = typeof(WorkoutEventsPage),
+      ["Workout"] = typeof(WorkoutResponse),
+      ["UpdatedWorkout"] = typeof(UpdatedWorkoutEventResponse),
+      ["DeletedWorkout"] = typeof(DeletedWorkoutEventResponse),
+      ["PaginatedWorkoutEvents"] = typeof(WorkoutEventsPageResponse),
     });
   }
 
@@ -64,26 +65,26 @@ public sealed class OpenApiSchemaContractTests
         },
         new Dictionary<(string Method, string Path, string Status), Type>
         {
-          [("get", "/v1/workouts", "200")] = typeof(WorkoutPage),
-          [("post", "/v1/workouts", "201")] = typeof(Workout),
+          [("get", "/v1/workouts", "200")] = typeof(WorkoutPageResponse),
+          [("post", "/v1/workouts", "201")] = typeof(WorkoutResponse),
           [("get", "/v1/workouts/count", "200")] = typeof(WorkoutCountResponse),
-          [("get", "/v1/workouts/events", "200")] = typeof(WorkoutEventsPage),
-          [("get", "/v1/workouts/{workoutId}", "200")] = typeof(Workout),
-          [("put", "/v1/workouts/{workoutId}", "200")] = typeof(Workout),
+          [("get", "/v1/workouts/events", "200")] = typeof(WorkoutEventsPageResponse),
+          [("get", "/v1/workouts/{workoutId}", "200")] = typeof(WorkoutResponse),
+          [("put", "/v1/workouts/{workoutId}", "200")] = typeof(WorkoutResponse),
           [("get", "/v1/user/info", "200")] = typeof(UserInfoResponse),
-          [("get", "/v1/routines", "200")] = typeof(RoutinePage),
-          [("post", "/v1/routines", "201")] = typeof(Routine),
-          [("get", "/v1/routines/{routineId}", "200")] = typeof(RoutineResponse),
-          [("put", "/v1/routines/{routineId}", "200")] = typeof(Routine),
-          [("get", "/v1/exercise_templates", "200")] = typeof(ExerciseTemplatePage),
+          [("get", "/v1/routines", "200")] = typeof(RoutinePageResponse),
+          [("post", "/v1/routines", "201")] = typeof(RoutineResponse),
+          [("get", "/v1/routines/{routineId}", "200")] = typeof(RoutineEnvelopeResponse),
+          [("put", "/v1/routines/{routineId}", "200")] = typeof(RoutineResponse),
+          [("get", "/v1/exercise_templates", "200")] = typeof(ExerciseTemplatePageResponse),
           [("post", "/v1/exercise_templates", "200")] = typeof(CreateExerciseTemplateResponse),
-          [("get", "/v1/exercise_templates/{exerciseTemplateId}", "200")] = typeof(ExerciseTemplate),
-          [("get", "/v1/routine_folders", "200")] = typeof(RoutineFolderPage),
-          [("post", "/v1/routine_folders", "201")] = typeof(RoutineFolder),
-          [("get", "/v1/routine_folders/{folderId}", "200")] = typeof(RoutineFolder),
+          [("get", "/v1/exercise_templates/{exerciseTemplateId}", "200")] = typeof(ExerciseTemplateResponse),
+          [("get", "/v1/routine_folders", "200")] = typeof(RoutineFolderPageResponse),
+          [("post", "/v1/routine_folders", "201")] = typeof(RoutineFolderResponse),
+          [("get", "/v1/routine_folders/{folderId}", "200")] = typeof(RoutineFolderResponse),
           [("get", "/v1/exercise_history/{exerciseTemplateId}", "200")] = typeof(ExerciseHistoryResponse),
-          [("get", "/v1/body_measurements", "200")] = typeof(BodyMeasurementPage),
-          [("get", "/v1/body_measurements/{date}", "200")] = typeof(BodyMeasurement),
+          [("get", "/v1/body_measurements", "200")] = typeof(BodyMeasurementPageResponse),
+          [("get", "/v1/body_measurements/{date}", "200")] = typeof(BodyMeasurementResponse),
         });
   }
 }
@@ -169,7 +170,7 @@ internal static class OpenApiContract
     var typeInfo = HevyJsonContext.Default.GetTypeInfo(type) ?? throw new InvalidOperationException($"{type.Name} is absent from HevyJsonContext.");
     (typeInfo.Kind).Should().Be(JsonTypeInfoKind.Object);
     var actualProperties = typeInfo.Properties.Select(static property => property.Name).ToHashSet(StringComparer.Ordinal);
-    if (type == typeof(UpdatedWorkoutEvent) || type == typeof(DeletedWorkoutEvent)) actualProperties.Add("type");
+    if (type == typeof(UpdatedWorkoutEventResponse) || type == typeof(DeletedWorkoutEventResponse)) actualProperties.Add("type");
     var properties = schema.TryGetProperty("properties", out var propertyElement) ? propertyElement : default;
     var expectedProperties = properties.ValueKind == JsonValueKind.Object
         ? properties.EnumerateObject().Select(static property => property.Name).ToHashSet(StringComparer.Ordinal)
@@ -183,7 +184,7 @@ internal static class OpenApiContract
         .Where(static property => property.IsRequired || property.PropertyType.IsValueType && Nullable.GetUnderlyingType(property.PropertyType) is null)
         .Select(static property => property.Name)
         .ToHashSet(StringComparer.Ordinal);
-    if (type == typeof(UpdatedWorkoutEvent) || type == typeof(DeletedWorkoutEvent)) enforced.Add("type");
+    if (type == typeof(UpdatedWorkoutEventResponse) || type == typeof(DeletedWorkoutEventResponse)) enforced.Add("type");
     (enforced.IsSupersetOf(required)).Should().BeTrue($"{path} does not enforce required OpenAPI fields: {string.Join(", ", required.Except(enforced))}.");
 
     foreach (var property in typeInfo.Properties)

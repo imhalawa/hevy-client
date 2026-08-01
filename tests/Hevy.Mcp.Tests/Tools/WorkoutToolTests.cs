@@ -1,5 +1,5 @@
 using Hevy.Client;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using TestSupport;

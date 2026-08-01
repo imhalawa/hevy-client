@@ -38,7 +38,7 @@ public sealed class StdioHandshakeTests
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
 
     (initializeResponse.RootElement.GetProperty("id").GetInt32()).Should().Be(1);
-    (initializeResponse.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-client");
+    (initializeResponse.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-mcp");
     (toolsResponse.RootElement.GetProperty("id").GetInt32()).Should().Be(2);
     var tools = toolsResponse.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray().ToArray();
     (tools.Length).Should().Be(28);

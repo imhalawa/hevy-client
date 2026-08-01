@@ -1,5 +1,5 @@
 using Hevy.Client;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 
 namespace TestSupport;
 
@@ -16,12 +16,12 @@ public sealed class FakeHevyClient : IHevyClient
   public Func<string, CancellationToken, Task<Routine>>? GetRoutineHandler { get; set; }
   public Func<int, int, CancellationToken, Task<PagedResult<Routine>>>? GetRoutinesHandler { get; set; }
   public Func<int, int, CancellationToken, Task<PagedResult<ExerciseTemplate>>>? GetExerciseTemplatesHandler { get; set; }
-  public Func<string, ExerciseHistoryWindowRequest, CancellationToken, Task<ExerciseHistoryWindow>>? GetExerciseHistoryWindowHandler { get; set; }
+  public Func<string, ExerciseHistoryQuery, CancellationToken, Task<ExerciseHistoryWindow>>? GetExerciseHistoryWindowHandler { get; set; }
   public Func<int, int, CancellationToken, Task<PagedResult<BodyMeasurement>>>? GetBodyMeasurementsHandler { get; set; }
   public Func<DateOnly, CancellationToken, Task<BodyMeasurement>>? GetBodyMeasurementHandler { get; set; }
-  public Func<CreateExerciseTemplateRequest, CancellationToken, Task<ExerciseTemplate>>? CreateExerciseTemplateHandler { get; set; }
-  public Func<CreateRoutineRequest, CancellationToken, Task<Routine>>? CreateRoutineHandler { get; set; }
-  public Func<string, UpdateRoutineRequest, CancellationToken, Task<Routine>>? UpdateRoutineHandler { get; set; }
+  public Func<CreateExerciseTemplateCommand, CancellationToken, Task<ExerciseTemplate>>? CreateExerciseTemplateHandler { get; set; }
+  public Func<CreateRoutineCommand, CancellationToken, Task<Routine>>? CreateRoutineHandler { get; set; }
+  public Func<string, UpdateRoutineCommand, CancellationToken, Task<Routine>>? UpdateRoutineHandler { get; set; }
 
   public PagedResult<Workout> Workouts { get; set; } = new(1, 0, []);
   public int WorkoutCount { get; set; }
@@ -35,7 +35,7 @@ public sealed class FakeHevyClient : IHevyClient
   public PagedResult<RoutineFolder> RoutineFolders { get; set; } = new(1, 0, []);
   public RoutineFolder RoutineFolder { get; set; } = new(1, 0, "Legs", DateTimeOffset.Parse("2026-07-25T12:00:00Z"), DateTimeOffset.Parse("2026-07-01T12:00:00Z"));
   public PagedResult<ExerciseHistoryEntry> ExerciseHistory { get; set; } = new(1, 0, []);
-  public IReadOnlyList<ExerciseHistoryEntry>? AllExerciseHistory { get; set; }
+  public ImmutableList<ExerciseHistoryEntry>? AllExerciseHistory { get; set; }
   public PagedResult<BodyMeasurement> BodyMeasurements { get; set; } = new(1, 0, []);
   public BodyMeasurement BodyMeasurement { get; set; } = SampleMeasurement();
 
@@ -81,28 +81,28 @@ public sealed class FakeHevyClient : IHevyClient
   public Task<ExerciseHistoryWindow> GetExerciseHistoryAsync(string exerciseTemplateId, int page, int pageSize, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
   {
     Record(nameof(GetExerciseHistoryAsync), new { exerciseTemplateId, page, pageSize, startDate, endDate }, cancellationToken);
-    var request = new ExerciseHistoryWindowRequest(ExerciseHistoryWindowRequest.PageOffset(page, pageSize), pageSize, startDate, endDate);
+    var request = new ExerciseHistoryQuery(ExerciseHistoryQuery.PageOffset(page, pageSize), pageSize, startDate, endDate);
     return GetExerciseHistoryWindowHandler?.Invoke(exerciseTemplateId, request, cancellationToken) ?? Task.FromResult(Window(request));
   }
 
-  public Task<ExerciseHistoryWindow> GetExerciseHistoryWindowAsync(string exerciseTemplateId, ExerciseHistoryWindowRequest request, CancellationToken cancellationToken)
+  public Task<ExerciseHistoryWindow> GetExerciseHistoryWindowAsync(string exerciseTemplateId, ExerciseHistoryQuery request, CancellationToken cancellationToken)
   {
     Record(nameof(GetExerciseHistoryWindowAsync), new { exerciseTemplateId, request }, cancellationToken);
     return GetExerciseHistoryWindowHandler?.Invoke(exerciseTemplateId, request, cancellationToken) ?? Task.FromResult(Window(request));
   }
 
-  private ExerciseHistoryWindow Window(ExerciseHistoryWindowRequest request)
+  private ExerciseHistoryWindow Window(ExerciseHistoryQuery request)
   {
     var source = (AllExerciseHistory ?? ExerciseHistory.Items)
         .Where(entry => (request.EligibleStartTime is null || entry.WorkoutStartTime >= request.EligibleStartTime) &&
                         (request.EligibleEndTime is null || entry.WorkoutStartTime < request.EligibleEndTime))
-        .ToArray();
-    var items = source.Skip(request.Offset).Take(request.Limit).ToArray();
-    var truncated = request.Offset + items.Length < source.Length;
-    var terminal = truncated && request.Offset + request.Limit >= ExerciseHistoryWindowRequest.MaximumScannedItems
+        .ToImmutableList();
+    var items = source.Skip(request.Offset).Take(request.Limit).ToImmutableList();
+    var truncated = request.Offset + items.Count < source.Count;
+    var terminal = truncated && request.Offset + request.Limit >= ExerciseHistoryQuery.MaximumScannedItems
         ? ExerciseHistoryWindow.ItemSafetyCap
         : null;
-    return new ExerciseHistoryWindow(items, truncated, Math.Min(source.Length, ExerciseHistoryWindowRequest.MaximumScannedItems), terminal);
+    return new ExerciseHistoryWindow(items, truncated, Math.Min(source.Count, ExerciseHistoryQuery.MaximumScannedItems), terminal);
   }
 
   public Task<PagedResult<BodyMeasurement>> GetBodyMeasurementsAsync(int page, int pageSize, CancellationToken cancellationToken)
@@ -116,26 +116,26 @@ public sealed class FakeHevyClient : IHevyClient
     return GetBodyMeasurementHandler?.Invoke(date, cancellationToken) ?? Task.FromResult(BodyMeasurement);
   }
 
-  public Task<Workout> CreateWorkoutAsync(CreateWorkoutRequest request, CancellationToken cancellationToken) => Return(nameof(CreateWorkoutAsync), Workout, cancellationToken, request);
-  public Task<Workout> UpdateWorkoutAsync(string workoutId, UpdateWorkoutRequest request, CancellationToken cancellationToken) => Return(nameof(UpdateWorkoutAsync), Workout, cancellationToken, new { workoutId, request });
-  public Task<Routine> CreateRoutineAsync(CreateRoutineRequest request, CancellationToken cancellationToken)
+  public Task<Workout> CreateWorkoutAsync(CreateWorkoutCommand request, CancellationToken cancellationToken) => Return(nameof(CreateWorkoutAsync), Workout, cancellationToken, request);
+  public Task<Workout> UpdateWorkoutAsync(string workoutId, UpdateWorkoutCommand request, CancellationToken cancellationToken) => Return(nameof(UpdateWorkoutAsync), Workout, cancellationToken, new { workoutId, request });
+  public Task<Routine> CreateRoutineAsync(CreateRoutineCommand request, CancellationToken cancellationToken)
   {
     Record(nameof(CreateRoutineAsync), request, cancellationToken);
     return CreateRoutineHandler?.Invoke(request, cancellationToken) ?? Task.FromResult(Routine);
   }
-  public Task<Routine> UpdateRoutineAsync(string routineId, UpdateRoutineRequest request, CancellationToken cancellationToken)
+  public Task<Routine> UpdateRoutineAsync(string routineId, UpdateRoutineCommand request, CancellationToken cancellationToken)
   {
     Record(nameof(UpdateRoutineAsync), new { routineId, request }, cancellationToken);
     return UpdateRoutineHandler?.Invoke(routineId, request, cancellationToken) ?? Task.FromResult(Routine);
   }
-  public Task<RoutineFolder> CreateRoutineFolderAsync(CreateRoutineFolderRequest request, CancellationToken cancellationToken) => Return(nameof(CreateRoutineFolderAsync), RoutineFolder, cancellationToken, request);
-  public Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateRequest request, CancellationToken cancellationToken)
+  public Task<RoutineFolder> CreateRoutineFolderAsync(CreateRoutineFolderCommand request, CancellationToken cancellationToken) => Return(nameof(CreateRoutineFolderAsync), RoutineFolder, cancellationToken, request);
+  public Task<ExerciseTemplate> CreateExerciseTemplateAsync(CreateExerciseTemplateCommand request, CancellationToken cancellationToken)
   {
     Record(nameof(CreateExerciseTemplateAsync), request, cancellationToken);
     return CreateExerciseTemplateHandler?.Invoke(request, cancellationToken) ?? Task.FromResult(ExerciseTemplate);
   }
-  public Task<BodyMeasurement> CreateBodyMeasurementAsync(CreateBodyMeasurementRequest request, CancellationToken cancellationToken) => Return(nameof(CreateBodyMeasurementAsync), BodyMeasurement, cancellationToken, request);
-  public Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, UpdateBodyMeasurementRequest request, CancellationToken cancellationToken) => Return(nameof(UpdateBodyMeasurementAsync), BodyMeasurement, cancellationToken, new { date, request });
+  public Task<BodyMeasurement> CreateBodyMeasurementAsync(NewBodyMeasurement request, CancellationToken cancellationToken) => Return(nameof(CreateBodyMeasurementAsync), BodyMeasurement, cancellationToken, request);
+  public Task<BodyMeasurement> UpdateBodyMeasurementAsync(DateOnly date, BodyMeasurementUpdate request, CancellationToken cancellationToken) => Return(nameof(UpdateBodyMeasurementAsync), BodyMeasurement, cancellationToken, new { date, request });
 
   private Task<T> Return<T>(string operation, T result, CancellationToken token, object? request = null)
   {

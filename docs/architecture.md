@@ -7,7 +7,7 @@ user-managed TLS reverse proxy over Streamable HTTP.
 ## System boundary
 
 ```text
-MCP client -> MCP host -> typed Hevy API client -> https://api.hevyapp.com
+MCP client -> Hevy.Mcp -> Hevy.Core.Ports.IHevyClient <- Hevy.Client -> Hevy API
 ```
 
 The server performs deterministic API access and calculations. It does not run
@@ -16,16 +16,25 @@ telemetry.
 
 ## Components
 
-The typed API client owns the Hevy boundary: request and response models,
-authentication, pagination, validation, retry classification, response-size
-limits, and stable error normalization. Release builds send authenticated
-requests only to the fixed `https://api.hevyapp.com` origin.
+`Hevy.Core` owns pure domain models, domain exceptions, use-case inputs and
+results, and the outbound `IHevyClient` port. Each use case keeps its models in
+its own `UseCases/<UseCase>` directory. Core types contain no HTTP, JSON, Refit,
+Polly, or MCP concerns.
 
-The MCP host owns configuration, transports, tool and prompt registration,
+`Hevy.Client` is the outbound adapter. It owns Hevy API request and response
+contracts, explicit domain mapping, Refit endpoint declarations,
+authentication, pagination, response validation, response-size limits, and
+Polly retry policy. Release builds send authenticated requests only to the
+fixed `https://api.hevyapp.com` origin.
+
+`Hevy.Mcp` is the executable composition root and inbound adapter. It owns
+configuration, transports, tool and prompt registration,
 compact result projections, bounded analysis, process-local caching,
-authorization, and redacted diagnostics. It depends on the typed API client
-through one injectable interface, which lets tests replace network access with
-fake transports.
+authorization, and redacted diagnostics. It invokes Core use cases through the
+port and wires `Hevy.Client` as the production implementation.
+
+Production source files contain one type. Collections exposed by project types
+use `ImmutableList<T>`, not `IReadOnlyList<T>`.
 
 ## Transports
 
@@ -68,7 +77,7 @@ evidence.
 ## Verification and evolution
 
 The checked-in OpenAPI snapshot under `docs/api/` is the reviewed contract for
-the handwritten client and its contract tests. Updating it is an explicit
+the Refit adapter and its contract tests. Updating it is an explicit
 maintenance change; the server never fetches API documentation at runtime.
 
 CI restores locked dependencies, verifies formatting, builds with warnings as

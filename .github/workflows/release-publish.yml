@@ -1,0 +1,247 @@
+name: Release publish
+
+on:
+  workflow_call:
+
+permissions:
+  attestations: write
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  publish:
+    name: Verify and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: release
+    steps:
+      - name: Check out exact tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release identity and security gate
+        id: release
+        env:
+          HEVY_CANONICAL_REPOSITORY: ${{ vars.HEVY_CANONICAL_REPOSITORY }}
+          HEVY_PRIVATE_ADVISORY_VERIFIED: ${{ vars.HEVY_PRIVATE_ADVISORY_VERIFIED }}
+        run: ./scripts/validate-release.sh
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore release dependencies
+        run: dotnet restore HevyMcp.slnx --locked-mode
+
+      - name: Build release assembly
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: dotnet build HevyMcp.slnx --configuration Release --no-restore -warnaserror -p:Version="$RELEASE_VERSION"
+
+      - name: Verify reproducible multi-architecture image
+        id: reproducibility
+        env:
+          REVISION: ${{ steps.release.outputs.revision }}
+          SOURCE_URL: ${{ steps.release.outputs.source }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: ./scripts/verify-reproducible-image.sh
+
+      - name: Log in to GHCR
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Authenticate GHCR version-tag lookup
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: ./scripts/ghcr-manifest.sh "$IMAGE" "$RELEASE_VERSION" >/dev/null
+
+      - name: Build and stage multi-architecture digest
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.reproducibility.outputs.source_date_epoch }}
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          tags: ${{ steps.release.outputs.image }}
+          outputs: type=image,name=${{ steps.release.outputs.image }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true,compatibility-version=30,oci-mediatypes=true
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            REVISION=${{ steps.release.outputs.revision }}
+            SOURCE_URL=${{ steps.release.outputs.source }}
+          provenance: false
+          sbom: false
+
+      - name: Verify published digest platforms labels and assembly version
+        id: image
+        shell: bash
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          REPRO_INDEX_DIGEST: ${{ steps.reproducibility.outputs.index_digest }}
+          REPRO_AMD64_DIGEST: ${{ steps.reproducibility.outputs.amd64_digest }}
+          REPRO_ARM64_DIGEST: ${{ steps.reproducibility.outputs.arm64_digest }}
+          REVISION: ${{ steps.release.outputs.revision }}
+          SOURCE_URL: ${{ steps.release.outputs.source }}
+        run: |
+          set -euo pipefail
+          ./scripts/validate-sha256-digest.sh "$IMAGE_DIGEST"
+          index_file="$(mktemp)"
+          response_file="$(mktemp)"
+          trap 'rm -f "$index_file" "$response_file"' EXIT
+          ./scripts/capture-bounded-output.sh "$index_file" docker buildx imagetools inspect --raw "$IMAGE@$IMAGE_DIGEST"
+          ./scripts/verify-staged-index.sh \
+            "$index_file" \
+            "$IMAGE_DIGEST" \
+            "$REPRO_INDEX_DIGEST" \
+            "$REPRO_AMD64_DIGEST" \
+            "$REPRO_ARM64_DIGEST"
+          amd64_digest="$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' "$index_file")"
+          arm64_digest="$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest' "$index_file")"
+          for platform_digest in "$amd64_digest" "$arm64_digest"; do
+            labels="$(docker buildx imagetools inspect "$IMAGE@$platform_digest" --format '{{json .Image.Config.Labels}}')"
+            jq -e --arg version "$RELEASE_VERSION" --arg revision "$REVISION" --arg source "$SOURCE_URL" \
+              '."org.opencontainers.image.version" == $version and ."org.opencontainers.image.revision" == $revision and ."org.opencontainers.image.source" == $source and ."org.opencontainers.image.licenses" == "MIT"' \
+              <<<"$labels" >/dev/null
+          done
+          coproc MCP_SERVER {
+            docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY=release-fixture "$IMAGE@$amd64_digest"
+          }
+          input_fd=${MCP_SERVER[1]}
+          output_fd=${MCP_SERVER[0]}
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"release-verifier","version":"1.0"}}}' >&"$input_fd"
+          IFS= read -r response <&"$output_fd"
+          printf '%s\n' "$response" > "$response_file"
+          exec {input_fd}>&-
+          wait "$MCP_SERVER_PID"
+          test "$(jq -er 'select(.id == 1) | .result.serverInfo.version' "$response_file")" = "$RELEASE_VERSION.0"
+
+      - name: Install pinned Syft
+        run: ./scripts/install-syft.sh
+
+      - name: Generate platform SPDX SBOMs
+        id: sbom
+        env:
+          AMD64_DIGEST: ${{ steps.image.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ steps.image.outputs.arm64_digest }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          syft "registry:$IMAGE@$AMD64_DIGEST" --scope all-layers --output "spdx-json=dist/hevy-mcp-$RELEASE_VERSION-linux-amd64.spdx.json"
+          syft "registry:$IMAGE@$ARM64_DIGEST" --scope all-layers --output "spdx-json=dist/hevy-mcp-$RELEASE_VERSION-linux-arm64.spdx.json"
+          ./scripts/validate-spdx.sh \
+            "dist/hevy-mcp-$RELEASE_VERSION-linux-amd64.spdx.json" \
+            "dist/hevy-mcp-$RELEASE_VERSION-linux-arm64.spdx.json"
+
+      - name: Upload SPDX SBOMs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hevy-mcp-${{ steps.release.outputs.version }}-spdx-sbom
+          path: dist/*.spdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attest SBOM artifacts provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: dist/*.spdx.json
+
+      - name: Attest staged container provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.release.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest amd64 container SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ steps.release.outputs.image }}
+          subject-digest: ${{ steps.image.outputs.amd64_digest }}
+          sbom-path: dist/hevy-mcp-${{ steps.release.outputs.version }}-linux-amd64.spdx.json
+          push-to-registry: true
+
+      - name: Attest arm64 container SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ steps.release.outputs.image }}
+          subject-digest: ${{ steps.image.outputs.arm64_digest }}
+          sbom-path: dist/hevy-mcp-${{ steps.release.outputs.version }}-linux-arm64.spdx.json
+          push-to-registry: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Keylessly sign and verify the staged digest
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          REVISION: ${{ steps.release.outputs.revision }}
+          SOURCE_URL: ${{ steps.release.outputs.source }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$IMAGE@$IMAGE_DIGEST"
+          certificate_identity="$SOURCE_URL/.github/workflows/release.yml@refs/tags/v$RELEASE_VERSION"
+          cosign verify "$IMAGE@$IMAGE_DIGEST" \
+            --certificate-identity "$certificate_identity" \
+            --certificate-github-workflow-sha "$REVISION" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+      - name: Verify GitHub attestations
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          AMD64_DIGEST: ${{ steps.image.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ steps.image.outputs.arm64_digest }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          REVISION: ${{ steps.release.outputs.revision }}
+          SPDX_PREDICATE_TYPE: ${{ steps.sbom.outputs.predicate_type }}
+        run: |
+          set -euo pipefail
+          signer_workflow="$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          gh attestation verify "oci://$IMAGE@$IMAGE_DIGEST" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$signer_workflow" \
+            --source-digest "$REVISION" \
+            --source-ref "refs/tags/v$RELEASE_VERSION" \
+            --bundle-from-oci
+          for platform_digest in "$AMD64_DIGEST" "$ARM64_DIGEST"; do
+            gh attestation verify "oci://$IMAGE@$platform_digest" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$signer_workflow" \
+              --source-digest "$REVISION" \
+              --source-ref "refs/tags/v$RELEASE_VERSION" \
+              --predicate-type "$SPDX_PREDICATE_TYPE" \
+              --bundle-from-oci
+          done
+
+      - name: Promote verified digest to version tag
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: exec ./scripts/promote-ghcr-tag.sh "$IMAGE" "$RELEASE_VERSION" "$IMAGE_DIGEST"

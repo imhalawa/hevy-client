@@ -1,27 +1,8 @@
 using System.Globalization;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using Hevy.Mcp.Caching;
 
 namespace Hevy.Mcp.Composite;
-
-internal sealed record CompositeResult<T>(
-    IReadOnlyList<T> Items,
-    IReadOnlyDictionary<string, string?> Filters,
-    int Limit,
-    bool Truncated,
-    string? Continuation)
-    where T : class;
-
-internal sealed record RoutineSearchItem(string Id, string Title, long? FolderId);
-
-internal sealed record ExerciseTemplateSearchItem(
-    string Id,
-    string Title,
-    string Type,
-    string PrimaryMuscleGroup,
-    IReadOnlyList<string> SecondaryMuscleGroups,
-    EquipmentCategory EquipmentCategory,
-    bool IsCustom);
 
 internal sealed class SearchService(HevyCache cache)
 {
@@ -149,7 +130,7 @@ internal sealed class SearchService(HevyCache cache)
     var next = more
         ? Continuation.Create(endpoint, checked(sourceOffset + 1), filters, Continuation.MaximumItemBudget)
         : null;
-    return new CompositeResult<TResult>(results.AsReadOnly(), filters, limit, more, next);
+    return new CompositeResult<TResult>(results.ToImmutableList(), filters, limit, more, next);
   }
 
   private static IReadOnlyDictionary<string, string?> Filters(params (string Key, string? Value)[] filters) =>

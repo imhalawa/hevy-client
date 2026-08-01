@@ -1,8 +1,8 @@
 using System.Net;
 using Hevy.Client;
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
 using Hevy.Client.Http;
-using Hevy.Client.Models;
+using Hevy.Core.Models;
 using TestSupport;
 using Xunit;
 
@@ -175,7 +175,7 @@ public sealed class HevyClientReadTests
 
     var history = await client.GetExerciseHistoryWindowAsync(
         "D04AC939",
-        new ExerciseHistoryWindowRequest(0, 3, new DateOnly(2024, 1, 1), new DateOnly(2024, 12, 31)),
+        new ExerciseHistoryQuery(0, 3, new DateOnly(2024, 1, 1), new DateOnly(2024, 12, 31)),
         CancellationToken.None);
 
     (history.Items.Count).Should().Be(3);

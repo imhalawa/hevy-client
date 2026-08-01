@@ -3,12 +3,6 @@ using System.Text.Json;
 
 namespace Hevy.Mcp.Composite;
 
-internal sealed record ContinuationState(
-    string Endpoint,
-    int NextPage,
-    IReadOnlyDictionary<string, string?> Filters,
-    int RemainingItemBudget);
-
 internal static class Continuation
 {
   internal const int MaximumItemBudget = 1_000;

@@ -109,7 +109,7 @@ public sealed class RedactingLoggerTests
     var result = await DiagnosticToolDispatch.InvokeAsync(
         cancellationToken => WorkoutWriteTools.CreateWorkout(
             services,
-            FixtureFactory.CreateWorkoutRequest(),
+            FixtureFactory.CreateWorkoutCommand(),
             dry_run: false,
             cancellationToken),
         DiagnosticOperationCategory.Mutation,
