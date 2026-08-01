@@ -2,8 +2,8 @@ namespace Hevy.Core.Models;
 
 public enum SetType
 {
-	Warmup,
-	Normal,
-	Failure,
-	Dropset
+  Warmup,
+  Normal,
+  Failure,
+  Dropset
 }
