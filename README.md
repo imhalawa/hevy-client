@@ -18,10 +18,8 @@ You need [Docker](https://www.docker.com/products/docker-desktop/), a [Hevy API 
 Pull the image:
 
 ```powershell
-docker pull ghcr.io/imhalawa/hevy-client:0.1.0
+docker pull ghcr.io/imhalawa/hevy-mcp:0.1.1
 ```
-
-Version `0.1.0` was published before the repository rename, so its image still uses `hevy-client`. Future releases will use `hevy-mcp`.
 
 Set your API key for the current PowerShell session without displaying it:
 
@@ -33,7 +31,7 @@ $env:HEVY_API_KEY = [System.Net.NetworkCredential]::new('', $key).Password
 Add the server to Codex:
 
 ```powershell
-codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY ghcr.io/imhalawa/hevy-client:0.1.0
+codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY ghcr.io/imhalawa/hevy-mcp:0.1.1
 ```
 
 Restart Codex, then try:
@@ -46,8 +44,8 @@ The first request may take a moment while Docker starts the container.
 
 ```sh
 read -r -s -p "Hevy API key: " HEVY_API_KEY && export HEVY_API_KEY && printf '\n'
-docker pull ghcr.io/imhalawa/hevy-client:0.1.0
-codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY ghcr.io/imhalawa/hevy-client:0.1.0
+docker pull ghcr.io/imhalawa/hevy-mcp:0.1.1
+codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY ghcr.io/imhalawa/hevy-mcp:0.1.1
 ```
 
 Other stdio MCP clients use the same `docker run` command. Make sure the client inherits `HEVY_API_KEY` from its environment.
@@ -57,7 +55,7 @@ Other stdio MCP clients use the same `docker run` command. Make sure the client 
 Run in read-only mode until you want the client to change Hevy data:
 
 ```powershell
-codex mcp add hevy-readonly -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY -e HEVY_READ_ONLY=true ghcr.io/imhalawa/hevy-client:0.1.0
+codex mcp add hevy-readonly -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY -e HEVY_READ_ONLY=true ghcr.io/imhalawa/hevy-mcp:0.1.1
 ```
 
 Write tools also support `dry_run`, so the client can validate the exact change before sending it to Hevy.
