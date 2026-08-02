@@ -29,9 +29,19 @@ bunx --bun --package github:imhalawa/hevy-mcp hevy-mcp setup
 
 It asks for your API key without displaying it, saves it in a user-only file, pulls the Docker image, and configures every installed supported client. Read-only access is the default; the assistant asks before enabling writes.
 
+The setup registers this server as `hevy-mcp`; an existing MCP server named `hevy` is left untouched. In WSL, use a Linux installation of Node.js or Bun rather than the Windows executable exposed through `/mnt/c`.
+
 Restart Codex or Claude Code, then try:
 
 > Show my five most recent Hevy workouts.
+
+To remove this server from every detected client and delete its saved API key:
+
+```sh
+npx --yes github:imhalawa/hevy-mcp uninstall
+```
+
+Uninstall leaves other MCP registrations and the cached Docker image untouched.
 
 The same command works on Windows, macOS, and Linux. Run it again to rotate the API key or change write access.
 

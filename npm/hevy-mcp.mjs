@@ -13,9 +13,12 @@ import { delimiter, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 
-const IMAGE = 'ghcr.io/imhalawa/hevy-mcp:0.1.1';
-const SERVER_NAME = 'hevy';
+const IMAGE = 'ghcr.io/imhalawa/hevy-mcp:0.1.2';
+const SERVER_NAME = 'hevy-mcp';
 const IS_WINDOWS = process.platform === 'win32';
+
+export const isWindowsNodeFromWsl = (platform = process.platform, cwd = process.cwd()) =>
+  platform === 'win32' && /^\\\\wsl(?:\.localhost|\$)\\/i.test(cwd);
 
 const clients = [
   {
@@ -164,10 +167,11 @@ const configureClient = (client, executable, dockerCommand, arguments_) => {
   return undefined;
 };
 
-const usage = () => console.log(`Usage: hevy-mcp setup
+const usage = () => console.log(`Usage: hevy-mcp setup|uninstall
 
 Prompts for your Hevy API key, stores it in a user-only file, pulls the Docker
-image, and configures installed Codex and Claude Code clients.`);
+image, and configures installed Codex and Claude Code clients. Uninstall removes
+only the hevy-mcp registrations and saved API key.`);
 
 const setup = async () => {
   const dockerCommand = findCommand('docker');
@@ -196,11 +200,31 @@ const setup = async () => {
   console.log(`\nDone. Restart your AI client, then ask: “Show my five most recent Hevy workouts.”`);
 };
 
+const uninstall = () => {
+  const detectedClients = clients
+    .map((client) => ({ client, executable: findCommand(client.command) }))
+    .filter(({ executable }) => executable);
+  if (detectedClients.length === 0) {
+    throw new Error('No supported MCP client found. Nothing was removed.');
+  }
+
+  const failures = detectedClients
+    .filter(({ client, executable }) => run(executable, client.remove).status !== 0)
+    .map(({ client }) => client.name);
+  if (failures.length > 0) throw new Error(`Could not remove from: ${failures.join(', ')}.`);
+
+  rmSync(environmentFile(), { force: true });
+  console.log('Removed hevy-mcp and its saved API key.');
+};
+
 const main = async () => {
   const command = process.argv[2] ?? 'setup';
   if (['--help', '-h', 'help'].includes(command)) return usage();
-  if (command !== 'setup') throw new Error(`Unknown command: ${command}`);
-  await setup();
+  if (!['setup', 'uninstall'].includes(command)) throw new Error(`Unknown command: ${command}`);
+  if (isWindowsNodeFromWsl()) {
+    throw new Error('Windows Node.js was launched from WSL. Install Node.js inside WSL, then run this command again so it targets the Linux MCP client.');
+  }
+  command === 'setup' ? await setup() : uninstall();
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
