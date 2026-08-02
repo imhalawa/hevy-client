@@ -1,0 +1,26 @@
+{
+  "name": "@imhalawa/hevy-mcp",
+  "version": "0.1.1",
+  "description": "Set up the Docker-backed Hevy MCP server for supported AI clients.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "hevy-mcp": "npm/hevy-mcp.mjs"
+  },
+  "files": [
+    "npm/hevy-mcp.mjs"
+  ],
+  "scripts": {
+    "test": "node --test npm/hevy-mcp.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/imhalawa/hevy-mcp.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
