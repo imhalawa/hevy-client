@@ -20,14 +20,13 @@ public sealed class HevyAuthenticationHandler : DelegatingHandler
 
   internal static void EnsureSafeTarget(Uri? requestUri)
   {
-    if (requestUri is null ||
-        !requestUri.IsAbsoluteUri ||
-        !string.Equals(requestUri.Scheme, ApiOrigin.Scheme, StringComparison.OrdinalIgnoreCase) ||
-        !string.Equals(requestUri.Host, ApiOrigin.Host, StringComparison.OrdinalIgnoreCase) ||
-        requestUri.Port != ApiOrigin.Port ||
-        !string.IsNullOrEmpty(requestUri.UserInfo))
+    if (!IsOfficialApiOrigin(requestUri))
     {
       throw new InvalidOperationException("Authenticated Hevy requests are restricted to the official API origin.");
     }
   }
+
+  private static bool IsOfficialApiOrigin(Uri? requestUri) =>
+      requestUri is { IsAbsoluteUri: true, UserInfo.Length: 0 } &&
+      Uri.Compare(requestUri, ApiOrigin, UriComponents.SchemeAndServer, UriFormat.SafeUnescaped, StringComparison.OrdinalIgnoreCase) == 0;
 }

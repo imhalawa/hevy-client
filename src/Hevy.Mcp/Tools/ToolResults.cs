@@ -39,7 +39,8 @@ internal static class ToolResults
   internal static PagedResult<T> LocalPage<T>(ImmutableList<T> catalog, int page, int pageSize)
   {
     var pageCount = catalog.Count == 0 ? 0 : (catalog.Count + pageSize - 1) / pageSize;
-    if ((pageCount == 0 && page != 1) || (pageCount > 0 && page > pageCount))
+    var pageExceedsBounds = pageCount == 0 ? page != 1 : page > pageCount;
+    if (pageExceedsBounds)
     {
       throw new ArgumentOutOfRangeException(nameof(page), "page cannot exceed the cached catalog page count.");
     }

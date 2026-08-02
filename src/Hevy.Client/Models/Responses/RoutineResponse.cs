@@ -7,7 +7,8 @@ public sealed record RoutineResponse([property: JsonRequired] string Id, [proper
 {
   public void Validate()
   {
-    if (string.IsNullOrWhiteSpace(Id) || UpdatedAt == default || CreatedAt == default) throw new JsonException();
+    var hasRequiredFields = !string.IsNullOrWhiteSpace(Id) && UpdatedAt != default && CreatedAt != default;
+    if (!hasRequiredFields) throw new JsonException();
     foreach (var exercise in Exercises)
     {
       if (exercise is null) throw new JsonException();

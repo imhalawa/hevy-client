@@ -40,8 +40,9 @@ internal sealed class HevyRetryHandler : DelegatingHandler
           MaxRetryAttempts = 2,
           ShouldHandle = arguments =>
           {
-            if (!retryAllowed || (arguments.Outcome.Exception is not HttpRequestException &&
-                (arguments.Outcome.Result is null || !IsTransient(arguments.Outcome.Result.StatusCode))))
+            var hasTransientException = arguments.Outcome.Exception is HttpRequestException;
+            var hasTransientResponse = arguments.Outcome.Result is { } response && IsTransient(response.StatusCode);
+            if (!retryAllowed || (!hasTransientException && !hasTransientResponse))
             {
               return ValueTask.FromResult(false);
             }

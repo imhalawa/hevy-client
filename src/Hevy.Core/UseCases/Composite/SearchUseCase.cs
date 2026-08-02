@@ -94,12 +94,17 @@ public sealed class SearchUseCase(
     while (results.Count < limit && scanned < Continuation.MaximumItemBudget)
     {
       var result = await readPage(page, cancellationToken).ConfigureAwait(false);
-      if (result.Page != page || result.PageCount < 0 || (expectedPageCount >= 0 && result.PageCount != expectedPageCount))
+      var hasConsistentPagination = result.Page == page && result.PageCount >= 0 &&
+          (expectedPageCount < 0 || result.PageCount == expectedPageCount);
+      if (!hasConsistentPagination)
       {
         throw new InvalidOperationException("Hevy returned inconsistent catalog pagination.");
       }
       expectedPageCount = result.PageCount;
-      if (page > Math.Max(1, result.PageCount) || result.Items.Count > 10 || (result.PageCount > 0 && result.Items.Count == 0))
+      var hasPossiblePage = page <= Math.Max(1, result.PageCount) &&
+          result.Items.Count <= 10 &&
+          (result.PageCount == 0 || result.Items.Count > 0);
+      if (!hasPossiblePage)
       {
         throw new InvalidOperationException("Hevy returned an impossible catalog page.");
       }

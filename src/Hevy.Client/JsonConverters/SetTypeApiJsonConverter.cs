@@ -15,15 +15,12 @@ public sealed class SetTypeApiJsonConverter : JsonConverter<SetTypeApi>
         _ => throw new JsonException("Set type is invalid."),
       };
 
-  public override void Write(Utf8JsonWriter writer, SetTypeApi value, JsonSerializerOptions options)
+  public override void Write(Utf8JsonWriter writer, SetTypeApi value, JsonSerializerOptions options) => writer.WriteStringValue(value switch
   {
-    writer.WriteStringValue(value switch
-    {
-      SetTypeApi.Warmup => "warmup",
-      SetTypeApi.Normal => "normal",
-      SetTypeApi.Failure => "failure",
-      SetTypeApi.Dropset => "dropset",
-      _ => throw new JsonException("Set type is invalid."),
-    });
-  }
+    SetTypeApi.Warmup => "warmup",
+    SetTypeApi.Normal => "normal",
+    SetTypeApi.Failure => "failure",
+    SetTypeApi.Dropset => "dropset",
+    _ => throw new JsonException("Set type is invalid."),
+  });
 }

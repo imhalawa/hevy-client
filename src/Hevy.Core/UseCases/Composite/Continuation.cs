@@ -58,9 +58,7 @@ internal static class Continuation
     using (document)
     {
       var root = document.RootElement;
-      if (root.ValueKind != JsonValueKind.Object ||
-          root.EnumerateObject().Select(static property => property.Name).Order(StringComparer.Ordinal)
-              .SequenceEqual(AllowedProperties.Order(StringComparer.Ordinal), StringComparer.Ordinal) is false)
+      if (!HasExpectedShape(root))
       {
         throw new ArgumentException("The continuation payload has unexpected fields.", nameof(token));
       }
@@ -92,6 +90,11 @@ internal static class Continuation
       }
     }
   }
+
+  private static bool HasExpectedShape(JsonElement root) =>
+      root.ValueKind == JsonValueKind.Object &&
+      root.EnumerateObject().Select(static property => property.Name).Order(StringComparer.Ordinal)
+          .SequenceEqual(AllowedProperties.Order(StringComparer.Ordinal), StringComparer.Ordinal);
 
   private static IReadOnlyDictionary<string, string?> ReadFilters(JsonElement element)
   {

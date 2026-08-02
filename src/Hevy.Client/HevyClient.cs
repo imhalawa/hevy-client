@@ -377,10 +377,13 @@ public sealed class HevyClient : IHevyClient
 
   private static void ValidatePage<T>(int actualPage, int pageCount, ImmutableList<T>? items, int requestedPage, int requestedPageSize)
   {
-    if (actualPage != requestedPage || pageCount < 0 || (pageCount == 0 && actualPage != 1) ||
-        (pageCount > 0 && actualPage > pageCount) || items is null ||
-        (pageCount == 0 && items.Count != 0) || (pageCount > 0 && items.Count == 0) ||
-        items.Count > requestedPageSize)
+    var matchesRequest = actualPage == requestedPage;
+    var hasValidBounds = pageCount >= 0 &&
+        (pageCount == 0 ? actualPage == 1 : actualPage <= pageCount);
+    var hasValidItems = items is not null && items.Count <= requestedPageSize &&
+        (pageCount == 0 ? items.Count == 0 : items.Count > 0);
+
+    if (!matchesRequest || !hasValidBounds || !hasValidItems)
     {
       throw HevyResponse.UnexpectedResponse(System.Net.HttpStatusCode.OK);
     }

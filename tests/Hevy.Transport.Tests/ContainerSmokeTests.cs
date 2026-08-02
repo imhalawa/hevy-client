@@ -109,15 +109,12 @@ public static class DockerAvailabilityPolicy
       return false;
     }
 
-    var output = result.StandardOutput;
-    if (output.EndsWith("\r\n", StringComparison.Ordinal))
+    var output = result.StandardOutput switch
     {
-      output = output[..^2];
-    }
-    else if (output.EndsWith('\n'))
-    {
-      output = output[..^1];
-    }
+      var text when text.EndsWith("\r\n", StringComparison.Ordinal) => text[..^2],
+      var text when text.EndsWith('\n') => text[..^1],
+      var text => text,
+    };
 
     if (!IsSafeBoundedText(output, maximumLength: 2048))
     {
@@ -140,8 +137,9 @@ public static class DockerAvailabilityPolicy
 
     const string daemonPrefix = "Cannot connect to the Docker daemon at ";
     const string daemonSuffix = ". Is the docker daemon running?";
-    if (diagnostic.StartsWith(daemonPrefix, StringComparison.Ordinal) &&
-        diagnostic.EndsWith(daemonSuffix, StringComparison.Ordinal))
+    var hasDaemonMessageShape = diagnostic.StartsWith(daemonPrefix, StringComparison.Ordinal) &&
+        diagnostic.EndsWith(daemonSuffix, StringComparison.Ordinal);
+    if (hasDaemonMessageShape)
     {
       var endpoint = diagnostic[daemonPrefix.Length..^daemonSuffix.Length];
       return IsLocalEndpoint(endpoint);
@@ -171,8 +169,9 @@ public static class DockerAvailabilityPolicy
   private static bool IsLocalApiRefusal(string diagnostic)
   {
     const string prefix = "failed to connect to the docker API at ";
-    if (!diagnostic.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
-        diagnostic[prefix.Length..].Contains(prefix, StringComparison.OrdinalIgnoreCase))
+    var hasExpectedPrefix = diagnostic.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    var repeatsPrefix = hasExpectedPrefix && diagnostic[prefix.Length..].Contains(prefix, StringComparison.OrdinalIgnoreCase);
+    if (!hasExpectedPrefix || repeatsPrefix)
     {
       return false;
     }
@@ -210,8 +209,9 @@ public static class DockerAvailabilityPolicy
 
     const string dialPrefix = "dial tcp ";
     const string dialSuffix = ": connect: connection refused";
-    if (!reason.StartsWith(dialPrefix, StringComparison.OrdinalIgnoreCase) ||
-        !reason.EndsWith(dialSuffix, StringComparison.OrdinalIgnoreCase))
+    var hasDialErrorShape = reason.StartsWith(dialPrefix, StringComparison.OrdinalIgnoreCase) &&
+        reason.EndsWith(dialSuffix, StringComparison.OrdinalIgnoreCase);
+    if (!hasDialErrorShape)
     {
       return false;
     }
@@ -228,8 +228,9 @@ public static class DockerAvailabilityPolicy
       return false;
     }
 
-    if (string.Equals(endpoint, "npipe:////./pipe/docker_engine", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(endpoint, "npipe:////./pipe/dockerDesktopLinuxEngine", StringComparison.OrdinalIgnoreCase))
+    var isKnownWindowsPipe = string.Equals(endpoint, "npipe:////./pipe/docker_engine", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(endpoint, "npipe:////./pipe/dockerDesktopLinuxEngine", StringComparison.OrdinalIgnoreCase);
+    if (isKnownWindowsPipe)
     {
       return true;
     }
@@ -240,25 +241,15 @@ public static class DockerAvailabilityPolicy
       return IsExactAbsoluteUnixSocketPath(endpoint.AsSpan(unixPrefix.Length));
     }
 
-    ReadOnlySpan<char> authority;
-    if (endpoint.StartsWith("tcp://", StringComparison.Ordinal))
+    ReadOnlySpan<char> authority = endpoint switch
     {
-      authority = endpoint.AsSpan("tcp://".Length);
-    }
-    else if (endpoint.StartsWith("http://", StringComparison.Ordinal))
-    {
-      authority = endpoint.AsSpan("http://".Length);
-    }
-    else if (endpoint.StartsWith("https://", StringComparison.Ordinal))
-    {
-      authority = endpoint.AsSpan("https://".Length);
-    }
-    else
-    {
-      return false;
-    }
+      var value when value.StartsWith("tcp://", StringComparison.Ordinal) => value.AsSpan("tcp://".Length),
+      var value when value.StartsWith("http://", StringComparison.Ordinal) => value.AsSpan("http://".Length),
+      var value when value.StartsWith("https://", StringComparison.Ordinal) => value.AsSpan("https://".Length),
+      _ => [],
+    };
 
-    return IsExactLoopbackAuthority(authority);
+    return !authority.IsEmpty && IsExactLoopbackAuthority(authority);
   }
 
   private static bool IsExactAbsoluteUnixSocketPath(ReadOnlySpan<char> path)
@@ -854,8 +845,8 @@ public sealed class ContainerSmokeTests
     {
       var portResult = await DockerProcess.RunAsync(["port", containerId, "8080/tcp"]);
       var binding = portResult.StandardOutput.Trim();
-      if (portResult.ExitCode == 0 && binding.StartsWith("127.0.0.1:", StringComparison.Ordinal) &&
-          int.TryParse(binding["127.0.0.1:".Length..], out var port))
+      var hasLoopbackBinding = portResult.ExitCode == 0 && binding.StartsWith("127.0.0.1:", StringComparison.Ordinal);
+      if (hasLoopbackBinding && int.TryParse(binding["127.0.0.1:".Length..], out var port))
       {
         return port;
       }

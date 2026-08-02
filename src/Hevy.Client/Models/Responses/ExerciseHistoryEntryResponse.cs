@@ -7,7 +7,10 @@ public sealed record ExerciseHistoryEntryResponse([property: JsonRequired] strin
 {
   public void Validate()
   {
-    if (string.IsNullOrWhiteSpace(WorkoutId) || string.IsNullOrWhiteSpace(ExerciseTemplateId) || WorkoutStartTime == default || WorkoutEndTime == default) throw new JsonException();
+    var hasRequiredFields = !string.IsNullOrWhiteSpace(WorkoutId) &&
+        !string.IsNullOrWhiteSpace(ExerciseTemplateId) &&
+        WorkoutStartTime != default && WorkoutEndTime != default;
+    if (!hasRequiredFields) throw new JsonException();
   }
 
   internal ExerciseHistoryEntry ToDomain() => new(WorkoutId, WorkoutTitle, WorkoutStartTime, WorkoutEndTime, ExerciseTemplateId, WeightKg, Reps, DistanceMeters, DurationSeconds, Rpe, CustomMetric, SetType);

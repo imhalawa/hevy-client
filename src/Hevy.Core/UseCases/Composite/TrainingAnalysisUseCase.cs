@@ -43,43 +43,44 @@ public sealed class TrainingAnalysisUseCase(IHevyClient client, TimeProvider tim
     var scanBudget = Continuation.MaximumItemBudget;
     var workouts = new List<Workout>();
     var measurements = new List<BodyMeasurement>();
-    string? next = null;
     var workoutPhaseCompleteInThisCall = false;
+    TrainingSummary Build(string? next) => BuildTrainingSummary(
+        cursor,
+        workouts.ToImmutableList(),
+        measurements.ToImmutableList(),
+        cursor.IsInitial && next is null,
+        workoutPhaseCompleteInThisCall,
+        next);
 
-    if (cursor.Phase == WorkoutsPhase)
-    {
-      var workoutFetch = await FetchWorkoutChunkAsync(cursor, capacity, scanBudget, cancellationToken).ConfigureAwait(false);
-      workouts.AddRange(workoutFetch.Items);
-      capacity -= workoutFetch.Items.Count;
-      scanBudget -= workoutFetch.ScannedCapacity;
-      if (workoutFetch.More)
-      {
-        next = Next(cursor, WorkoutsPhase, workoutFetch.NextPage);
-      }
-      else
-      {
-        workoutPhaseCompleteInThisCall = cursor.IsInitial;
-        if (capacity >= cursor.PageSize && scanBudget >= cursor.PageSize)
-        {
-          var measurementFetch = await FetchMeasurementChunkAsync(cursor with { Phase = MeasurementsPhase, NextPage = 1 }, capacity, scanBudget, cancellationToken).ConfigureAwait(false);
-          measurements.AddRange(measurementFetch.Items);
-          next = measurementFetch.More ? Next(cursor, MeasurementsPhase, measurementFetch.NextPage) : null;
-        }
-        else
-        {
-          next = Next(cursor, MeasurementsPhase, 1);
-        }
-      }
-    }
-    else
+    if (cursor.Phase == MeasurementsPhase)
     {
       var measurementFetch = await FetchMeasurementChunkAsync(cursor, capacity, scanBudget, cancellationToken).ConfigureAwait(false);
       measurements.AddRange(measurementFetch.Items);
-      next = measurementFetch.More ? Next(cursor, MeasurementsPhase, measurementFetch.NextPage) : null;
+      return Build(measurementFetch.More ? Next(cursor, MeasurementsPhase, measurementFetch.NextPage) : null);
     }
 
-    var completePeriod = cursor.IsInitial && next is null;
-    return BuildTrainingSummary(cursor, workouts.ToImmutableList(), measurements.ToImmutableList(), completePeriod, workoutPhaseCompleteInThisCall, next);
+    var workoutFetch = await FetchWorkoutChunkAsync(cursor, capacity, scanBudget, cancellationToken).ConfigureAwait(false);
+    workouts.AddRange(workoutFetch.Items);
+    if (workoutFetch.More)
+    {
+      return Build(Next(cursor, WorkoutsPhase, workoutFetch.NextPage));
+    }
+
+    workoutPhaseCompleteInThisCall = cursor.IsInitial;
+    capacity -= workoutFetch.Items.Count;
+    scanBudget -= workoutFetch.ScannedCapacity;
+    if (capacity < cursor.PageSize || scanBudget < cursor.PageSize)
+    {
+      return Build(Next(cursor, MeasurementsPhase, 1));
+    }
+
+    var remainingMeasurements = await FetchMeasurementChunkAsync(
+        cursor with { Phase = MeasurementsPhase, NextPage = 1 },
+        capacity,
+        scanBudget,
+        cancellationToken).ConfigureAwait(false);
+    measurements.AddRange(remainingMeasurements.Items);
+    return Build(remainingMeasurements.More ? Next(cursor, MeasurementsPhase, remainingMeasurements.NextPage) : null);
   }
 
   public async Task<ExerciseHistorySummary> SummarizeExerciseHistoryAsync(
@@ -296,8 +297,11 @@ public sealed class TrainingAnalysisUseCase(IHevyClient client, TimeProvider tim
     var tokenPageSize = ParseIntFilter(state.Filters, "page_size");
     var tokenEnd = ParseInstantFilter(state.Filters, "end_utc");
     var tokenStart = ParseInstantFilter(state.Filters, "start_utc");
-    if (selectedWeeks != tokenWeeks || limit != tokenLimit || pageSize != tokenPageSize ||
-        (rangeEndUtc is not null && rangeEndUtc.Value.ToUniversalTime() != tokenEnd))
+    var matchesReplayInputs = selectedWeeks == tokenWeeks &&
+        limit == tokenLimit &&
+        pageSize == tokenPageSize &&
+        (rangeEndUtc is null || rangeEndUtc.Value.ToUniversalTime() == tokenEnd);
+    if (!matchesReplayInputs)
     {
       throw new ArgumentException("The continuation does not match the stable replay inputs.", nameof(continuation));
     }

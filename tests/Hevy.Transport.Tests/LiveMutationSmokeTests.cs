@@ -129,26 +129,29 @@ internal static class PrivacySafeBodyMeasurementVerifier
 
   internal static void Verify(BodyMeasurement expected, BodyMeasurement actual)
   {
-    if (expected.Date != actual.Date ||
-        expected.WeightKg != actual.WeightKg ||
-        expected.LeanMassKg != actual.LeanMassKg ||
-        expected.FatPercent != actual.FatPercent ||
-        expected.NeckCm != actual.NeckCm ||
-        expected.ShoulderCm != actual.ShoulderCm ||
-        expected.ChestCm != actual.ChestCm ||
-        expected.LeftBicepCm != actual.LeftBicepCm ||
-        expected.RightBicepCm != actual.RightBicepCm ||
-        expected.LeftForearmCm != actual.LeftForearmCm ||
-        expected.RightForearmCm != actual.RightForearmCm ||
-        expected.Abdomen != actual.Abdomen ||
-        expected.Waist != actual.Waist ||
-        expected.Hips != actual.Hips ||
-        expected.LeftThigh != actual.LeftThigh ||
-        expected.RightThigh != actual.RightThigh ||
-        expected.LeftCalf != actual.LeftCalf ||
-        expected.RightCalf != actual.RightCalf)
+    if (!Matches(expected, actual))
     {
       false.Should().BeTrue(FailureMessage);
     }
   }
+
+  private static bool Matches(BodyMeasurement expected, BodyMeasurement actual) =>
+      expected.Date == actual.Date &&
+      expected.WeightKg == actual.WeightKg &&
+      expected.LeanMassKg == actual.LeanMassKg &&
+      expected.FatPercent == actual.FatPercent &&
+      expected.NeckCm == actual.NeckCm &&
+      expected.ShoulderCm == actual.ShoulderCm &&
+      expected.ChestCm == actual.ChestCm &&
+      expected.LeftBicepCm == actual.LeftBicepCm &&
+      expected.RightBicepCm == actual.RightBicepCm &&
+      expected.LeftForearmCm == actual.LeftForearmCm &&
+      expected.RightForearmCm == actual.RightForearmCm &&
+      expected.Abdomen == actual.Abdomen &&
+      expected.Waist == actual.Waist &&
+      expected.Hips == actual.Hips &&
+      expected.LeftThigh == actual.LeftThigh &&
+      expected.RightThigh == actual.RightThigh &&
+      expected.LeftCalf == actual.LeftCalf &&
+      expected.RightCalf == actual.RightCalf;
 }

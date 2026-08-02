@@ -7,7 +7,8 @@ public sealed record RoutineFolderResponse([property: JsonRequired] long Id, [pr
 {
   public void Validate()
   {
-    if (Id <= 0 || UpdatedAt == default || CreatedAt == default) throw new JsonException();
+    var hasRequiredFields = Id > 0 && UpdatedAt != default && CreatedAt != default;
+    if (!hasRequiredFields) throw new JsonException();
   }
 
   internal RoutineFolder ToDomain() => new(Id, Index, Title, UpdatedAt, CreatedAt);

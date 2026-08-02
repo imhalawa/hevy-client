@@ -15,11 +15,13 @@ public sealed record ExerciseHistoryQuery(int Offset, int Limit, DateOnly? Start
     {
       throw new ArgumentOutOfRangeException(nameof(Offset), $"The requested history window exceeds the {MaximumScannedItems}-item scan limit.");
     }
-    if (StartDate.HasValue && EndDate.HasValue && StartDate > EndDate)
+    var hasInvalidDateRange = StartDate.HasValue && EndDate.HasValue && StartDate > EndDate;
+    if (hasInvalidDateRange)
     {
       throw new ArgumentException("The start date cannot be after the end date.", nameof(StartDate));
     }
-    if (EligibleStartTime.HasValue && EligibleEndTime.HasValue && EligibleStartTime >= EligibleEndTime)
+    var hasInvalidTimeRange = EligibleStartTime.HasValue && EligibleEndTime.HasValue && EligibleStartTime >= EligibleEndTime;
+    if (hasInvalidTimeRange)
     {
       throw new ArgumentException("The eligible start time must be before the eligible end time.", nameof(EligibleStartTime));
     }

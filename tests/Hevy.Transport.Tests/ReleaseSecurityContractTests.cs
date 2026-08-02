@@ -1546,8 +1546,11 @@ public sealed class ReleaseSecurityContractTests
 
   private static bool HasBasicCredentials(RegistryRequest request, string actor, string secret)
   {
-    if (!request.Headers.TryGetValue("Authorization", out var authorization) ||
-        !authorization.StartsWith("Basic ", StringComparison.Ordinal))
+    var authorization = request.Headers.TryGetValue("Authorization", out var value) &&
+        value.StartsWith("Basic ", StringComparison.Ordinal)
+            ? value
+            : null;
+    if (authorization is null)
     {
       return false;
     }

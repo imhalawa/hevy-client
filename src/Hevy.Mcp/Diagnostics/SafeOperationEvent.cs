@@ -13,6 +13,13 @@ internal sealed record SafeOperationEvent(
     string OperationName = "unknown",
     string? HevyRequestId = null)
 {
+  internal bool IsValid() =>
+      Enum.IsDefined(OperationCategory) &&
+      Enum.IsDefined(DurationBucket) &&
+      Enum.IsDefined(Status) &&
+      Enum.IsDefined(ExceptionCategory) &&
+      HttpStatus is null or >= 100 and <= 599;
+
   internal static SafeOperationEvent FromToolResult(
       DiagnosticOperationCategory category,
       TimeSpan elapsed,
@@ -20,49 +27,39 @@ internal sealed record SafeOperationEvent(
       Guid fallbackCorrelationId,
       string operationName = "unknown")
   {
-
-    var correlationId = fallbackCorrelationId;
-    var exceptionCategory = DiagnosticExceptionCategory.None;
-    var status = DiagnosticOperationStatus.Succeeded;
-    int? httpStatus = null;
-    string? hevyRequestId = null;
-    if (result.IsError == true && result.StructuredContent is { } content)
+    var safeOperationName = SafeOperationName(operationName);
+    if (result.IsError != true)
     {
-      status = DiagnosticOperationStatus.Failed;
-      if (content.TryGetProperty("error", out var error) && error.ValueKind is JsonValueKind.Object)
-      {
-        if (error.TryGetProperty("correlation_id", out var correlationValue) &&
-            correlationValue.ValueKind is JsonValueKind.String &&
-            Guid.TryParseExact(correlationValue.GetString(), "N", out var parsedCorrelationId))
-        {
-          correlationId = parsedCorrelationId;
-        }
-
-        if (error.TryGetProperty("hevy_status", out var statusValue) &&
-            statusValue.ValueKind is JsonValueKind.Number &&
-            statusValue.TryGetInt32(out var parsedStatus) &&
-            parsedStatus is >= 100 and <= 599)
-        {
-          httpStatus = parsedStatus;
-        }
-
-        if (error.TryGetProperty("hevy_request_id", out var requestIdValue) && requestIdValue.ValueKind is JsonValueKind.String)
-        {
-          hevyRequestId = SafeIdentifier(requestIdValue.GetString());
-        }
-
-        var code = error.TryGetProperty("code", out var codeValue) && codeValue.ValueKind is JsonValueKind.String
-            ? codeValue.GetString()
-            : null;
-        (status, exceptionCategory) = ClassifyError(code);
-      }
-      else
-      {
-        exceptionCategory = DiagnosticExceptionCategory.Unexpected;
-      }
+      return new SafeOperationEvent(
+          category,
+          Bucket(elapsed),
+          DiagnosticOperationStatus.Succeeded,
+          fallbackCorrelationId,
+          DiagnosticExceptionCategory.None,
+          OperationName: safeOperationName);
     }
 
-    return new SafeOperationEvent(category, Bucket(elapsed), status, correlationId, exceptionCategory, httpStatus, SafeOperationName(operationName), hevyRequestId);
+    if (ReadError(result) is not { } error)
+    {
+      return new SafeOperationEvent(
+          category,
+          Bucket(elapsed),
+          DiagnosticOperationStatus.Failed,
+          fallbackCorrelationId,
+          DiagnosticExceptionCategory.Unexpected,
+          OperationName: safeOperationName);
+    }
+
+    var (status, exceptionCategory) = ClassifyError(ReadString(error, "code"));
+    return new SafeOperationEvent(
+        category,
+        Bucket(elapsed),
+        status,
+        ReadCorrelationId(error) ?? fallbackCorrelationId,
+        exceptionCategory,
+        ReadHttpStatus(error),
+        safeOperationName,
+        SafeIdentifier(ReadString(error, "hevy_request_id")));
   }
 
   internal static SafeOperationEvent Cancelled(
@@ -85,6 +82,33 @@ internal sealed record SafeOperationEvent(
   private static string? SafeIdentifier(string? value) =>
       value is { Length: >= 1 and <= 128 } && value.All(static character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or ':' or '-')
           ? value
+          : null;
+
+  private static Guid? ReadCorrelationId(JsonElement error) =>
+      error.TryGetProperty("correlation_id", out var value) &&
+      value.ValueKind is JsonValueKind.String &&
+      Guid.TryParseExact(value.GetString(), "N", out var correlationId)
+          ? correlationId
+          : null;
+
+  private static JsonElement? ReadError(CallToolResult result) =>
+      result.StructuredContent is { } content &&
+      content.TryGetProperty("error", out var error) &&
+      error.ValueKind is JsonValueKind.Object
+          ? error
+          : null;
+
+  private static int? ReadHttpStatus(JsonElement error) =>
+      error.TryGetProperty("hevy_status", out var value) &&
+      value.ValueKind is JsonValueKind.Number &&
+      value.TryGetInt32(out var status) &&
+      status is >= 100 and <= 599
+          ? status
+          : null;
+
+  private static string? ReadString(JsonElement error, string propertyName) =>
+      error.TryGetProperty(propertyName, out var value) && value.ValueKind is JsonValueKind.String
+          ? value.GetString()
           : null;
 
   private static (DiagnosticOperationStatus Status, DiagnosticExceptionCategory Exception) ClassifyError(string? code) => code switch

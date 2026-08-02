@@ -32,12 +32,7 @@ internal sealed class RedactingLoggerProvider : ILoggerProvider
 
   internal void Write(LogLevel logLevel, SafeOperationEvent operationEvent)
   {
-    if (!IsEnabled(logLevel) ||
-        !Enum.IsDefined(operationEvent.OperationCategory) ||
-        !Enum.IsDefined(operationEvent.DurationBucket) ||
-        !Enum.IsDefined(operationEvent.Status) ||
-        !Enum.IsDefined(operationEvent.ExceptionCategory) ||
-        operationEvent.HttpStatus is not (null or >= 100 and <= 599))
+    if (!IsEnabled(logLevel) || !operationEvent.IsValid())
     {
       return;
     }

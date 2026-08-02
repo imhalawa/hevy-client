@@ -87,27 +87,18 @@ public sealed class ToolInventoryTests
       (input.GetProperty("properties").TryGetProperty("cancellation_token", out _)).Should().BeFalse();
       (Hint(annotations, "openWorldHint", defaultValue: true)).Should().Be(name != DiagnosticName);
 
-      if (name.StartsWith("get_", StringComparison.Ordinal) || CompositeNames.Contains(name, StringComparer.Ordinal))
-      {
-        (Hint(annotations, "readOnlyHint", defaultValue: false)).Should().BeTrue();
-      }
-      else
-      {
-        (Hint(annotations, "readOnlyHint", defaultValue: false)).Should().BeFalse();
-        (input.GetProperty("properties").GetProperty("dry_run").GetProperty("default").GetBoolean()).Should().BeFalse();
-        if (name.StartsWith("create_", StringComparison.Ordinal))
-        {
-          (Hint(annotations, "destructiveHint", defaultValue: true)).Should().BeFalse();
-          (Hint(annotations, "idempotentHint", defaultValue: false)).Should().BeFalse();
-        }
-        else
-        {
-          (Hint(annotations, "destructiveHint", defaultValue: true)).Should().BeTrue();
-          (Hint(annotations, "idempotentHint", defaultValue: false)).Should().Be(name == "update_body_measurement");
-          (input.GetProperty("properties").TryGetProperty("expected_updated_at", out _)).Should().BeTrue();
-          (input.GetProperty("properties").GetProperty("force").GetProperty("default").GetBoolean()).Should().BeFalse();
-        }
-      }
+      var isRead = name.StartsWith("get_", StringComparison.Ordinal) || CompositeNames.Contains(name, StringComparer.Ordinal);
+      (Hint(annotations, "readOnlyHint", defaultValue: false)).Should().Be(isRead);
+      if (isRead) continue;
+
+      (input.GetProperty("properties").GetProperty("dry_run").GetProperty("default").GetBoolean()).Should().BeFalse();
+      var isCreate = name.StartsWith("create_", StringComparison.Ordinal);
+      (Hint(annotations, "destructiveHint", defaultValue: true)).Should().Be(!isCreate);
+      (Hint(annotations, "idempotentHint", defaultValue: false)).Should().Be(!isCreate && name == "update_body_measurement");
+      if (isCreate) continue;
+
+      (input.GetProperty("properties").TryGetProperty("expected_updated_at", out _)).Should().BeTrue();
+      (input.GetProperty("properties").GetProperty("force").GetProperty("default").GetBoolean()).Should().BeFalse();
     }
     var workoutsSchema = tools.Single(tool => tool.GetProperty("name").GetString() == "get_workouts")
         .GetProperty("inputSchema").GetProperty("properties");

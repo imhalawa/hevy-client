@@ -77,40 +77,31 @@ internal static class HttpHost
 
   private static bool HasSafeOrigin(StringValues originValues, HostString requestHost)
   {
-    if (StringValues.IsNullOrEmpty(originValues))
-    {
-      return true;
-    }
+    if (StringValues.IsNullOrEmpty(originValues)) return true;
 
-    if (originValues.Count != 1 ||
-        !Uri.TryCreate(originValues[0], UriKind.Absolute, out var origin) ||
-        (origin.Scheme != Uri.UriSchemeHttp && origin.Scheme != Uri.UriSchemeHttps) ||
-        !string.IsNullOrEmpty(origin.UserInfo) ||
-        origin.AbsolutePath != "/" ||
-        !string.IsNullOrEmpty(origin.Query) ||
-        !string.IsNullOrEmpty(origin.Fragment) ||
-        (origin.Scheme == Uri.UriSchemeHttp && !IsLoopbackHost(requestHost.Host)))
-    {
-      return false;
-    }
+    if (originValues.Count != 1 || !Uri.TryCreate(originValues[0], UriKind.Absolute, out var origin)) return false;
 
-    return string.Equals(origin.Authority, requestHost.Value, StringComparison.OrdinalIgnoreCase);
+    var hasSafeShape = origin is { UserInfo.Length: 0, AbsolutePath: "/", Query.Length: 0, Fragment.Length: 0 };
+    var hasSafeScheme = origin.Scheme == Uri.UriSchemeHttps ||
+        (origin.Scheme == Uri.UriSchemeHttp && IsLoopbackHost(requestHost.Host));
+    var matchesRequestHost = string.Equals(origin.Authority, requestHost.Value, StringComparison.OrdinalIgnoreCase);
+    return hasSafeShape && hasSafeScheme && matchesRequestHost;
   }
 
   private static bool HasValidBearerToken(StringValues authorizationValues, string expectedToken)
   {
-    if (authorizationValues.Count != 1 ||
-        !AuthenticationHeaderValue.TryParse(authorizationValues[0], out var authorization) ||
-        !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
-        authorization.Parameter is not { } suppliedToken ||
-        !BearerToken.IsValidToken68(suppliedToken))
-    {
-      return false;
-    }
+    if (ReadBearerToken(authorizationValues) is not { } suppliedToken) return false;
 
     var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(suppliedToken));
     var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expectedToken));
     return CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash);
+  }
+
+  private static string? ReadBearerToken(StringValues authorizationValues)
+  {
+    if (authorizationValues.Count != 1 || !AuthenticationHeaderValue.TryParse(authorizationValues[0], out var authorization)) return null;
+    if (!string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)) return null;
+    return authorization.Parameter is { } token && BearerToken.IsValidToken68(token) ? token : null;
   }
 
   private static List<string> ParseAllowedHosts(string? configuredHosts)
@@ -118,7 +109,8 @@ internal static class HttpHost
     var hosts = (configuredHosts ?? "localhost;127.0.0.1;[::1]")
         .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .ToList();
-    if (hosts.Count == 0 || hosts.Any(static host => host.Contains('*', StringComparison.Ordinal) || host.Contains('+', StringComparison.Ordinal)))
+    var containsWildcard = hosts.Any(static host => host.Contains('*', StringComparison.Ordinal) || host.Contains('+', StringComparison.Ordinal));
+    if (hosts.Count == 0 || containsWildcard)
     {
       throw new InvalidOperationException("AllowedHosts must contain explicit trusted host names.");
     }

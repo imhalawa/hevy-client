@@ -141,8 +141,11 @@ public sealed class ToolOutputSchemaTests
           AssertMatches(propertySchema, property.Value, $"{path}.{property.Name}");
         }
       }
+
+      return;
     }
-    else if (instance.ValueKind == JsonValueKind.Array && schema.TryGetProperty("items", out var items))
+
+    if (instance.ValueKind == JsonValueKind.Array && schema.TryGetProperty("items", out var items))
     {
       var index = 0;
       foreach (var item in instance.EnumerateArray()) AssertMatches(items, item, $"{path}[{index++}]");

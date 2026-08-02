@@ -110,14 +110,12 @@ internal static class ExerciseHistoryStreamReader
     {
       var token = await ReadRequiredTokenAsync(reader, cancellationToken).ConfigureAwait(false);
       WriteToken(writer, token);
-      if (token.Type is JsonTokenType.StartArray or JsonTokenType.StartObject)
+      depth += token.Type switch
       {
-        depth++;
-      }
-      else if (token.Type is JsonTokenType.EndArray or JsonTokenType.EndObject)
-      {
-        depth--;
-      }
+        JsonTokenType.StartArray or JsonTokenType.StartObject => 1,
+        JsonTokenType.EndArray or JsonTokenType.EndObject => -1,
+        _ => 0,
+      };
     }
 
     writer?.Flush();

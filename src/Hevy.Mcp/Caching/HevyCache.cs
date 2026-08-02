@@ -73,23 +73,7 @@ internal sealed class HevyCache
     lock (_sync)
     {
       var now = _timeProvider.GetUtcNow();
-      if (_memory.TryGetValue(key, out CacheEntry<T>? cached) && cached is not null)
-      {
-        if (now - cached.LastAccess < SlidingLifetime)
-        {
-          cached.LastAccess = now;
-          entry = cached;
-        }
-        else
-        {
-          _memory.Remove(key);
-          entry = CreateEntry(key, readPage, now);
-        }
-      }
-      else
-      {
-        entry = CreateEntry(key, readPage, now);
-      }
+      entry = GetOrCreateEntry(key, readPage, now);
       entry.WaiterCount++;
       load = entry.Load.Value;
     }
@@ -132,6 +116,27 @@ internal sealed class HevyCache
     }
   }
 
+  private CacheEntry<T> GetOrCreateEntry<T>(
+      string key,
+      Func<int, int, CancellationToken, Task<PagedResult<T>>> readPage,
+      DateTimeOffset now)
+      where T : class
+  {
+    if (GetFreshEntry<T>(key, now) is { } cached)
+    {
+      cached.LastAccess = now;
+      return cached;
+    }
+
+    _memory.Remove(key);
+    return CreateEntry(key, readPage, now);
+  }
+
+  private CacheEntry<T>? GetFreshEntry<T>(string key, DateTimeOffset now) where T : class =>
+      _memory.TryGetValue(key, out CacheEntry<T>? cached) && cached is not null && now - cached.LastAccess < SlidingLifetime
+          ? cached
+          : null;
+
   private CacheEntry<T> CreateEntry<T>(
       string key,
       Func<int, int, CancellationToken, Task<PagedResult<T>>> readPage,
@@ -158,14 +163,17 @@ internal sealed class HevyCache
     {
       cancellationToken.ThrowIfCancellationRequested();
       var result = await readPage(page, PageSize, cancellationToken).ConfigureAwait(false);
-      if (result.Page != page || result.PageCount < 0 || (expectedPageCount >= 0 && result.PageCount != expectedPageCount))
+      var hasConsistentPagination = result.Page == page && result.PageCount >= 0 &&
+          (expectedPageCount < 0 || result.PageCount == expectedPageCount);
+      if (!hasConsistentPagination)
       {
         throw new InvalidOperationException("Hevy returned inconsistent catalog pagination; the partial catalog was not cached.");
       }
 
-      if ((result.PageCount == 0 && (result.Page != 1 || result.Items.Count != 0)) ||
-          (result.PageCount > 0 && result.Items.Count == 0) ||
-          (result.PageCount > 0 && result.Page > result.PageCount))
+      var hasPossiblePage = result.PageCount == 0
+          ? result.Page == 1 && result.Items.Count == 0
+          : result.Page <= result.PageCount && result.Items.Count > 0;
+      if (!hasPossiblePage)
       {
         throw new InvalidOperationException("Hevy returned an impossible catalog page; the partial catalog was not cached.");
       }
