@@ -4,7 +4,7 @@ using Hevy.Mcp.Tools;
 
 namespace Hevy.Mcp.Diagnostics;
 
-internal sealed class RedactingLoggerProvider : ILoggerProvider
+internal sealed class DiagnosticSink
 {
   private readonly Lock writeLock = new();
   private readonly TextWriter writer;
@@ -12,23 +12,17 @@ internal sealed class RedactingLoggerProvider : ILoggerProvider
   private readonly LogLevel minimumLevel;
   private bool sinkDisabled;
 
-  private RedactingLoggerProvider(TextWriter writer, DiagnosticSnapshot snapshot, LogLevel minimumLevel)
+  private DiagnosticSink(TextWriter writer, DiagnosticSnapshot snapshot, LogLevel minimumLevel)
   {
     this.writer = writer;
     this.snapshot = snapshot;
     this.minimumLevel = minimumLevel;
   }
 
-  internal static RedactingLoggerProvider? Create(HevyMcpOptions options, TextWriter writer) =>
+  internal static DiagnosticSink? Create(HevyMcpOptions options, TextWriter writer) =>
       options.LogLevel is LogLevel.None
         ? null
-        : new RedactingLoggerProvider(writer, DiagnosticSnapshot.Create(options), options.LogLevel);
-
-  public ILogger CreateLogger(string categoryName) => new AllowlistLogger(this);
-
-  public void Dispose()
-  {
-  }
+        : new DiagnosticSink(writer, DiagnosticSnapshot.Create(options), options.LogLevel);
 
   internal void Write(LogLevel logLevel, SafeOperationEvent operationEvent)
   {
@@ -70,6 +64,6 @@ internal sealed class RedactingLoggerProvider : ILoggerProvider
     }
   }
 
-  internal bool IsEnabled(LogLevel logLevel) =>
+  private bool IsEnabled(LogLevel logLevel) =>
       !Volatile.Read(ref sinkDisabled) && logLevel is not LogLevel.None && logLevel >= minimumLevel;
 }

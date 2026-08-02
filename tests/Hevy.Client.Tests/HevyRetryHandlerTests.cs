@@ -27,39 +27,6 @@ public sealed class HevyRetryHandlerTests
   }
 
   [Fact]
-  public async Task Connection_retry_samples_jitter_once_per_delay()
-  {
-    var attempts = 0;
-    var handler = new RecordingHttpMessageHandler((_, _) => ++attempts == 1
-        ? throw new HttpRequestException("transient")
-        : RecordingHttpMessageHandler.Json(HttpStatusCode.OK, "{}"));
-    var delays = new List<TimeSpan>();
-    var jitterCalls = 0;
-    var retry = new HevyRetryHandler(
-        (delay, _) =>
-        {
-          delays.Add(delay);
-          return Task.CompletedTask;
-        },
-        () =>
-        {
-          jitterCalls++;
-          return 0d;
-        },
-        TimeProvider.System)
-    {
-      InnerHandler = handler,
-    };
-    using var client = new HttpClient(retry) { BaseAddress = HevyAuthenticationHandler.ApiOrigin };
-
-    using var response = await client.GetAsync("v1/user/info", CancellationToken.None);
-
-    (response.StatusCode).Should().Be(HttpStatusCode.OK);
-    (jitterCalls).Should().Be(1);
-    (delays).Should().Equal([TimeSpan.FromSeconds(1)]);
-  }
-
-  [Fact]
   public async Task Get_honors_retry_after_before_retrying_a_rate_limited_response()
   {
     var responses = new Queue<HttpResponseMessage>([
@@ -122,47 +89,13 @@ public sealed class HevyRetryHandlerTests
   }
 
   [Fact]
-  public async Task Post_maps_an_unselected_5xx_response_to_an_unknown_outcome_without_retrying()
-  {
-    var handler = new RecordingHttpMessageHandler((_, _) =>
-    {
-      var response = RecordingHttpMessageHandler.Json(HttpStatusCode.NotImplemented, "{}");
-      response.Headers.Add("X-Request-Id", "safe-request-id");
-      return response;
-    });
-    using var client = CreateClient(handler, []);
-    using var request = JsonPost("v1/workouts");
-
-    var exception = (await FluentActions.Awaiting(() => client.SendAsync(request, CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
-
-    (exception.StatusCode).Should().Be(HttpStatusCode.NotImplemented);
-    (exception.RequestId).Should().Be("safe-request-id");
-    (handler.Requests).Should().ContainSingle();
-  }
-
-  [Fact]
-  public async Task Post_does_not_retry_and_reports_an_unknown_outcome_after_a_transient_response()
-  {
-    var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}"));
-    var delays = new List<TimeSpan>();
-    using var client = CreateClient(handler, delays);
-    using var request = JsonPost("v1/workouts");
-
-    var exception = (await FluentActions.Awaiting(() => client.SendAsync(request, CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
-
-    (exception.Code).Should().Be("outcome_unknown");
-    (handler.Requests).Should().ContainSingle();
-    (delays).Should().BeEmpty();
-  }
-
-  [Fact]
   public async Task Put_retries_only_when_explicitly_marked_safe()
   {
     var unsafeHandler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}"));
     using var unsafeClient = CreateClient(unsafeHandler, []);
     using var unsafeRequest = JsonPut("v1/workouts/workout-1");
 
-    await FluentActions.Awaiting(() => unsafeClient.SendAsync(unsafeRequest, CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
+    using var unsafeResponse = await unsafeClient.SendAsync(unsafeRequest, CancellationToken.None);
 
     var responses = new Queue<HttpResponseMessage>([
         RecordingHttpMessageHandler.Json(HttpStatusCode.ServiceUnavailable, "{}"),
@@ -176,6 +109,7 @@ public sealed class HevyRetryHandlerTests
     using var response = await safeClient.SendAsync(safeRequest, CancellationToken.None);
 
     (unsafeHandler.Requests).Should().ContainSingle();
+    (unsafeResponse.StatusCode).Should().Be(HttpStatusCode.ServiceUnavailable);
     (response.StatusCode).Should().Be(HttpStatusCode.OK);
     (safeHandler.Requests.Count).Should().Be(2);
     (delays).Should().Equal([TimeSpan.FromSeconds(1)]);

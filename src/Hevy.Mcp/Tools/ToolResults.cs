@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Protocol;
-using Hevy.Mcp.Caching;
 
 namespace Hevy.Mcp.Tools;
 
@@ -11,7 +10,7 @@ internal static class ToolResults
   {
     PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
     DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower,
-    Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
+    Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower), new Hevy.Client.Models.WorkoutRpeJsonConverter() },
   };
 
   internal static CallToolResult Success(object? data, string summary = "Hevy request completed.", object? meta = null) =>
@@ -27,27 +26,10 @@ internal static class ToolResults
     IsError = isError,
   };
 
-  internal static IHevyClient Client(IServiceProvider services) =>
-      services.GetService(typeof(IHevyClient)) as IHevyClient ??
-      throw new InvalidOperationException("IHevyClient is unavailable.");
+  internal static IHevyClient Client(IServiceProvider services) => services.GetRequiredService<IHevyClient>();
 
   internal static T Service<T>(IServiceProvider services) where T : class =>
-      services.GetService(typeof(T)) as T ?? throw new InvalidOperationException($"{typeof(T).Name} is unavailable.");
-
-  internal static HevyCache? Cache(IServiceProvider services) => services.GetService(typeof(HevyCache)) as HevyCache;
-
-  internal static PagedResult<T> LocalPage<T>(ImmutableList<T> catalog, int page, int pageSize)
-  {
-    var pageCount = catalog.Count == 0 ? 0 : (catalog.Count + pageSize - 1) / pageSize;
-    var pageExceedsBounds = pageCount == 0 ? page != 1 : page > pageCount;
-    if (pageExceedsBounds)
-    {
-      throw new ArgumentOutOfRangeException(nameof(page), "page cannot exceed the cached catalog page count.");
-    }
-    var skip = (long)(page - 1) * pageSize;
-    var items = skip > int.MaxValue ? [] : catalog.Skip((int)skip).Take(pageSize).ToImmutableList();
-    return new PagedResult<T>(page, pageCount, items);
-  }
+      services.GetRequiredService<T>();
 
   internal static PageMeta<PageContinuation> PageMeta(int page, int pageCount, int pageSize, string detail) =>
       new(page, pageCount, pageSize, detail, page < pageCount,

@@ -48,6 +48,6 @@ internal static class ToolSchemas
       JsonArray jsonArray => jsonArray,
       _ => [],
     };
-    foreach (var child in children.Where(static child => child is not null).ToArray()) NormalizeNode(child!);
+    foreach (var child in children.Where(static child => child is not null)) NormalizeNode(child!);
   }
 }

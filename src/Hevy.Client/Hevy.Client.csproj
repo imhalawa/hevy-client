@@ -5,7 +5,5 @@
 
   <ItemGroup>
     <ProjectReference Include="../Hevy.Core/Hevy.Core.csproj" />
-    <PackageReference Include="Polly" />
-    <PackageReference Include="Refit" />
   </ItemGroup>
 </Project>

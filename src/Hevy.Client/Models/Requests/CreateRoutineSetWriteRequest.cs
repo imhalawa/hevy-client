@@ -6,6 +6,4 @@ public sealed record CreateRoutineSetWriteRequest([property: JsonConverter(typeo
 {
   internal static CreateRoutineSetWriteRequest From(CreateRoutineSetWrite value) =>
       new((SetTypeApi)value.Type, value.WeightKg, value.Reps, value.DistanceMeters, value.DurationSeconds, value.CustomMetric, value.RepRange);
-
-  internal CreateRoutineSetWrite ToDomain() => new((SetType)Type, WeightKg, Reps, DistanceMeters, DurationSeconds, CustomMetric, RepRange);
 }

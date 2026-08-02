@@ -28,7 +28,9 @@ public sealed class RequestSerializationTests
   {
     var set = new CreateWorkoutSetWrite(SetType.Normal, null, null, null, null, null, default(WorkoutRpe));
 
-    FluentActions.Invoking(() => WorkoutSetWriteRequest.From(set)).Should().ThrowExactly<JsonException>();
+    var request = WorkoutSetWriteRequest.From(set);
+
+    FluentActions.Invoking(() => JsonSerializer.Serialize(request, HevyJsonContext.Default.WorkoutSetWriteRequest)).Should().ThrowExactly<JsonException>();
   }
 
   [Fact]

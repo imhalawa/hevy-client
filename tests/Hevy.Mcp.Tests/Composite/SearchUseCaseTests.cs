@@ -1,5 +1,3 @@
-using Hevy.Mcp.Caching;
-using Microsoft.Extensions.Caching.Memory;
 using TestSupport;
 using Xunit;
 
@@ -18,8 +16,7 @@ public sealed class SearchUseCaseTests
         Routine("routine-2", "Pull Day"),
       ]),
     };
-    using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-    var service = Search(client, memory);
+    var service = Search(client);
 
     var result = await service.SearchRoutinesAsync("  pUsH\t day ", 100, null, default);
 
@@ -40,8 +37,7 @@ public sealed class SearchUseCaseTests
         Template("template-2", "Shoulder Press", EquipmentCategory.Dumbbell, "shoulders", ["triceps"]),
       ]),
     };
-    using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-    var service = Search(client, memory);
+    var service = Search(client);
 
     var result = await service.SearchExerciseTemplatesAsync(" press ", "BARBELL", " SHOULDERS ", 100, null, default);
 
@@ -57,8 +53,7 @@ public sealed class SearchUseCaseTests
   {
     var routines = Enumerable.Range(1, 4).Select(index => Routine($"routine-{index}", $"Day {index}")).ToImmutableList();
     var client = new FakeHevyClient { Routines = new(1, 1, routines) };
-    using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-    var service = Search(client, memory);
+    var service = Search(client);
 
     var first = await service.SearchRoutinesAsync("day", 2, null, default);
     var second = await service.SearchRoutinesAsync("day", 2, first.Continuation, default);
@@ -69,7 +64,7 @@ public sealed class SearchUseCaseTests
     (second.Items.Select(static item => item.Id)).Should().Equal(["routine-3", "routine-4"]);
     (second.Truncated).Should().BeFalse();
     (second.Continuation).Should().BeNull();
-    (client.CallCount).Should().Be(1);
+    (client.CallCount).Should().Be(2);
   }
 
   [Fact]
@@ -87,8 +82,7 @@ public sealed class SearchUseCaseTests
         return Task.FromResult(new PagedResult<Routine>(page, 101, items));
       },
     };
-    using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-    var service = Search(client, memory);
+    var service = Search(client);
 
     var first = await service.SearchRoutinesAsync("needle", 1, null, default);
     var second = await service.SearchRoutinesAsync("needle", 1, first.Continuation, default);
@@ -112,8 +106,7 @@ public sealed class SearchUseCaseTests
         _ => new PagedResult<Routine>(3, 3, [Routine("routine-11", "Day 11")]),
       }),
     };
-    using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-    var service = Search(client, memory);
+    var service = Search(client);
 
     var first = await service.SearchRoutinesAsync("day", 2, null, default);
     var second = await service.SearchRoutinesAsync("day", 2, first.Continuation, default);
@@ -127,8 +120,7 @@ public sealed class SearchUseCaseTests
   [InlineData(1001)]
   public async Task SearchRejectsLimitsOutsideOneThroughOneThousand(int limit)
   {
-    using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-    var service = Search(new FakeHevyClient(), memory);
+    var service = Search(new FakeHevyClient());
 
     await FluentActions.Awaiting(() => service.SearchRoutinesAsync("day", limit, null, default)).Should().ThrowExactlyAsync<ArgumentOutOfRangeException>();
   }
@@ -137,8 +129,7 @@ public sealed class SearchUseCaseTests
   public async Task ContinuationCannotBeReusedWithChangedFilters()
   {
     var client = new FakeHevyClient { Routines = new(1, 1, [Routine("1", "Push"), Routine("2", "Push")]) };
-    using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
-    var service = Search(client, memory);
+    var service = Search(client);
     var first = await service.SearchRoutinesAsync("push", 1, null, default);
 
     await FluentActions.Awaiting(() => service.SearchRoutinesAsync("pull", 1, first.Continuation, default)).Should().ThrowExactlyAsync<ArgumentException>();
@@ -146,11 +137,9 @@ public sealed class SearchUseCaseTests
 
   private static Routine Routine(string id, string title) => FakeHevyClient.SampleRoutine() with { Id = id, Title = title };
 
-  private static SearchUseCase Search(IHevyClient client, IMemoryCache memory)
-  {
-    var cache = new HevyCache(client, memory, TimeProvider.System);
-    return new SearchUseCase(cache.GetRoutinePageAsync, cache.GetExerciseTemplatePageAsync);
-  }
+  private static SearchUseCase Search(IHevyClient client) => new(
+      (page, cancellationToken) => client.GetRoutinesAsync(page, 10, cancellationToken),
+      (page, cancellationToken) => client.GetExerciseTemplatesAsync(page, 10, cancellationToken));
 
   private static ExerciseTemplate Template(string id, string title, EquipmentCategory equipment, string primary, ImmutableList<string> secondary) =>
       new(id, title, "weight_reps", primary, secondary, equipment, false);

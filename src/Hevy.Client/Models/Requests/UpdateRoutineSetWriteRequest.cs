@@ -6,6 +6,4 @@ public sealed record UpdateRoutineSetWriteRequest([property: JsonConverter(typeo
 {
   internal static UpdateRoutineSetWriteRequest From(UpdateRoutineSetWrite value) =>
       new((SetTypeApi)value.Type, value.WeightKg, value.Reps, value.DistanceMeters, value.DurationSeconds, value.CustomMetric, value.RepRange);
-
-  internal UpdateRoutineSetWrite ToDomain() => new((SetType)Type, WeightKg, Reps, DistanceMeters, DurationSeconds, CustomMetric, RepRange);
 }

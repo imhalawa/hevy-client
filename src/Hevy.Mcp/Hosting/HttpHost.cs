@@ -23,12 +23,7 @@ internal static class HttpHost
         throw new InvalidOperationException("MCP_AUTH_TOKEN is required for HTTP transport.");
     var builder = WebApplication.CreateBuilder(args);
     builder.Logging.ClearProviders();
-    var diagnostics = RedactingLoggerProvider.Create(options, Console.Error);
-    if (diagnostics is not null)
-    {
-      builder.Logging.AddProvider(diagnostics);
-    }
-
+    var diagnostics = DiagnosticSink.Create(options, Console.Error);
     var allowedHosts = ParseAllowedHosts(builder.Configuration["AllowedHosts"]);
     builder.Services.AddHostFiltering(hostOptions =>
     {

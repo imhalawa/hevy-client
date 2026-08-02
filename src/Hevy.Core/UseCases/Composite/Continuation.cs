@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Text.Json;
 
 namespace Hevy.Core.UseCases;
@@ -21,8 +22,7 @@ internal static class Continuation
       next_page = nextPage,
       remaining_item_budget = remainingItemBudget,
     };
-    var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
-    return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    return Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(payload));
   }
 
   internal static ContinuationState Parse(
@@ -63,31 +63,11 @@ internal static class Continuation
         throw new ArgumentException("The continuation payload has unexpected fields.", nameof(token));
       }
 
-      try
-      {
-        var endpoint = root.GetProperty("endpoint").GetString() ?? string.Empty;
-        var nextPage = root.GetProperty("next_page").GetInt32();
-        var remaining = root.GetProperty("remaining_item_budget").GetInt32();
-        var filters = ReadFilters(root.GetProperty("filters"));
-        Validate(endpoint, nextPage, remaining);
-        if (!string.Equals(endpoint, expectedEndpoint, StringComparison.Ordinal))
-        {
-          throw new ArgumentException("The continuation does not match this endpoint and its original filters.", nameof(token));
-        }
-        return new ContinuationState(endpoint, nextPage, filters, remaining);
-      }
-      catch (ArgumentOutOfRangeException)
-      {
-        throw;
-      }
-      catch (ArgumentException)
-      {
-        throw;
-      }
-      catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException or FormatException)
-      {
-        throw new ArgumentException("The continuation is malformed.", nameof(token));
-      }
+      var state = ReadState(root, token);
+      Validate(state.Endpoint, state.NextPage, state.RemainingItemBudget);
+      return string.Equals(state.Endpoint, expectedEndpoint, StringComparison.Ordinal)
+          ? state
+          : throw new ArgumentException("The continuation does not match this endpoint and its original filters.", nameof(token));
     }
   }
 
@@ -136,10 +116,21 @@ internal static class Continuation
     ArgumentOutOfRangeException.ThrowIfGreaterThan(remainingItemBudget, MaximumItemBudget);
   }
 
-  private static byte[] Decode(string token)
+  private static ContinuationState ReadState(JsonElement root, string token)
   {
-    var value = token.Replace('-', '+').Replace('_', '/');
-    value += new string('=', (4 - (value.Length % 4)) % 4);
-    return Convert.FromBase64String(value);
+    try
+    {
+      return new ContinuationState(
+          root.GetProperty("endpoint").GetString() ?? string.Empty,
+          root.GetProperty("next_page").GetInt32(),
+          ReadFilters(root.GetProperty("filters")),
+          root.GetProperty("remaining_item_budget").GetInt32());
+    }
+    catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException or FormatException)
+    {
+      throw new ArgumentException("The continuation is malformed.", nameof(token));
+    }
   }
+
+  private static byte[] Decode(string token) => Base64Url.DecodeFromChars(token);
 }

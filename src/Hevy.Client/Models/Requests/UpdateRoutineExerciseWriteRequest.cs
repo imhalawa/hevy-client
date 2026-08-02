@@ -4,7 +4,4 @@ public sealed record UpdateRoutineExerciseWriteRequest(string ExerciseTemplateId
 {
   internal static UpdateRoutineExerciseWriteRequest From(UpdateRoutineExerciseWrite value) =>
       new(value.ExerciseTemplateId, value.SupersetId, value.RestSeconds, value.Notes, value.Sets.Select(UpdateRoutineSetWriteRequest.From).ToImmutableList());
-
-  internal UpdateRoutineExerciseWrite ToDomain() =>
-      new(ExerciseTemplateId, SupersetId, RestSeconds, Notes, Sets.Select(static set => set.ToDomain()).ToImmutableList());
 }

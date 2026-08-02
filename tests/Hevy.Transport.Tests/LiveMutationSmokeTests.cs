@@ -12,7 +12,7 @@ public sealed class LiveMutationSmokeTests
     var measurements = await client.GetBodyMeasurementsAsync(1, 1, CancellationToken.None);
     if (measurements.Items.Count == 0)
     {
-      false.Should().BeTrue("Live mutation smoke test requires one existing body measurement so it can perform a value-preserving replacement.");
+      throw new Xunit.Sdk.XunitException("Live mutation smoke test requires one existing body measurement so it can perform a value-preserving replacement.");
     }
 
     var existing = measurements.Items[0];
@@ -54,17 +54,10 @@ public sealed class LiveMutationSmokeTests
       ["HEVY_LIVE_MUTATION_TESTS"] = liveMutations,
       ["HEVY_API_KEY"] = apiKey,
     };
-    var requestCount = 0;
-
     var gate = LiveTestGate.Evaluate(environment.GetValueOrDefault, mutation: true);
-    if (gate.Enabled)
-    {
-      requestCount++;
-    }
 
     (gate.Enabled).Should().BeFalse();
     (gate.SkipReason).Should().Contain("HEVY_LIVE_MUTATION_TESTS=true");
-    (requestCount).Should().Be(0);
   }
 
   [Fact]
@@ -129,29 +122,9 @@ internal static class PrivacySafeBodyMeasurementVerifier
 
   internal static void Verify(BodyMeasurement expected, BodyMeasurement actual)
   {
-    if (!Matches(expected, actual))
+    if (expected != actual)
     {
-      false.Should().BeTrue(FailureMessage);
+      throw new Xunit.Sdk.XunitException(FailureMessage);
     }
   }
-
-  private static bool Matches(BodyMeasurement expected, BodyMeasurement actual) =>
-      expected.Date == actual.Date &&
-      expected.WeightKg == actual.WeightKg &&
-      expected.LeanMassKg == actual.LeanMassKg &&
-      expected.FatPercent == actual.FatPercent &&
-      expected.NeckCm == actual.NeckCm &&
-      expected.ShoulderCm == actual.ShoulderCm &&
-      expected.ChestCm == actual.ChestCm &&
-      expected.LeftBicepCm == actual.LeftBicepCm &&
-      expected.RightBicepCm == actual.RightBicepCm &&
-      expected.LeftForearmCm == actual.LeftForearmCm &&
-      expected.RightForearmCm == actual.RightForearmCm &&
-      expected.Abdomen == actual.Abdomen &&
-      expected.Waist == actual.Waist &&
-      expected.Hips == actual.Hips &&
-      expected.LeftThigh == actual.LeftThigh &&
-      expected.RightThigh == actual.RightThigh &&
-      expected.LeftCalf == actual.LeftCalf &&
-      expected.RightCalf == actual.RightCalf;
 }

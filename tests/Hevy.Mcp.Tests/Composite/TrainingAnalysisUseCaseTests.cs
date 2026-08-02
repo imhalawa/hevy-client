@@ -121,11 +121,11 @@ public sealed class TrainingAnalysisUseCaseTests
   {
     var client = new FakeHevyClient
     {
-      ExerciseHistory = new(1, 1,
+      ExerciseHistory =
       [
         History("workout-2", "2026-07-20T10:00:00Z", 110, 5),
         History("workout-1", "2026-07-01T10:00:00Z", 100, 5),
-      ]),
+      ],
     };
     var service = new TrainingAnalysisUseCase(client, new FixedTimeProvider(Now));
 
@@ -206,7 +206,7 @@ public sealed class TrainingAnalysisUseCaseTests
   {
     var client = new FakeHevyClient
     {
-      AllExerciseHistory =
+      ExerciseHistory =
       [
         History("workout-1", "2026-07-11T10:00:00Z", 101, 5),
         History("workout-2", "2026-07-12T10:00:00Z", 102, 5),
@@ -230,7 +230,7 @@ public sealed class TrainingAnalysisUseCaseTests
     var history = Enumerable.Range(1, 150)
         .Select(index => History($"workout-{index:D3}", start.AddMinutes(index).ToString("O"), 100 + index, 5))
         .ToImmutableList();
-    var client = new FakeHevyClient { AllExerciseHistory = history };
+    var client = new FakeHevyClient { ExerciseHistory = history };
     var service = new TrainingAnalysisUseCase(client, new FixedTimeProvider(Now));
 
     var first = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 100, null, default);
@@ -254,7 +254,7 @@ public sealed class TrainingAnalysisUseCaseTests
     var history = Enumerable.Range(1, 1_050)
         .Select(index => History($"workout-{index:D4}", start.AddMinutes(index).ToString("O"), 100 + index, 5))
         .ToImmutableList();
-    var client = new FakeHevyClient { AllExerciseHistory = history };
+    var client = new FakeHevyClient { ExerciseHistory = history };
     var service = new TrainingAnalysisUseCase(client, new FixedTimeProvider(Now));
 
     var result = await service.SummarizeExerciseHistoryAsync("template-1", 4, null, 1_000, null, default);

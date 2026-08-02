@@ -1,6 +1,5 @@
-using System.Diagnostics;
 using System.Text.Json;
-using Hevy.Mcp.Configuration;
+using static TestSupport.McpStdioProcess;
 using Xunit;
 
 namespace Hevy.Mcp.Tests.Tools;
@@ -53,7 +52,7 @@ public sealed class ToolInventoryTests
     var snapshotOperations = ReadSnapshotOperations();
     (snapshotOperations.Order()).Should().Equal(ExpectedNames.Keys.Order());
 
-    using var process = StartServer(readOnly);
+    using var process = Start("inventory-test-api-key", readOnly);
     await SendAsync(process, """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"inventory-test","version":"1.0"}}}""");
     using var initialize = await ReadAsync(process);
     await SendAsync(process, """{"jsonrpc":"2.0","method":"notifications/initialized"}""");
@@ -169,35 +168,4 @@ public sealed class ToolInventoryTests
     return operations;
   }
 
-  private static Process StartServer(bool readOnly)
-  {
-    var startInfo = new ProcessStartInfo
-    {
-      FileName = "dotnet",
-      RedirectStandardInput = true,
-      RedirectStandardOutput = true,
-      RedirectStandardError = true,
-      UseShellExecute = false,
-    };
-    startInfo.ArgumentList.Add(typeof(HevyMcpOptions).Assembly.Location);
-    startInfo.Environment["HEVY_API_KEY"] = "inventory-test-api-key";
-    startInfo.Environment["HEVY_MCP_TRANSPORT"] = "stdio";
-    startInfo.Environment["HEVY_READ_ONLY"] = readOnly ? "true" : "false";
-    startInfo.Environment.Remove("HEVY_LOG_LEVEL");
-    startInfo.Environment.Remove("MCP_AUTH_TOKEN");
-    return Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start Hevy.Mcp.");
-  }
-
-  private static async Task SendAsync(Process process, string message)
-  {
-    await process.StandardInput.WriteLineAsync(message);
-    await process.StandardInput.FlushAsync();
-  }
-
-  private static async Task<JsonDocument> ReadAsync(Process process)
-  {
-    var line = await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
-    (string.IsNullOrWhiteSpace(line)).Should().BeFalse();
-    return JsonDocument.Parse(line!);
-  }
 }

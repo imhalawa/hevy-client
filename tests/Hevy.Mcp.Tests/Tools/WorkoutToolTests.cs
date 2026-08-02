@@ -15,7 +15,7 @@ public sealed class WorkoutToolTests
   {
     var client = new FakeHevyClient();
 
-    var result = await WorkoutReadTools.GetWorkouts(Services(client), page, pageSize, "compact", CancellationToken.None);
+    var result = await ToolExceptionFilter.ExecuteAsync(() => WorkoutReadTools.GetWorkouts(Services(client), page, pageSize, "compact", CancellationToken.None));
 
     (result.IsError).Should().BeTrue();
     (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");

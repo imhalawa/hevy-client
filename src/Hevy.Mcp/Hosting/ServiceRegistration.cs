@@ -1,6 +1,5 @@
 using Hevy.Client;
 using Hevy.Mcp.Configuration;
-using Hevy.Mcp.Caching;
 using Hevy.Mcp.Diagnostics;
 using Hevy.Mcp.Prompts;
 using Hevy.Mcp.Tools;
@@ -15,17 +14,14 @@ internal static class ServiceRegistration
   internal static IMcpServerBuilder AddHevyMcpServer(
       this IServiceCollection services,
       HevyMcpOptions options,
-      RedactingLoggerProvider? diagnostics = null)
+      DiagnosticSink? diagnostics = null)
   {
 
     services.AddSingleton(options);
     services.AddSingleton(DiagnosticSnapshot.Create(options));
     services.AddSingleton(new HevyClientOptions(options.ApiKey));
-    services.AddSingleton<IHevyClient>(serviceProvider =>
-        new HevyClient(serviceProvider.GetRequiredService<HevyClientOptions>()));
-    services.AddMemoryCache(memory => memory.SizeLimit = 2);
+    services.AddSingleton<IHevyClient, HevyClient>();
     services.AddSingleton(TimeProvider.System);
-    services.AddSingleton<HevyCache>();
     services.AddSingleton<TrainingAnalysisUseCase>();
 
     var builder = services.AddMcpServer(serverOptions => serverOptions.ServerInfo = new Implementation
@@ -109,7 +105,7 @@ internal static class ServiceRegistration
           }
           catch (Exception exception)
           {
-            return InvocationFailure(exception);
+            return ToolExceptionFilter.FromException(exception);
           }
         },
         category,
@@ -118,11 +114,6 @@ internal static class ServiceRegistration
         name!);
     });
   }
-
-  internal static CallToolResult InvocationFailure(Exception exception) =>
-      exception is System.Text.Json.JsonException
-        ? ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.")
-        : ToolExceptionFilter.Unexpected();
 
   private static DiagnosticOperationCategory Category(string? toolName) => toolName switch
   {

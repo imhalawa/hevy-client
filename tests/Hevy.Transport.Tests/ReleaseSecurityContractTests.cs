@@ -235,20 +235,13 @@ public sealed class ReleaseSecurityContractTests
   [Fact]
   public async Task ReproducibilityGateExecutesExactlyTwoHardenedExportsAndPublishesVerifiedDigests()
   {
-    var fixture = await ReproducibilityFixture.CreateAsync(mismatch: false, extraDescriptor: false);
-    try
-    {
-      var result = await fixture.RunAsync();
+    using var fixture = await ReproducibilityFixture.CreateAsync(mismatch: false, extraDescriptor: false);
+    var result = await fixture.RunAsync();
 
-      (result.ExitCode).Should().Be(0);
-      (await File.ReadAllTextAsync(fixture.BuildLog)).Should().Be(fixture.ExpectedBuildLog);
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().Be(0);
+    (await File.ReadAllTextAsync(fixture.BuildLog)).Should().Be(fixture.ExpectedBuildLog);
+    (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
   }
 
   [Theory]
@@ -259,38 +252,24 @@ public sealed class ReleaseSecurityContractTests
       bool extraDescriptor,
       string expectedError)
   {
-    var fixture = await ReproducibilityFixture.CreateAsync(mismatch, extraDescriptor);
-    try
-    {
-      var result = await fixture.RunAsync();
+    using var fixture = await ReproducibilityFixture.CreateAsync(mismatch, extraDescriptor);
+    var result = await fixture.RunAsync();
 
-      (result.ExitCode).Should().NotBe(0);
-      (result.StandardError).Should().ContainEquivalentOf(expectedError);
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().NotBe(0);
+    (result.StandardError).Should().ContainEquivalentOf(expectedError);
+    (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
   }
 
   [Fact]
   public async Task ReproducibilityGateCleansUpWhenBuildxFails()
   {
-    var fixture = await ReproducibilityFixture.CreateAsync(mismatch: false, extraDescriptor: false);
-    try
-    {
-      var result = await fixture.RunAsync(failOnBuild: "2");
+    using var fixture = await ReproducibilityFixture.CreateAsync(mismatch: false, extraDescriptor: false);
+    var result = await fixture.RunAsync(failOnBuild: "2");
 
-      (result.ExitCode).Should().NotBe(0);
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().NotBe(0);
+    (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
   }
 
   [Theory]
@@ -581,67 +560,49 @@ public sealed class ReleaseSecurityContractTests
   [Fact]
   public async Task ReproducibilityGateRejectsMultipleJsonRootsWithoutTouchingExistingOutputs()
   {
-    var fixture = await ReproducibilityFixture.CreateAsync(
+    using var fixture = await ReproducibilityFixture.CreateAsync(
         mismatch: false,
         extraDescriptor: false,
         invalidIndexScenario: "concatenated_roots");
-    try
-    {
-      var result = await fixture.RunAsync();
+    var result = await fixture.RunAsync();
 
-      (result.ExitCode).Should().NotBe(0);
-      (result.StandardError).Should().ContainEquivalentOf("OCI index");
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().NotBe(0);
+    (result.StandardError).Should().ContainEquivalentOf("OCI index");
+    (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
+
   }
 
   [Fact]
   public async Task ReproducibilityGateRejectsLexicallyFractionalOuterSizeWithoutTouchingExistingOutputs()
   {
-    var fixture = await ReproducibilityFixture.CreateAsync(
+    using var fixture = await ReproducibilityFixture.CreateAsync(
         mismatch: false,
         extraDescriptor: false,
         invalidOuterSize: true);
-    try
-    {
-      var result = await fixture.RunAsync();
+    var result = await fixture.RunAsync();
 
-      (result.ExitCode).Should().NotBe(0);
-      (result.StandardError).Should().ContainEquivalentOf("OCI archive index");
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().NotBe(0);
+    (result.StandardError).Should().ContainEquivalentOf("OCI archive index");
+    (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
+
   }
 
   [Fact]
   public async Task ReproducibilityGateRejectsStringOuterSchemaWithoutTouchingExistingOutputs()
   {
-    var fixture = await ReproducibilityFixture.CreateAsync(
+    using var fixture = await ReproducibilityFixture.CreateAsync(
         mismatch: false,
         extraDescriptor: false,
         invalidOuterSchema: true);
-    try
-    {
-      var result = await fixture.RunAsync();
+    var result = await fixture.RunAsync();
 
-      (result.ExitCode).Should().NotBe(0);
-      (result.StandardError).Should().ContainEquivalentOf("OCI archive index");
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().NotBe(0);
+    (result.StandardError).Should().ContainEquivalentOf("OCI archive index");
+    (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be("sentinel=preserve\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
+
   }
 
   [Theory]
@@ -651,24 +612,18 @@ public sealed class ReleaseSecurityContractTests
       string outerSizeToken,
       bool shouldSucceed)
   {
-    var fixture = await ReproducibilityFixture.CreateAsync(
+    using var fixture = await ReproducibilityFixture.CreateAsync(
         mismatch: false,
         extraDescriptor: false,
         outerSizeToken: outerSizeToken);
-    try
-    {
-      var result = await fixture.RunAsync();
+    var result = await fixture.RunAsync();
 
-      (result.ExitCode == 0 ? 0 : 1).Should().Be(shouldSucceed ? 0 : 1);
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be(shouldSucceed
-              ? $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n"
-              : "sentinel=preserve\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode == 0).Should().Be(shouldSucceed);
+    (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be(shouldSucceed
+            ? $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n"
+            : "sentinel=preserve\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
+
   }
 
   [Theory]
@@ -678,45 +633,33 @@ public sealed class ReleaseSecurityContractTests
       int outerDocumentSize,
       bool shouldSucceed)
   {
-    var fixture = await ReproducibilityFixture.CreateAsync(
+    using var fixture = await ReproducibilityFixture.CreateAsync(
         mismatch: false,
         extraDescriptor: false,
         outerDocumentSize: outerDocumentSize);
-    try
-    {
-      var result = await fixture.RunAsync();
+    var result = await fixture.RunAsync();
 
-      (result.ExitCode == 0 ? 0 : 1).Should().Be(shouldSucceed ? 0 : 1);
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be(shouldSucceed
-              ? $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n"
-              : "sentinel=preserve\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode == 0).Should().Be(shouldSucceed);
+    (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be(shouldSucceed
+            ? $"sentinel=preserve\nsource_date_epoch=1770000000\nindex_digest={fixture.IndexDigest}\namd64_digest={ExistingDigest}\narm64_digest={IntendedDigest}\n"
+            : "sentinel=preserve\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
+
   }
 
   [Fact]
   public async Task ActionlintRunnerDownloadsChecksExecutesExactArgumentsAndCleansUp()
   {
     var pin = ReadActionlintPin();
-    var fixture = await ActionlintFixture.CreateAsync(toolPresent: true);
-    try
-    {
-      var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 0);
+    using var fixture = await ActionlintFixture.CreateAsync(toolPresent: true);
+    var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 0);
 
-      (result.ExitCode).Should().Be(0);
-      (await File.ReadAllTextAsync(fixture.DownloadLog)).Should().Be($"--fail\n--location\n--proto\n=https\n--tlsv1.2\n--output\n{pin.Archive}\nhttps://github.com/rhysd/actionlint/releases/download/v{pin.Version}/{pin.Archive}\n");
-      (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be($"arguments=--check --status\nchecksum={pin.Checksum}\nfile={pin.Archive}\n");
-      (await File.ReadAllTextAsync(fixture.ExecutionLog)).Should().Be("-color\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().Be(0);
+    (await File.ReadAllTextAsync(fixture.DownloadLog)).Should().Be($"--fail\n--location\n--proto\n=https\n--tlsv1.2\n--output\n{pin.Archive}\nhttps://github.com/rhysd/actionlint/releases/download/v{pin.Version}/{pin.Archive}\n");
+    (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be($"arguments=--check --status\nchecksum={pin.Checksum}\nfile={pin.Archive}\n");
+    (await File.ReadAllTextAsync(fixture.ExecutionLog)).Should().Be("-color\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
+
   }
 
   [Theory]
@@ -725,44 +668,32 @@ public sealed class ReleaseSecurityContractTests
   [InlineData("missing_tool")]
   public async Task ActionlintRunnerFailsClosedBeforeAnyUnverifiedExecution(string scenario)
   {
-    var fixture = await ActionlintFixture.CreateAsync(toolPresent: scenario != "missing_tool");
-    try
-    {
-      var result = await fixture.RunAsync(
-          downloadSucceeds: scenario != "network",
-          checksumSucceeds: scenario != "checksum",
-          actionlintExitCode: 0);
+    using var fixture = await ActionlintFixture.CreateAsync(toolPresent: scenario != "missing_tool");
+    var result = await fixture.RunAsync(
+        downloadSucceeds: scenario != "network",
+        checksumSucceeds: scenario != "checksum",
+        actionlintExitCode: 0);
 
-      (result.ExitCode).Should().NotBe(0);
-      (File.Exists(fixture.ExecutionLog)).Should().BeFalse();
-      if (scenario == "network")
-      {
-        (File.Exists(fixture.ChecksumLog)).Should().BeFalse();
-      }
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
+    (result.ExitCode).Should().NotBe(0);
+    (File.Exists(fixture.ExecutionLog)).Should().BeFalse();
+    if (scenario == "network")
     {
-      fixture.Dispose();
+      (File.Exists(fixture.ChecksumLog)).Should().BeFalse();
     }
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
+
   }
 
   [Fact]
   public async Task ActionlintRunnerReturnsTheVerifiedExecutableResult()
   {
-    var fixture = await ActionlintFixture.CreateAsync(toolPresent: true);
-    try
-    {
-      var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 17);
+    using var fixture = await ActionlintFixture.CreateAsync(toolPresent: true);
+    var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 17);
 
-      (result.ExitCode).Should().Be(17);
-      (await File.ReadAllTextAsync(fixture.ExecutionLog)).Should().Be("-color\n");
-      (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().Be(17);
+    (await File.ReadAllTextAsync(fixture.ExecutionLog)).Should().Be("-color\n");
+    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
+
   }
 
   [Theory]
@@ -835,27 +766,21 @@ public sealed class ReleaseSecurityContractTests
       string expectedUrl,
       string expectedChecksum)
   {
-    var fixture = await InstallerFixture.CreateAsync(scriptName, expectedUrl, expectedChecksum);
-    try
-    {
-      var result = await fixture.RunAsync(checksumSucceeds: true);
+    using var fixture = await InstallerFixture.CreateAsync(scriptName, expectedUrl, expectedChecksum);
+    var result = await fixture.RunAsync(checksumSucceeds: true);
 
-      (result.ExitCode).Should().Be(0);
-      (await File.ReadAllTextAsync(fixture.UrlLog)).Should().Be(expectedUrl + "\n");
-      (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be(expectedChecksum + "\n");
-      (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain((static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
-              Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal)));
-      (File.Exists(fixture.InstalledExecutable)).Should().BeTrue();
-      if (scriptName == "install-buildx.sh")
-      {
-        (File.Exists(fixture.GitHubEnvironment)).Should().BeFalse();
-        (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"buildx_path={fixture.InstalledExecutable}\n");
-      }
-    }
-    finally
+    (result.ExitCode).Should().Be(0);
+    (await File.ReadAllTextAsync(fixture.UrlLog)).Should().Be(expectedUrl + "\n");
+    (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be(expectedChecksum + "\n");
+    (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain((static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
+            Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal)));
+    (File.Exists(fixture.InstalledExecutable)).Should().BeTrue();
+    if (scriptName == "install-buildx.sh")
     {
-      fixture.Dispose();
+      (File.Exists(fixture.GitHubEnvironment)).Should().BeFalse();
+      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"buildx_path={fixture.InstalledExecutable}\n");
     }
+
   }
 
   [Theory]
@@ -866,20 +791,14 @@ public sealed class ReleaseSecurityContractTests
       string expectedUrl,
       string expectedChecksum)
   {
-    var fixture = await InstallerFixture.CreateAsync(scriptName, expectedUrl, expectedChecksum);
-    try
-    {
-      var result = await fixture.RunAsync(checksumSucceeds: false);
+    using var fixture = await InstallerFixture.CreateAsync(scriptName, expectedUrl, expectedChecksum);
+    var result = await fixture.RunAsync(checksumSucceeds: false);
 
-      (result.ExitCode).Should().NotBe(0);
-      (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain((static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
-              Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal)));
-      (File.Exists(fixture.InstalledExecutable)).Should().BeFalse();
-    }
-    finally
-    {
-      fixture.Dispose();
-    }
+    (result.ExitCode).Should().NotBe(0);
+    (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain((static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
+            Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal)));
+    (File.Exists(fixture.InstalledExecutable)).Should().BeFalse();
+
   }
 
   [Theory]
@@ -899,7 +818,7 @@ public sealed class ReleaseSecurityContractTests
           [],
           new Dictionary<string, string?> { ["HEVY_BUILDX_PATH"] = fakeBuildx });
 
-      (result.ExitCode == 0 ? 0 : 1).Should().Be(expectedSuccess == 0 ? 0 : 1);
+      (result.ExitCode == 0).Should().Be(expectedSuccess == 0);
     }
     finally
     {
@@ -1084,7 +1003,7 @@ public sealed class ReleaseSecurityContractTests
   }
 
   private static string Sha256Digest(byte[] value) =>
-      $"sha256:{Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant()}";
+      $"sha256:{Convert.ToHexStringLower(SHA256.HashData(value))}";
 
   private sealed class ReproducibilityFixture : IDisposable
   {
@@ -1540,7 +1459,7 @@ public sealed class ReleaseSecurityContractTests
 
   private static Task<DeliveryContractTests.ProcessResult> RunScriptAsync(
       string script,
-      ImmutableList<string> arguments,
+      IReadOnlyList<string> arguments,
       IReadOnlyDictionary<string, string?>? environment) =>
       DeliveryContractTests.RunProcessAsync(RepositoryRoot, script, environment, arguments.ToArray());
 
@@ -1687,38 +1606,27 @@ public sealed class ReleaseSecurityContractTests
         var request = await ReadRequestAsync(stream, cancellation.Token);
         Requests.Enqueue(request);
         requestNumber++;
-        if (requestNumber == 1)
+        var tokenRealm = $"{BaseUri.GetLeftPart(UriPartial.Authority)}/token";
+        var challenge = scenario switch
         {
-          var tokenRealm = $"{BaseUri.GetLeftPart(UriPartial.Authority)}/token";
-          var challenge = scenario.MalformedChallenge
-              ? $"Basic realm=\"{tokenRealm}\""
-              : scenario.ReorderedChallenge
-                  ? $"Bearer scope=\"repository:example/hevy-mcp:pull\",nonce=\"safe-extension\",realm=\"{tokenRealm}\",service=\"{BaseUri.Authority}\""
-                  : scenario.DuplicateScope
-                      ? $"Bearer realm=\"{tokenRealm}\",scope=\"repository:example/hevy-mcp:pull\",service=\"{BaseUri.Authority}\",scope=\"repository:example/hevy-mcp:pull\""
-                      : $"Bearer realm=\"{tokenRealm}\",service=\"{BaseUri.Authority}\",scope=\"repository:example/hevy-mcp:pull\"";
-          await RespondAsync(
-              stream,
-              401,
+          { MalformedChallenge: true } => $"Basic realm=\"{tokenRealm}\"",
+          { ReorderedChallenge: true } => $"Bearer scope=\"repository:example/hevy-mcp:pull\",nonce=\"safe-extension\",realm=\"{tokenRealm}\",service=\"{BaseUri.Authority}\"",
+          { DuplicateScope: true } => $"Bearer realm=\"{tokenRealm}\",scope=\"repository:example/hevy-mcp:pull\",service=\"{BaseUri.Authority}\",scope=\"repository:example/hevy-mcp:pull\"",
+          _ => $"Bearer realm=\"{tokenRealm}\",service=\"{BaseUri.Authority}\",scope=\"repository:example/hevy-mcp:pull\"",
+        };
+        var response = requestNumber switch
+        {
+          1 => new RegistryResponse(401, string.Empty, [("WWW-Authenticate", challenge)], 73),
+          2 => new RegistryResponse(
+              scenario.TokenStatus,
+              scenario.MalformedToken ? "{\"token\":\"contains a space\"}" : "{\"token\":\"fixture-registry-bearer-token\"}",
+              []),
+          _ => new RegistryResponse(
+              scenario.AuthenticatedStatus,
               string.Empty,
-              [("WWW-Authenticate", challenge)],
-              cancellation.Token,
-              declaredContentLength: 73);
-        }
-        else if (requestNumber == 2)
-        {
-          var body = scenario.MalformedToken
-              ? "{\"token\":\"contains a space\"}"
-              : "{\"token\":\"fixture-registry-bearer-token\"}";
-          await RespondAsync(stream, scenario.TokenStatus, body, [], cancellation.Token);
-        }
-        else
-        {
-          ImmutableList<(string Name, string Value)> headers = scenario.AuthenticatedStatus == 200
-              ? [("Docker-Content-Digest", ExistingDigest)]
-              : [];
-          await RespondAsync(stream, scenario.AuthenticatedStatus, string.Empty, headers, cancellation.Token);
-        }
+              scenario.AuthenticatedStatus == 200 ? [("Docker-Content-Digest", ExistingDigest)] : []),
+        };
+        await RespondAsync(stream, response.Status, response.Body, response.Headers, cancellation.Token, response.DeclaredContentLength);
       }
     }
 
@@ -1743,7 +1651,7 @@ public sealed class ReleaseSecurityContractTests
         NetworkStream stream,
         int status,
         string body,
-        ImmutableList<(string Name, string Value)> headers,
+        IReadOnlyList<(string Name, string Value)> headers,
         CancellationToken cancellationToken,
         int? declaredContentLength = null)
     {
@@ -1777,6 +1685,12 @@ public sealed class ReleaseSecurityContractTests
   }
 
   private sealed record RegistryRequest(string RequestLine, IReadOnlyDictionary<string, string> Headers);
+
+  private sealed record RegistryResponse(
+      int Status,
+      string Body,
+      IReadOnlyList<(string Name, string Value)> Headers,
+      int? DeclaredContentLength = null);
 
   private sealed record RegistryScenario(
       bool MalformedChallenge = false,

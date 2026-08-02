@@ -12,7 +12,7 @@ using Xunit;
 
 namespace Hevy.Mcp.Tests.Diagnostics;
 
-public sealed class RedactingLoggerTests
+public sealed class DiagnosticSinkTests
 {
   private const string UnsafeContent = "fixture-key api-key: secret ?page=2 Private Workout 2026-07-25T10:00:00Z response_body=oops weight_kg=91.2";
 
@@ -21,8 +21,7 @@ public sealed class RedactingLoggerTests
   {
     var writer = new StringWriter(CultureInfo.InvariantCulture);
     var options = Options("Information");
-    using var provider = (RedactingLoggerProvider.Create(options, writer)).Should().BeOfType<RedactingLoggerProvider>().Which;
-    var logger = provider.CreateLogger("unsafe-category-name");
+    var provider = (DiagnosticSink.Create(options, writer)).Should().BeOfType<DiagnosticSink>().Which;
     var correlationId = Guid.ParseExact("00112233445566778899aabbccddeeff", "N");
     var safeEvent = new SafeOperationEvent(
         DiagnosticOperationCategory.Read,
@@ -34,12 +33,7 @@ public sealed class RedactingLoggerTests
         "get_workouts",
         "hevy-request-123");
 
-    logger.Log(
-        LogLevel.Warning,
-        new EventId(8),
-        safeEvent,
-        new InvalidOperationException(UnsafeContent),
-        static (_, _) => UnsafeContent);
+    provider.Write(LogLevel.Warning, safeEvent);
 
     var line = (writer.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)).Should().ContainSingle().Which;
     using var document = JsonDocument.Parse(line);
@@ -65,33 +59,11 @@ public sealed class RedactingLoggerTests
   }
 
   [Fact]
-  public void ArbitraryLoggerStateIsRejectedInsteadOfScrubbed()
-  {
-    var writer = new StringWriter(CultureInfo.InvariantCulture);
-    using var provider = (RedactingLoggerProvider.Create(Options("Trace"), writer)).Should().BeOfType<RedactingLoggerProvider>().Which;
-    var logger = provider.CreateLogger("category");
-    var arbitraryState = new Dictionary<string, object?>
-    {
-      ["api-key"] = "fixture-key",
-      ["Authorization"] = "Bearer fixture-token",
-      ["url"] = "https://api.hevyapp.com/v1/workouts?page=2",
-      ["title"] = "Private Workout",
-      ["timestamp"] = "2026-07-25T10:00:00Z",
-      ["body"] = "upstream response body",
-      ["weight_kg"] = 91.2m,
-    };
-
-    logger.Log(LogLevel.Error, new EventId(9), arbitraryState, new Exception(UnsafeContent), static (_, _) => UnsafeContent);
-
-    (writer.ToString()).Should().Be(string.Empty);
-  }
-
-  [Fact]
   public void NoneLogLevelCreatesNoProviderAndEmitsNothing()
   {
     var writer = new StringWriter(CultureInfo.InvariantCulture);
 
-    var provider = RedactingLoggerProvider.Create(Options(logLevel: null), writer);
+    var provider = DiagnosticSink.Create(Options(logLevel: null), writer);
 
     (provider).Should().BeNull();
     (writer.ToString()).Should().Be(string.Empty);
@@ -101,14 +73,14 @@ public sealed class RedactingLoggerTests
   public async Task ThrowingDiagnosticSinkCannotChangeACompletedMutationResult()
   {
     var writer = new ThrowingWriter();
-    using var provider = (RedactingLoggerProvider.Create(Options("Information"), writer)).Should().BeOfType<RedactingLoggerProvider>().Which;
+    var provider = (DiagnosticSink.Create(Options("Information"), writer)).Should().BeOfType<DiagnosticSink>().Which;
     var client = new FakeHevyClient();
     using var services = new ServiceCollection().AddSingleton<IHevyClient>(client).BuildServiceProvider();
 
     var result = await DiagnosticToolDispatch.InvokeAsync(
         cancellationToken => WorkoutWriteTools.CreateWorkout(
             services,
-            FixtureFactory.Create<CreateWorkoutRequest>(),
+            FixtureFactory.Create<CreateWorkoutCommand>(),
             dry_run: false,
             cancellationToken),
         DiagnosticOperationCategory.Mutation,
@@ -125,7 +97,7 @@ public sealed class RedactingLoggerTests
   public async Task ThrowingDiagnosticSinkCannotChangeStructuredErrorOrCancellationSemantics()
   {
     var errorWriter = new ThrowingWriter();
-    using var errorProvider = (RedactingLoggerProvider.Create(Options("Information"), errorWriter)).Should().BeOfType<RedactingLoggerProvider>().Which;
+    var errorProvider = (DiagnosticSink.Create(Options("Information"), errorWriter)).Should().BeOfType<DiagnosticSink>().Which;
     var expected = ToolExceptionFilter.Validation("Safe fixed validation message.");
 
     var actual = await DiagnosticToolDispatch.InvokeAsync(
@@ -140,7 +112,7 @@ public sealed class RedactingLoggerTests
     (errorWriter.WriteAttempts).Should().Be(1);
 
     var cancellationWriter = new ThrowingWriter();
-    using var cancellationProvider = (RedactingLoggerProvider.Create(Options("Information"), cancellationWriter)).Should().BeOfType<RedactingLoggerProvider>().Which;
+    var cancellationProvider = (DiagnosticSink.Create(Options("Information"), cancellationWriter)).Should().BeOfType<DiagnosticSink>().Which;
     using var source = new CancellationTokenSource();
     source.Cancel();
 
@@ -158,7 +130,7 @@ public sealed class RedactingLoggerTests
   public void FailedDiagnosticSinkIsDisabledAfterItsFirstException()
   {
     var writer = new ThrowingWriter();
-    using var provider = (RedactingLoggerProvider.Create(Options("Trace"), writer)).Should().BeOfType<RedactingLoggerProvider>().Which;
+    var provider = (DiagnosticSink.Create(Options("Trace"), writer)).Should().BeOfType<DiagnosticSink>().Which;
     var operationEvent = new SafeOperationEvent(
         DiagnosticOperationCategory.Read,
         DiagnosticDurationBucket.UnderOneSecond,

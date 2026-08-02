@@ -8,7 +8,7 @@ internal static class DiagnosticToolDispatch
   internal static async Task<CallToolResult> InvokeAsync(
       Func<CancellationToken, Task<CallToolResult>> action,
       DiagnosticOperationCategory category,
-      RedactingLoggerProvider? diagnostics,
+      DiagnosticSink? diagnostics,
       CancellationToken cancellationToken,
       string operationName = "unknown")
   {

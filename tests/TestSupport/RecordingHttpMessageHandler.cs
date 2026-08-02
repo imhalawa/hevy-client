@@ -21,6 +21,7 @@ public sealed class RecordingHttpMessageHandler : HttpMessageHandler
         request.Method,
         request.RequestUri,
         request.Headers.ToDictionary(header => header.Key, header => header.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
+        request.Content?.Headers.ContentType?.MediaType,
         body,
         cancellationToken));
 
@@ -37,5 +38,6 @@ public sealed record RecordedHttpRequest(
     HttpMethod Method,
     Uri? RequestUri,
     IReadOnlyDictionary<string, string[]> Headers,
+    string? ContentType,
     string? Body,
     CancellationToken CancellationToken);

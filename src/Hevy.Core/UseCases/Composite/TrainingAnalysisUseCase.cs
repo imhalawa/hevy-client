@@ -46,8 +46,8 @@ public sealed class TrainingAnalysisUseCase(IHevyClient client, TimeProvider tim
     var workoutPhaseCompleteInThisCall = false;
     TrainingSummary Build(string? next) => BuildTrainingSummary(
         cursor,
-        workouts.ToImmutableList(),
-        measurements.ToImmutableList(),
+        workouts,
+        measurements,
         cursor.IsInitial && next is null,
         workoutPhaseCompleteInThisCall,
         next);
@@ -144,8 +144,8 @@ public sealed class TrainingAnalysisUseCase(IHevyClient client, TimeProvider tim
 
   private TrainingSummary BuildTrainingSummary(
       AnalysisCursor cursor,
-      ImmutableList<Workout> workoutChunk,
-      ImmutableList<BodyMeasurement> measurementChunk,
+      IReadOnlyList<Workout> workoutChunk,
+      IReadOnlyList<BodyMeasurement> measurementChunk,
       bool completePeriod,
       bool gapsComplete,
       string? continuation)
@@ -233,7 +233,7 @@ public sealed class TrainingAnalysisUseCase(IHevyClient client, TimeProvider tim
       items.AddRange(result.Items.Where(workout => workout.StartTime >= cursor.Range.Start && workout.StartTime < cursor.Range.End));
       page++;
     }
-    return new PageChunk<Workout>(items.ToImmutableList(), page <= pageCount, page, scanned);
+    return new PageChunk<Workout>(items, page <= pageCount, page, scanned);
   }
 
   private async Task<PageChunk<BodyMeasurement>> FetchMeasurementChunkAsync(
@@ -259,7 +259,7 @@ public sealed class TrainingAnalysisUseCase(IHevyClient client, TimeProvider tim
       }));
       page++;
     }
-    return new PageChunk<BodyMeasurement>(items.ToImmutableList(), page <= pageCount, page, scanned);
+    return new PageChunk<BodyMeasurement>(items, page <= pageCount, page, scanned);
   }
 
   private AnalysisCursor ResolveCursor(
@@ -366,7 +366,7 @@ public sealed class TrainingAnalysisUseCase(IHevyClient client, TimeProvider tim
   private static decimal? EntryVolume(ExerciseHistoryEntry entry) =>
       entry.WeightKg is not null && entry.Reps is not null ? entry.WeightKg.Value * entry.Reps.Value : null;
 
-  private static ImmutableList<MeasurementDelta> MeasurementDeltas(ImmutableList<BodyMeasurement> measurements)
+  private static ImmutableList<MeasurementDelta> MeasurementDeltas(IReadOnlyList<BodyMeasurement> measurements)
   {
     var ordered = measurements.OrderBy(static measurement => measurement.Date).ToArray();
     var deltas = new List<MeasurementDelta>();

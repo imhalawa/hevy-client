@@ -546,12 +546,20 @@ public sealed class DeliveryContractTests
       string workingDirectory,
       string executable,
       params string[] arguments) =>
-      RunProcessAsync(workingDirectory, executable, environment: null, arguments);
+      RunProcessAsync(workingDirectory, executable, environment: null, TimeSpan.FromMinutes(1), arguments);
 
   internal static async Task<ProcessResult> RunProcessAsync(
       string workingDirectory,
       string executable,
       IReadOnlyDictionary<string, string?>? environment,
+      params string[] arguments) =>
+      await RunProcessAsync(workingDirectory, executable, environment, TimeSpan.FromMinutes(1), arguments);
+
+  internal static async Task<ProcessResult> RunProcessAsync(
+      string workingDirectory,
+      string executable,
+      IReadOnlyDictionary<string, string?>? environment,
+      TimeSpan timeout,
       params string[] arguments)
   {
     var startInfo = new ProcessStartInfo
@@ -576,10 +584,19 @@ public sealed class DeliveryContractTests
     }
 
     using var process = Process.Start(startInfo)!;
-    var standardOutput = await process.StandardOutput.ReadToEndAsync();
-    var standardError = await process.StandardError.ReadToEndAsync();
-    await process.WaitForExitAsync();
-    return new ProcessResult(standardOutput, standardError, process.ExitCode);
+    var standardOutput = process.StandardOutput.ReadToEndAsync();
+    var standardError = process.StandardError.ReadToEndAsync();
+    try
+    {
+      await process.WaitForExitAsync().WaitAsync(timeout);
+    }
+    catch (TimeoutException)
+    {
+      process.Kill(entireProcessTree: true);
+      await process.WaitForExitAsync();
+      throw;
+    }
+    return new ProcessResult(await standardOutput, await standardError, process.ExitCode);
   }
 
   private static async Task GitAsync(string workingDirectory, params string[] arguments)
@@ -630,31 +647,22 @@ public sealed class DeliveryContractTests
       }
 
       var output = Path.Combine(path, $"output-{Guid.NewGuid():N}.txt");
-      var startInfo = new ProcessStartInfo
+      var environment = new Dictionary<string, string?>
       {
-        FileName = "/bin/sh",
-        WorkingDirectory = path,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-        UseShellExecute = false,
+        ["GITHUB_REF_TYPE"] = "tag",
+        ["GITHUB_REF_NAME"] = tag,
+        ["GITHUB_SHA"] = Commit,
+        ["GITHUB_REPOSITORY"] = "Example/Hevy-Mcp",
+        ["GITHUB_SERVER_URL"] = "https://github.com",
+        ["HEVY_CANONICAL_REPOSITORY"] = "Example/Hevy-Mcp",
+        ["HEVY_PRIVATE_ADVISORY_VERIFIED"] = securityVerified,
+        ["GITHUB_OUTPUT"] = output,
       };
-      startInfo.ArgumentList.Add(script);
-      startInfo.Environment["GITHUB_REF_TYPE"] = "tag";
-      startInfo.Environment["GITHUB_REF_NAME"] = tag;
-      startInfo.Environment["GITHUB_SHA"] = Commit;
-      startInfo.Environment["GITHUB_REPOSITORY"] = "Example/Hevy-Mcp";
-      startInfo.Environment["GITHUB_SERVER_URL"] = "https://github.com";
-      startInfo.Environment["HEVY_CANONICAL_REPOSITORY"] = "Example/Hevy-Mcp";
-      startInfo.Environment["HEVY_PRIVATE_ADVISORY_VERIFIED"] = securityVerified;
-      startInfo.Environment["GITHUB_OUTPUT"] = output;
-      using var process = Process.Start(startInfo)!;
-      var standardOutput = await process.StandardOutput.ReadToEndAsync();
-      var standardError = await process.StandardError.ReadToEndAsync();
-      await process.WaitForExitAsync();
+      var result = await DeliveryContractTests.RunProcessAsync(path, "/bin/sh", environment, script);
       return new ValidatorResult(
-          process.ExitCode,
-          standardOutput,
-          standardError,
+          result.ExitCode,
+          result.StandardOutput,
+          result.StandardError,
           File.Exists(output) ? await File.ReadAllTextAsync(output) : string.Empty);
     }
 

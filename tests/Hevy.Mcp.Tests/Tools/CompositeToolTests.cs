@@ -1,6 +1,5 @@
-using System.Diagnostics;
 using System.Text.Json;
-using Hevy.Mcp.Configuration;
+using static TestSupport.McpStdioProcess;
 using Xunit;
 
 namespace Hevy.Mcp.Tests.Tools;
@@ -21,7 +20,7 @@ public sealed class CompositeToolTests
   [InlineData(true)]
   public async Task RealInventoryAlwaysIncludesFiveReadOnlyCompositeTools(bool readOnly)
   {
-    using var process = StartServer(readOnly);
+    using var process = Start("composite-contract-test", readOnly);
     await InitializeAsync(process);
     await SendAsync(process, """{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}""");
     using var response = await ReadAsync(process);
@@ -43,7 +42,7 @@ public sealed class CompositeToolTests
   [Fact]
   public async Task RealCompositeCallValidatesBoundsBeforeAnyHevyRequest()
   {
-    using var process = StartServer(false);
+    using var process = Start("composite-contract-test", false);
     await InitializeAsync(process);
     await SendAsync(process, """{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"summarize_training","arguments":{"weeks":53}}}""");
     using var response = await ReadAsync(process);
@@ -93,7 +92,7 @@ public sealed class CompositeToolTests
         },
       },
     });
-    using var process = StartServer(false);
+    using var process = Start("composite-contract-test", false);
     await InitializeAsync(process);
     await SendAsync(process, request);
     using var response = await ReadAsync(process);
@@ -106,42 +105,4 @@ public sealed class CompositeToolTests
     (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
   }
 
-  private static Process StartServer(bool readOnly)
-  {
-    var start = new ProcessStartInfo
-    {
-      FileName = "dotnet",
-      RedirectStandardInput = true,
-      RedirectStandardOutput = true,
-      RedirectStandardError = true,
-      UseShellExecute = false,
-    };
-    start.ArgumentList.Add(typeof(HevyMcpOptions).Assembly.Location);
-    start.Environment["HEVY_API_KEY"] = "composite-contract-test";
-    start.Environment["HEVY_READ_ONLY"] = readOnly.ToString().ToLowerInvariant();
-    start.Environment.Remove("HEVY_LOG_LEVEL");
-    start.Environment.Remove("HEVY_MCP_TRANSPORT");
-    start.Environment.Remove("MCP_AUTH_TOKEN");
-    return Process.Start(start) ?? throw new InvalidOperationException("Failed to start Hevy.Mcp.");
-  }
-
-  private static async Task InitializeAsync(Process process)
-  {
-    await SendAsync(process, """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"composite-test","version":"1.0"}}}""");
-    using var initialize = await ReadAsync(process);
-    await SendAsync(process, """{"jsonrpc":"2.0","method":"notifications/initialized"}""");
-  }
-
-  private static async Task SendAsync(Process process, string message)
-  {
-    await process.StandardInput.WriteLineAsync(message);
-    await process.StandardInput.FlushAsync();
-  }
-
-  private static async Task<JsonDocument> ReadAsync(Process process)
-  {
-    var line = await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
-    (string.IsNullOrWhiteSpace(line)).Should().BeFalse();
-    return JsonDocument.Parse(line!);
-  }
 }

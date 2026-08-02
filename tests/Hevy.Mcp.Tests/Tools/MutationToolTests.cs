@@ -1,5 +1,4 @@
 using Hevy.Core.Exceptions;
-using Hevy.Mcp.Caching;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using TestSupport;
@@ -15,11 +14,11 @@ public sealed class MutationToolTests
     var client = new FakeHevyClient();
     var services = Services(client);
 
-    var workout = await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.Create<CreateWorkoutRequest>(), true, CancellationToken.None);
-    var routine = await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineRequest>(), true, CancellationToken.None);
-    var folder = await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.Create<CreateRoutineFolderRequest>(), true, CancellationToken.None);
-    var template = await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateRequest>(), true, CancellationToken.None);
-    var measurement = await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.Create<CreateBodyMeasurementRequest>(), true, CancellationToken.None);
+    var workout = await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.Create<CreateWorkoutCommand>(), true, CancellationToken.None);
+    var routine = await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineCommand>(), true, CancellationToken.None);
+    var folder = await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.Create<CreateRoutineFolderCommand>(), true, CancellationToken.None);
+    var template = await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateCommand>(), true, CancellationToken.None);
+    var measurement = await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.Create<CreateBodyMeasurementCommand>(), true, CancellationToken.None);
 
     (workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("title").GetString()).Should().Be("Friday Leg Day");
     (workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("exercises")[0].GetProperty("exercise_template_id").GetString()).Should().Be("D04AC939");
@@ -41,14 +40,19 @@ public sealed class MutationToolTests
     var client = new FakeHevyClient();
     var services = Services(client);
 
-    var workout = await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.Create<CreateWorkoutRequest>(), false, CancellationToken.None);
-    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineRequest>(), false, CancellationToken.None);
-    await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.Create<CreateRoutineFolderRequest>(), false, CancellationToken.None);
-    await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateRequest>(), false, CancellationToken.None);
-    await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.Create<CreateBodyMeasurementRequest>(), false, CancellationToken.None);
+    var workout = await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.Create<CreateWorkoutCommand>(), false, CancellationToken.None);
+    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineCommand>(), false, CancellationToken.None);
+    await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.Create<CreateRoutineFolderCommand>(), false, CancellationToken.None);
+    await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateCommand>(), false, CancellationToken.None);
+    await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.Create<CreateBodyMeasurementCommand>(), false, CancellationToken.None);
 
-    (client.CallCount).Should().Be(5);
-    (client.LastOperation).Should().Be(nameof(IHevyClient.CreateBodyMeasurementAsync));
+    (client.Operations).Should().Equal([
+      nameof(IHevyClient.CreateWorkoutAsync),
+      nameof(IHevyClient.CreateRoutineAsync),
+      nameof(IHevyClient.CreateRoutineFolderAsync),
+      nameof(IHevyClient.CreateExerciseTemplateAsync),
+      nameof(IHevyClient.CreateBodyMeasurementAsync),
+    ]);
     (workout.Structured().GetProperty("data").GetProperty("result").GetProperty("id").GetString()).Should().Be("workout-1");
   }
 
@@ -56,12 +60,12 @@ public sealed class MutationToolTests
   public async Task InvalidMutationPayloadReturnsValidationErrorBeforeClientIo()
   {
     var client = new FakeHevyClient();
-    var invalid = FixtureFactory.Create<CreateWorkoutRequest>() with
+    var invalid = FixtureFactory.Create<CreateWorkoutCommand>() with
     {
-      Workout = FixtureFactory.Create<CreateWorkoutRequest>().Workout with { Title = " " },
+      Workout = FixtureFactory.Create<CreateWorkoutCommand>().Workout with { Title = " " },
     };
 
-    var result = await WorkoutWriteTools.CreateWorkout(Services(client), invalid, false, CancellationToken.None);
+    var result = await ToolExceptionFilter.ExecuteAsync(() => WorkoutWriteTools.CreateWorkout(Services(client), invalid, false, CancellationToken.None));
 
     (result.IsError).Should().BeTrue();
     (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error");
@@ -73,25 +77,27 @@ public sealed class MutationToolTests
   {
     var client = new FakeHevyClient();
     var services = Services(client);
-    var createWorkout = FixtureFactory.Create<CreateWorkoutRequest>() with { Workout = FixtureFactory.Create<CreateWorkoutRequest>().Workout with { Title = "" } };
-    var updateWorkout = FixtureFactory.Create<UpdateWorkoutRequest>() with { Workout = FixtureFactory.Create<UpdateWorkoutRequest>().Workout with { Title = "" } };
-    var createRoutine = FixtureFactory.Create<CreateRoutineRequest>() with { Routine = FixtureFactory.Create<CreateRoutineRequest>().Routine with { Title = "" } };
-    var updateRoutine = FixtureFactory.Create<UpdateRoutineRequest>() with { Routine = FixtureFactory.Create<UpdateRoutineRequest>().Routine with { Title = "" } };
+    var createWorkout = FixtureFactory.Create<CreateWorkoutCommand>() with { Workout = FixtureFactory.Create<CreateWorkoutCommand>().Workout with { Title = "" } };
+    var updateWorkout = FixtureFactory.Create<UpdateWorkoutCommand>() with { Workout = FixtureFactory.Create<UpdateWorkoutCommand>().Workout with { Title = "" } };
+    var createRoutine = FixtureFactory.Create<CreateRoutineCommand>() with { Routine = FixtureFactory.Create<CreateRoutineCommand>().Routine with { Title = "" } };
+    var updateRoutine = FixtureFactory.Create<UpdateRoutineCommand>() with { Routine = FixtureFactory.Create<UpdateRoutineCommand>().Routine with { Title = "" } };
     var folder = new CreateRoutineFolderCommand(new RoutineFolderWrite(""));
-    var template = FixtureFactory.Create<CreateExerciseTemplateRequest>() with { Exercise = FixtureFactory.Create<CreateExerciseTemplateRequest>().Exercise with { Title = "" } };
-    var createMeasurement = FixtureFactory.Create<CreateBodyMeasurementRequest>() with { WeightKg = -1 };
-    var updateMeasurement = FixtureFactory.Create<UpdateBodyMeasurementRequest>() with { WeightKg = -1 };
+    var template = FixtureFactory.Create<CreateExerciseTemplateCommand>() with { Exercise = FixtureFactory.Create<CreateExerciseTemplateCommand>().Exercise with { Title = "" } };
+    var createMeasurement = FixtureFactory.Create<CreateBodyMeasurementCommand>();
+    createMeasurement = createMeasurement with { Measurement = createMeasurement.Measurement with { WeightKg = -1 } };
+    var updateMeasurement = FixtureFactory.Create<UpdateBodyMeasurementCommand>();
+    updateMeasurement = updateMeasurement with { Measurement = updateMeasurement.Measurement with { WeightKg = -1 } };
 
     var results = new[]
     {
-      await WorkoutWriteTools.CreateWorkout(services, createWorkout, false, CancellationToken.None),
-      await WorkoutWriteTools.UpdateWorkout(services, "workout-1", updateWorkout, null, true, false, CancellationToken.None),
-      await RoutineWriteTools.CreateRoutine(services, createRoutine, false, CancellationToken.None),
-      await RoutineWriteTools.UpdateRoutine(services, "routine-1", updateRoutine, null, true, false, CancellationToken.None),
-      await RoutineWriteTools.CreateRoutineFolder(services, folder, false, CancellationToken.None),
-      await ExerciseWriteTools.CreateExerciseTemplate(services, template, false, CancellationToken.None),
-      await MeasurementWriteTools.CreateBodyMeasurement(services, createMeasurement, false, CancellationToken.None),
-      await MeasurementWriteTools.UpdateBodyMeasurement(services, new DateOnly(2024, 8, 14), updateMeasurement, null, true, false, CancellationToken.None),
+      await ToolExceptionFilter.ExecuteAsync(() => WorkoutWriteTools.CreateWorkout(services, createWorkout, false, CancellationToken.None)),
+      await ToolExceptionFilter.ExecuteAsync(() => WorkoutWriteTools.UpdateWorkout(services, "workout-1", updateWorkout, null, true, false, CancellationToken.None)),
+      await ToolExceptionFilter.ExecuteAsync(() => RoutineWriteTools.CreateRoutine(services, createRoutine, false, CancellationToken.None)),
+      await ToolExceptionFilter.ExecuteAsync(() => RoutineWriteTools.UpdateRoutine(services, "routine-1", updateRoutine, null, true, false, CancellationToken.None)),
+      await ToolExceptionFilter.ExecuteAsync(() => RoutineWriteTools.CreateRoutineFolder(services, folder, false, CancellationToken.None)),
+      await ToolExceptionFilter.ExecuteAsync(() => ExerciseWriteTools.CreateExerciseTemplate(services, template, false, CancellationToken.None)),
+      await ToolExceptionFilter.ExecuteAsync(() => MeasurementWriteTools.CreateBodyMeasurement(services, createMeasurement, false, CancellationToken.None)),
+      await ToolExceptionFilter.ExecuteAsync(() => MeasurementWriteTools.UpdateBodyMeasurement(services, new DateOnly(2024, 8, 14), updateMeasurement, null, true, false, CancellationToken.None)),
     };
 
     (results).Should().AllSatisfy(result => (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("validation_error"));
@@ -105,11 +111,10 @@ public sealed class MutationToolTests
     var expected = FakeHevyClient.SampleWorkout().UpdatedAt;
 
     var result = await WorkoutWriteTools.UpdateWorkout(
-        Services(client), "workout-1", FixtureFactory.Create<UpdateWorkoutRequest>(), expected, false, false, CancellationToken.None);
+        Services(client), "workout-1", FixtureFactory.Create<UpdateWorkoutCommand>(), expected, false, false, CancellationToken.None);
 
     (result.IsError).Should().BeFalse();
-    (client.CallCount).Should().Be(2);
-    (client.LastOperation).Should().Be(nameof(IHevyClient.UpdateWorkoutAsync));
+    (client.Operations).Should().Equal([nameof(IHevyClient.GetWorkoutAsync), nameof(IHevyClient.UpdateWorkoutAsync)]);
     (result.Structured().GetProperty("meta").GetProperty("forced").GetBoolean()).Should().BeFalse();
   }
 
@@ -118,13 +123,12 @@ public sealed class MutationToolTests
   {
     var client = new FakeHevyClient();
 
-    var result = await RoutineWriteTools.UpdateRoutine(
-        Services(client), "routine-1", FixtureFactory.Create<UpdateRoutineRequest>(), DateTimeOffset.Parse("2026-07-24T12:00:00Z"), false, false, CancellationToken.None);
+    var result = await ToolExceptionFilter.ExecuteAsync(() => RoutineWriteTools.UpdateRoutine(
+        Services(client), "routine-1", FixtureFactory.Create<UpdateRoutineCommand>(), DateTimeOffset.Parse("2026-07-24T12:00:00Z"), false, false, CancellationToken.None));
 
     (result.IsError).Should().BeTrue();
     (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("conflict");
-    (client.CallCount).Should().Be(1);
-    (client.LastOperation).Should().Be(nameof(IHevyClient.GetRoutineAsync));
+    (client.Operations).Should().Equal([nameof(IHevyClient.GetRoutineAsync)]);
   }
 
   [Fact]
@@ -134,9 +138,9 @@ public sealed class MutationToolTests
     var routineClient = new FakeHevyClient();
     var measurementClient = new FakeHevyClient();
 
-    var workout = await WorkoutWriteTools.UpdateWorkout(Services(workoutClient), "workout-1", FixtureFactory.Create<UpdateWorkoutRequest>(), null, true, false, CancellationToken.None);
-    var routine = await RoutineWriteTools.UpdateRoutine(Services(routineClient), "routine-1", FixtureFactory.Create<UpdateRoutineRequest>(), null, true, false, CancellationToken.None);
-    var measurement = await MeasurementWriteTools.UpdateBodyMeasurement(Services(measurementClient), new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementRequest>(), null, true, false, CancellationToken.None);
+    var workout = await WorkoutWriteTools.UpdateWorkout(Services(workoutClient), "workout-1", FixtureFactory.Create<UpdateWorkoutCommand>(), null, true, false, CancellationToken.None);
+    var routine = await RoutineWriteTools.UpdateRoutine(Services(routineClient), "routine-1", FixtureFactory.Create<UpdateRoutineCommand>(), null, true, false, CancellationToken.None);
+    var measurement = await MeasurementWriteTools.UpdateBodyMeasurement(Services(measurementClient), new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementCommand>(), null, true, false, CancellationToken.None);
 
     (workoutClient.CallCount).Should().Be(1);
     (routineClient.CallCount).Should().Be(1);
@@ -154,9 +158,9 @@ public sealed class MutationToolTests
     var client = new FakeHevyClient();
     var services = Services(client);
 
-    var workout = await WorkoutWriteTools.UpdateWorkout(services, "workout-1", FixtureFactory.Create<UpdateWorkoutRequest>(), null, true, true, CancellationToken.None);
-    var routine = await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.Create<UpdateRoutineRequest>(), null, true, true, CancellationToken.None);
-    var measurement = await MeasurementWriteTools.UpdateBodyMeasurement(services, new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementRequest>(), null, true, true, CancellationToken.None);
+    var workout = await WorkoutWriteTools.UpdateWorkout(services, "workout-1", FixtureFactory.Create<UpdateWorkoutCommand>(), null, true, true, CancellationToken.None);
+    var routine = await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.Create<UpdateRoutineCommand>(), null, true, true, CancellationToken.None);
+    var measurement = await MeasurementWriteTools.UpdateBodyMeasurement(services, new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementCommand>(), null, true, true, CancellationToken.None);
 
     (workout.Structured().GetProperty("data").GetProperty("payload").GetProperty("workout").GetProperty("title").GetString()).Should().Be("Friday Leg Day");
     (routine.Structured().GetProperty("data").GetProperty("payload").GetProperty("routine").GetProperty("title").GetString()).Should().Be("April Leg Day");
@@ -170,7 +174,7 @@ public sealed class MutationToolTests
     var client = new FakeHevyClient();
 
     var result = await MeasurementWriteTools.UpdateBodyMeasurement(
-        Services(client), new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementRequest>(), DateTimeOffset.Parse("2024-08-14T12:00:00Z"), false, false, CancellationToken.None);
+        Services(client), new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementCommand>(), DateTimeOffset.Parse("2024-08-14T12:00:00Z"), false, false, CancellationToken.None);
 
     (result.IsError).Should().BeTrue();
     (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("conflict");
@@ -180,121 +184,8 @@ public sealed class MutationToolTests
     (client.LastOperation).Should().Be(nameof(IHevyClient.GetBodyMeasurementAsync));
   }
 
-  [Fact]
-  public async Task SuccessfulRelatedMutationsInvalidateCatalogsButDryRunsDoNot()
-  {
-    var client = new FakeHevyClient
-    {
-      Routines = new(1, 1, [FakeHevyClient.SampleRoutine()]),
-      ExerciseTemplates = new(1, 1, [new ExerciseTemplate("template-1", "Squat", "weight_reps", "quadriceps", ["glutes"], EquipmentCategory.Barbell, false)]),
-    };
-    var collection = new ServiceCollection()
-        .AddSingleton<IHevyClient>(client)
-        .AddMemoryCache(memory => memory.SizeLimit = 2)
-        .AddSingleton(TimeProvider.System)
-        .AddSingleton<HevyCache>();
-    using var services = collection.BuildServiceProvider();
-    var cache = services.GetRequiredService<HevyCache>();
-    await cache.GetRoutinesAsync(default);
-    await cache.GetExerciseTemplatesAsync(default);
-
-    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineRequest>(), true, default);
-    await cache.GetRoutinesAsync(default);
-    (client.CallCount).Should().Be(2);
-
-    await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineRequest>(), false, default);
-    await cache.GetRoutinesAsync(default);
-    await cache.GetExerciseTemplatesAsync(default);
-    (client.CallCount).Should().Be(4);
-
-    await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateRequest>(), false, default);
-    await cache.GetExerciseTemplatesAsync(default);
-    (client.CallCount).Should().Be(6);
-  }
-
-  [Fact]
-  public async Task Committed_exercise_with_failed_readback_invalidates_the_template_cache()
-  {
-    var client = new FakeHevyClient
-    {
-      ExerciseTemplates = new(1, 1, [new ExerciseTemplate("template-1", "Squat", "weight_reps", "quadriceps", ["glutes"], EquipmentCategory.Barbell, false)]),
-      CreateExerciseTemplateHandler = (_, _) => Task.FromException<ExerciseTemplate>(new HevyCommittedReadbackException()),
-    };
-    var collection = new ServiceCollection()
-        .AddSingleton<IHevyClient>(client)
-        .AddMemoryCache(memory => memory.SizeLimit = 2)
-        .AddSingleton(TimeProvider.System)
-        .AddSingleton<HevyCache>();
-    using var services = collection.BuildServiceProvider();
-    var cache = services.GetRequiredService<HevyCache>();
-    await cache.GetExerciseTemplatesAsync(default);
-
-    var result = await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateRequest>(), false, default);
-    await cache.GetExerciseTemplatesAsync(default);
-
-    (result.IsError).Should().BeTrue();
-    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("committed_readback_failed");
-    (result.Structured().GetProperty("error").GetProperty("retryable").GetBoolean()).Should().BeFalse();
-    (client.CallCount).Should().Be(3);
-  }
-
-  [Theory]
-  [InlineData(false)]
-  [InlineData(true)]
-  public async Task Every_routine_mutation_invalidates_before_a_possible_post_commit_failure(bool update)
-  {
-    var client = new FakeHevyClient
-    {
-      Routines = new(1, 1, [FakeHevyClient.SampleRoutine()]),
-      CreateRoutineHandler = (_, _) => Task.FromException<Routine>(new HevyCommittedReadbackException()),
-      UpdateRoutineHandler = (_, _, _) => Task.FromException<Routine>(new HevyCommittedReadbackException()),
-    };
-    using var services = CachedServices(client);
-    var cache = services.GetRequiredService<HevyCache>();
-    await cache.GetRoutinesAsync(default);
-
-    var result = update
-        ? await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.Create<UpdateRoutineRequest>(), null, true, false, default)
-        : await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineRequest>(), false, default);
-    await cache.GetRoutinesAsync(default);
-
-    (result.IsError).Should().BeTrue();
-    (result.Structured().GetProperty("error").GetProperty("code").GetString()).Should().Be("committed_readback_failed");
-    (client.CallCount).Should().Be(3);
-  }
-
-  [Fact]
-  public async Task Template_mutation_invalidates_before_a_cancelled_post_commit_readback()
-  {
-    using var cancellation = new CancellationTokenSource();
-    var client = new FakeHevyClient
-    {
-      ExerciseTemplates = new(1, 1, [new ExerciseTemplate("template-1", "Squat", "weight_reps", "quadriceps", ["glutes"], EquipmentCategory.Barbell, false)]),
-      CreateExerciseTemplateHandler = (_, token) =>
-      {
-        cancellation.Cancel();
-        return Task.FromCanceled<ExerciseTemplate>(token);
-      },
-    };
-    using var services = CachedServices(client);
-    var cache = services.GetRequiredService<HevyCache>();
-    await cache.GetExerciseTemplatesAsync(default);
-
-    await FluentActions.Awaiting(() =>
-        ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateRequest>(), false, cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
-    await cache.GetExerciseTemplatesAsync(default);
-
-    (client.CallCount).Should().Be(3);
-  }
-
   private static IServiceProvider Services(IHevyClient client) => new ServiceCollection()
       .AddSingleton(client)
       .BuildServiceProvider();
 
-  private static ServiceProvider CachedServices(IHevyClient client) => new ServiceCollection()
-      .AddSingleton(client)
-      .AddMemoryCache(memory => memory.SizeLimit = 2)
-      .AddSingleton(TimeProvider.System)
-      .AddSingleton<HevyCache>()
-      .BuildServiceProvider();
 }

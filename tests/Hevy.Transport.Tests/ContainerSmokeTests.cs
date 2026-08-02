@@ -10,12 +10,6 @@ using Xunit.Sdk;
 
 namespace Hevy.Transport.Tests;
 
-public sealed record DockerProbeResult(
-    int ExitCode,
-    string StandardOutput,
-    string StandardError,
-    bool ExecutableMissing);
-
 public sealed record DockerCommandResult(
     int ExitCode,
     string StandardOutput,
@@ -23,7 +17,7 @@ public sealed record DockerCommandResult(
     bool ExecutableMissing);
 
 public delegate Task<DockerCommandResult> DockerCommandRunner(
-    ImmutableList<string> arguments,
+    IReadOnlyList<string> arguments,
     string? workingDirectory,
     TimeSpan? timeout);
 
@@ -36,7 +30,7 @@ public static class DockerAvailabilityPolicy
   /// Re-audit this precedence when the pinned Docker client changes.
   /// </remarks>
   public static async Task<DockerAvailabilityDecision> EvaluateAsync(
-      DockerProbeResult probe,
+      DockerCommandResult probe,
       bool isCi,
       DockerCommandRunner runner,
       string? configuredDockerHost = null,
@@ -109,12 +103,7 @@ public static class DockerAvailabilityPolicy
       return false;
     }
 
-    var output = result.StandardOutput switch
-    {
-      var text when text.EndsWith("\r\n", StringComparison.Ordinal) => text[..^2],
-      var text when text.EndsWith('\n') => text[..^1],
-      var text => text,
-    };
+    var output = result.StandardOutput.TrimEnd('\r', '\n');
 
     if (!IsSafeBoundedText(output, maximumLength: 2048))
     {
@@ -425,15 +414,14 @@ public static class DockerAvailabilityPolicy
 public sealed class ContainerImageCoordinator : IAsyncDisposable
 {
   private readonly DockerCommandRunner runner;
-  private readonly SemaphoreSlim buildLock = new(1, 1);
   private string? immutableImageId;
   private bool tagWasBuilt;
-  private int disposed;
+  private bool disposed;
 
   public ContainerImageCoordinator(DockerCommandRunner runner)
   {
     this.runner = runner;
-    OwnedTag = $"hevy-mcp:container-smoke-{Environment.ProcessId}-{RandomNumberGenerator.GetHexString(32).ToLowerInvariant()}";
+    OwnedTag = $"hevy-mcp:container-smoke-{Environment.ProcessId}-{RandomNumberGenerator.GetHexString(32, lowercase: true)}";
   }
 
   public string OwnedTag { get; }
@@ -444,17 +432,13 @@ public sealed class ContainerImageCoordinator : IAsyncDisposable
   public async Task<string> EnsureBuiltAsync(string repositoryRoot)
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
-    ObjectDisposedException.ThrowIf(disposed != 0, this);
-
-    await buildLock.WaitAsync();
-    try
+    ObjectDisposedException.ThrowIf(disposed, this);
+    if (immutableImageId is not null)
     {
-      if (immutableImageId is not null)
-      {
-        return immutableImageId;
-      }
+      return immutableImageId;
+    }
 
-      var build = await runner(
+    var build = await runner(
           [
             "build",
             "--pull",
@@ -466,38 +450,34 @@ public sealed class ContainerImageCoordinator : IAsyncDisposable
           ],
           repositoryRoot,
           TimeSpan.FromMinutes(10));
-      if (build.ExitCode != 0)
-      {
-        throw new InvalidOperationException($"Container build failed.\nstdout:\n{build.StandardOutput}\nstderr:\n{build.StandardError}");
-      }
-      tagWasBuilt = true;
+    if (build.ExitCode != 0)
+    {
+      throw new InvalidOperationException($"Container build failed.\nstdout:\n{build.StandardOutput}\nstderr:\n{build.StandardError}");
+    }
+    tagWasBuilt = true;
 
-      var inspection = await runner(
+    var inspection = await runner(
           ["image", "inspect", "--format", "{{.Id}}", OwnedTag],
           repositoryRoot,
           TimeSpan.FromSeconds(30));
-      var inspectedId = inspection.StandardOutput.Trim();
-      if (inspection.ExitCode != 0 || !Regex.IsMatch(inspectedId, "^sha256:[0-9a-f]{64}$", RegexOptions.CultureInvariant))
-      {
-        throw new InvalidOperationException($"Built image identity inspection failed.\nstdout:\n{inspection.StandardOutput}\nstderr:\n{inspection.StandardError}");
-      }
-
-      immutableImageId = inspectedId;
-      return inspectedId;
-    }
-    finally
+    var inspectedId = inspection.StandardOutput.Trim();
+    if (inspection.ExitCode != 0 || !Regex.IsMatch(inspectedId, "^sha256:[0-9a-f]{64}$", RegexOptions.CultureInvariant))
     {
-      buildLock.Release();
+      throw new InvalidOperationException($"Built image identity inspection failed.\nstdout:\n{inspection.StandardOutput}\nstderr:\n{inspection.StandardError}");
     }
+
+    immutableImageId = inspectedId;
+    return inspectedId;
   }
 
   public async ValueTask DisposeAsync()
   {
-    if (Interlocked.Exchange(ref disposed, 1) != 0)
+    if (disposed)
     {
       return;
     }
 
+    disposed = true;
     if (tagWasBuilt)
     {
       await runner(
@@ -505,8 +485,6 @@ public sealed class ContainerImageCoordinator : IAsyncDisposable
           workingDirectory: null,
           timeout: TimeSpan.FromSeconds(30));
     }
-
-    buildLock.Dispose();
   }
 }
 
@@ -528,7 +506,7 @@ public sealed class ContainerSmokeFixture : IAsyncLifetime
         workingDirectory: null,
         timeout: TimeSpan.FromSeconds(30));
     var decision = await DockerAvailabilityPolicy.EvaluateAsync(
-        new DockerProbeResult(
+        new DockerCommandResult(
             availability.ExitCode,
             availability.StandardOutput,
             availability.StandardError,
@@ -572,7 +550,7 @@ public static class DockerProcess
   }
 
   public static async Task<DockerCommandResult> RunAsync(
-      ImmutableList<string> arguments,
+      IReadOnlyList<string> arguments,
       string? workingDirectory = null,
       TimeSpan? timeout = null)
   {
@@ -594,7 +572,16 @@ public static class DockerProcess
       using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start Docker.");
       var standardOutput = process.StandardOutput.ReadToEndAsync();
       var standardError = process.StandardError.ReadToEndAsync();
-      await process.WaitForExitAsync().WaitAsync(timeout ?? TimeSpan.FromSeconds(30));
+      try
+      {
+        await process.WaitForExitAsync().WaitAsync(timeout ?? TimeSpan.FromSeconds(30));
+      }
+      catch (TimeoutException)
+      {
+        process.Kill(entireProcessTree: true);
+        await process.WaitForExitAsync();
+        throw;
+      }
       return new DockerCommandResult(process.ExitCode, await standardOutput, await standardError, ExecutableMissing: false);
     }
     catch (System.ComponentModel.Win32Exception exception)
@@ -915,7 +902,7 @@ public sealed class ContainerSmokeInfrastructureTests
   private const string LocalDockerEndpoint = "unix:///var/run/docker.sock";
 
   private static Task<DockerAvailabilityDecision> EvaluateWithLocalEndpointAsync(
-      DockerProbeResult probe,
+      DockerCommandResult probe,
       bool isCi) => DockerAvailabilityPolicy.EvaluateAsync(
           probe,
           isCi,
@@ -924,7 +911,7 @@ public sealed class ContainerSmokeInfrastructureTests
           configuredDockerContext: null);
 
   private static Task<DockerCommandResult> UnexpectedDocker(
-      ImmutableList<string> arguments,
+      IReadOnlyList<string> arguments,
       string? workingDirectory,
       TimeSpan? timeout) => throw new InvalidOperationException(
           $"Configured DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
@@ -934,7 +921,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData(true, DockerAvailabilityDecision.Fail)]
   public async Task MissingDockerExecutableSkipsOnlyOutsideCi(bool isCi, DockerAvailabilityDecision expected)
   {
-    var probe = new DockerProbeResult(127, string.Empty, "docker executable was not found", ExecutableMissing: true);
+    var probe = new DockerCommandResult(127, string.Empty, "docker executable was not found", ExecutableMissing: true);
 
     (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
@@ -957,7 +944,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("failed to connect to the docker API at tcp://127.0.0.1:2375: connection refused")]
   public async Task RecognizedStoppedLocalDaemonSkipsOnlyOutsideCi(string error)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         error,
@@ -975,7 +962,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("failed to connect to the docker API at ssh://builder@build-host:22: connection refused")]
   public async Task RemoteDockerEndpointsNeverSkip(string error)
   {
-    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+    var probe = new DockerCommandResult(1, string.Empty, error, ExecutableMissing: false);
 
     (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
     (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
@@ -1000,7 +987,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("Cannot connect to the Docker daemon at unix:////. Is the docker daemon running?")]
   public async Task AdversarialDaemonDiagnosticsFailClosed(string error)
   {
-    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+    var probe = new DockerCommandResult(1, string.Empty, error, ExecutableMissing: false);
 
     (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
     (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
@@ -1015,7 +1002,7 @@ public sealed class ContainerSmokeInfrastructureTests
     var error =
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" +
         separator;
-    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+    var probe = new DockerCommandResult(1, string.Empty, error, ExecutableMissing: false);
 
     (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
   }
@@ -1041,7 +1028,7 @@ public sealed class ContainerSmokeInfrastructureTests
 
     foreach (var position in positions)
     {
-      var probe = new DockerProbeResult(
+      var probe = new DockerCommandResult(
           1,
           string.Empty,
           diagnostic.Insert(position, separator),
@@ -1053,14 +1040,14 @@ public sealed class ContainerSmokeInfrastructureTests
   [Fact]
   public async Task PersistedActiveRemoteContextPreventsLocalAbsenceSkip()
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => arguments switch
         {
@@ -1089,14 +1076,14 @@ public sealed class ContainerSmokeInfrastructureTests
       string endpoint,
       DockerAvailabilityDecision expected)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => arguments switch
         {
@@ -1117,14 +1104,14 @@ public sealed class ContainerSmokeInfrastructureTests
   [Fact]
   public async Task FailedContextInspectionFailsClosed()
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => arguments switch
         {
@@ -1146,14 +1133,14 @@ public sealed class ContainerSmokeInfrastructureTests
   [Fact]
   public async Task ContextResolutionRunnerFailureFailsClosed()
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FailingDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => throw new TimeoutException("context command timed out");
 
@@ -1174,7 +1161,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("\u2029")]
   public async Task UnsafeConfiguredContextNameFailsBeforeInspection(string separator)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1196,7 +1183,7 @@ public sealed class ContainerSmokeInfrastructureTests
       string configuredDockerHost,
       DockerAvailabilityDecision expected)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1216,14 +1203,14 @@ public sealed class ContainerSmokeInfrastructureTests
   public async Task BlankDockerHostFallsThroughToConfiguredContext(string? configuredDockerHost)
   {
     const string configuredDockerContext = "local";
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {
@@ -1245,7 +1232,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("")]
   public async Task DockerHostIsUsedWhenDockerContextIsAbsent(string? configuredDockerContext)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1287,7 +1274,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [MemberData(nameof(InvalidDockerContextNames))]
   public async Task ConfiguredContextNamesOutsideDockerGrammarFailBeforeInspection(string configuredDockerContext)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1305,7 +1292,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [MemberData(nameof(InvalidDockerContextNames))]
   public async Task PersistedContextNamesOutsideDockerGrammarFailBeforeInspection(string activeContext)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1313,7 +1300,7 @@ public sealed class ContainerSmokeInfrastructureTests
 
     var commandCount = 0;
     Task<DockerCommandResult> FakeDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {
@@ -1336,14 +1323,14 @@ public sealed class ContainerSmokeInfrastructureTests
   [MemberData(nameof(ValidDockerContextNames))]
   public async Task ValidDockerContextNamesAreInspectedAsProtectedPositionals(string configuredDockerContext)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> FakeDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {
@@ -1375,14 +1362,14 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("npipe:////./pipe/docker_engine/extra")]
   public async Task EffectiveEndpointRejectsNonCanonicalRawGrammar(string configuredDockerHost)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> UnexpectedDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => throw new InvalidOperationException(
             $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
@@ -1406,14 +1393,14 @@ public sealed class ContainerSmokeInfrastructureTests
   public async Task UnicodeLineAndControlCharactersAnywhereInEndpointsFailClosed(string separator)
   {
     const string endpoint = "tcp://localhost:2375";
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> UnexpectedDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => throw new InvalidOperationException(
             $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
@@ -1441,14 +1428,14 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("npipe:////./pipe/dockerDesktopLinuxEngine")]
   public async Task EffectiveEndpointAcceptsExactLocalGrammar(string configuredDockerHost)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
         ExecutableMissing: false);
 
     Task<DockerCommandResult> UnexpectedDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout) => throw new InvalidOperationException(
             $"DOCKER_HOST should avoid context inspection, but ran: {string.Join(' ', arguments)}");
@@ -1469,7 +1456,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("arbitrary exit one")]
   public async Task ArbitraryDockerFailuresNeverSkip(string error)
   {
-    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+    var probe = new DockerCommandResult(1, string.Empty, error, ExecutableMissing: false);
 
     (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
     (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
@@ -1481,7 +1468,7 @@ public sealed class ContainerSmokeInfrastructureTests
     var builtTags = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
     var removedTags = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
     async Task<DockerCommandResult> FakeDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {
@@ -1495,7 +1482,7 @@ public sealed class ContainerSmokeInfrastructureTests
 
       if (arguments is ["image", "inspect", "--format", _, var inspectedTag])
       {
-        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(inspectedTag))).ToLowerInvariant();
+        var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(inspectedTag)));
         return new DockerCommandResult(0, $"sha256:{digest}\n", string.Empty, ExecutableMissing: false);
       }
 
@@ -1532,7 +1519,7 @@ public sealed class ContainerSmokeInfrastructureTests
   {
     string? removedTag = null;
     Task<DockerCommandResult> FakeDocker(
-        ImmutableList<string> arguments,
+        IReadOnlyList<string> arguments,
         string? workingDirectory,
         TimeSpan? timeout)
     {

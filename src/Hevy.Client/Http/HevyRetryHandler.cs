@@ -1,7 +1,4 @@
 using System.Net;
-using Hevy.Core.Exceptions;
-using Polly;
-using Polly.Retry;
 
 namespace Hevy.Client.Http;
 
@@ -30,58 +27,31 @@ internal sealed class HevyRetryHandler : DelegatingHandler
   {
     var retryAllowed = request.Method == HttpMethod.Get ||
         (request.Method == HttpMethod.Put && request.Options.TryGetValue(RetrySafeMutation, out var retrySafe) && retrySafe);
-    var mutation = request.Method == HttpMethod.Post || request.Method == HttpMethod.Put;
-    using var template = retryAllowed ? await HevyRetryRequestTemplate.CreateAsync(request, cancellationToken) : null;
-    var retryDelay = TimeSpan.Zero;
-
-    var pipeline = new ResiliencePipelineBuilder<HttpResponseMessage>()
-        .AddRetry(new RetryStrategyOptions<HttpResponseMessage>
-        {
-          MaxRetryAttempts = 2,
-          ShouldHandle = arguments =>
-          {
-            var hasTransientException = arguments.Outcome.Exception is HttpRequestException;
-            var hasTransientResponse = arguments.Outcome.Result is { } response && IsTransient(response.StatusCode);
-            if (!retryAllowed || (!hasTransientException && !hasTransientResponse))
-            {
-              return ValueTask.FromResult(false);
-            }
-
-            retryDelay = GetRetryDelay(arguments.Outcome.Result, arguments.AttemptNumber);
-            return ValueTask.FromResult(FitsWithinDeadline(request, retryDelay));
-          },
-          DelayGenerator = _ => ValueTask.FromResult<TimeSpan?>(TimeSpan.Zero),
-          OnRetry = async arguments =>
-          {
-            arguments.Outcome.Result?.Dispose();
-            await delayAsync(retryDelay, arguments.Context.CancellationToken).ConfigureAwait(false);
-          },
-        })
-        .Build();
-
-    try
+    if (!retryAllowed)
     {
-      var response = await pipeline.ExecuteAsync(async token =>
-      {
-        using var retryRequest = template?.CreateRequest();
-        var attemptRequest = retryRequest ?? request;
-        HevyAuthenticationHandler.EnsureSafeTarget(attemptRequest.RequestUri);
-        return await base.SendAsync(attemptRequest, token).ConfigureAwait(false);
-      }, cancellationToken).ConfigureAwait(false);
-
-      if (mutation && (int)response.StatusCode >= 500)
-      {
-        var statusCode = response.StatusCode;
-        var requestId = HevyResponse.SafeRequestId(response);
-        response.Dispose();
-        throw new HevyOutcomeUnknownException(statusCode, requestId);
-      }
-
-      return response;
+      HevyAuthenticationHandler.EnsureSafeTarget(request.RequestUri);
+      return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
-    catch (HttpRequestException) when (mutation)
+
+    using var template = await HevyRetryRequestTemplate.CreateAsync(request, cancellationToken);
+    for (var attempt = 0; ; attempt++)
     {
-      throw new HevyOutcomeUnknownException();
+      using var attemptRequest = template.CreateRequest();
+      HevyAuthenticationHandler.EnsureSafeTarget(attemptRequest.RequestUri);
+      try
+      {
+        var response = await base.SendAsync(attemptRequest, cancellationToken).ConfigureAwait(false);
+        var delay = GetRetryDelay(response, attempt);
+        if (attempt == 2 || !IsTransient(response.StatusCode) || !FitsWithinDeadline(request, delay)) return response;
+        response.Dispose();
+        await delayAsync(delay, cancellationToken).ConfigureAwait(false);
+      }
+      catch (HttpRequestException) when (attempt < 2)
+      {
+        var delay = GetRetryDelay(null, attempt);
+        if (!FitsWithinDeadline(request, delay)) throw;
+        await delayAsync(delay, cancellationToken).ConfigureAwait(false);
+      }
     }
   }
 

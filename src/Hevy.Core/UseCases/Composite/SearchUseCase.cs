@@ -47,11 +47,7 @@ public sealed class SearchUseCase(
         limit,
         continuation,
         getExerciseTemplatePage,
-        template => Normalize(template.Title).Contains(filters["query"]!, StringComparison.Ordinal) &&
-            (normalizedEquipment is null || string.Equals(EnumWire(template.EquipmentCategory), normalizedEquipment, StringComparison.Ordinal)) &&
-            (normalizedMuscle is null ||
-            string.Equals(Normalize(template.PrimaryMuscleGroup), normalizedMuscle, StringComparison.Ordinal) ||
-            template.SecondaryMuscleGroups.Any(group => string.Equals(Normalize(group), normalizedMuscle, StringComparison.Ordinal))),
+        template => TemplateMatches(template, filters["query"]!, normalizedEquipment, normalizedMuscle),
         static template => new ExerciseTemplateSearchItem(
             template.Id,
             CollapseWhitespace(template.Title),
@@ -64,6 +60,15 @@ public sealed class SearchUseCase(
   }
 
   private static string Normalize(string? value) => CollapseWhitespace(value).ToUpperInvariant();
+
+  private static bool TemplateMatches(ExerciseTemplate template, string query, string? equipment, string? muscle)
+  {
+    var titleMatches = Normalize(template.Title).Contains(query, StringComparison.Ordinal);
+    var equipmentMatches = equipment is null || string.Equals(EnumWire(template.EquipmentCategory), equipment, StringComparison.Ordinal);
+    var primaryMuscleMatches = muscle is not null && string.Equals(Normalize(template.PrimaryMuscleGroup), muscle, StringComparison.Ordinal);
+    var secondaryMuscleMatches = muscle is not null && template.SecondaryMuscleGroups.Any(group => string.Equals(Normalize(group), muscle, StringComparison.Ordinal));
+    return titleMatches && equipmentMatches && (muscle is null || primaryMuscleMatches || secondaryMuscleMatches);
+  }
 
   private static string CollapseWhitespace(string? value) =>
       string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
@@ -135,7 +140,7 @@ public sealed class SearchUseCase(
     var next = more
         ? Continuation.Create(endpoint, checked(sourceOffset + 1), filters, Continuation.MaximumItemBudget)
         : null;
-    return new CompositeResult<TResult>(results.ToImmutableList(), filters, limit, more, next);
+    return new CompositeResult<TResult>([.. results], filters, limit, more, next);
   }
 
   private static IReadOnlyDictionary<string, string?> Filters(params (string Key, string? Value)[] filters) =>

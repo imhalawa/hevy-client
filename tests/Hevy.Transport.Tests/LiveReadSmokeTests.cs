@@ -28,17 +28,10 @@ public sealed class LiveReadSmokeTests
       ["HEVY_LIVE_TESTS"] = liveTests,
       ["HEVY_API_KEY"] = apiKey,
     };
-    var requestCount = 0;
-
     var gate = LiveTestGate.Evaluate(environment.GetValueOrDefault, mutation: false);
-    if (gate.Enabled)
-    {
-      requestCount++;
-    }
 
     (gate.Enabled).Should().BeFalse();
     (gate.SkipReason).Should().Contain("HEVY_LIVE_TESTS=true");
-    (requestCount).Should().Be(0);
   }
 }
 
