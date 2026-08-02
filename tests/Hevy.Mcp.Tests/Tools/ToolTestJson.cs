@@ -1,6 +1,5 @@
 using System.Text.Json;
 using ModelContextProtocol.Protocol;
-using Xunit;
 
 namespace Hevy.Mcp.Tests.Tools;
 

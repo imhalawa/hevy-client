@@ -2,4 +2,8 @@
   <PropertyGroup>
     <IsPackable>true</IsPackable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Hevy.Core/Hevy.Core.csproj" />
+  </ItemGroup>
 </Project>

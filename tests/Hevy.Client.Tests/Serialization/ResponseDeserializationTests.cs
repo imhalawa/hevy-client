@@ -13,7 +13,7 @@ public sealed class ResponseDeserializationTests
   {
     var json = Fixture.Read("workout.json").Replace("\"title\":", "\"future_field\":42,\"title\":", StringComparison.Ordinal);
 
-    var workout = JsonSerializer.Deserialize(json, HevyJsonContext.Default.Workout);
+    var workout = JsonSerializer.Deserialize(json, HevyJsonContext.Default.WorkoutResponse);
 
     (workout!.Id).Should().Be("workout-1");
     (workout.Exercises[0].Title).Should().Be("Bench Press (Barbell)");
@@ -23,7 +23,7 @@ public sealed class ResponseDeserializationTests
   [Fact]
   public void Routine_deserializes_nested_set_metrics()
   {
-    var routine = JsonSerializer.Deserialize(Fixture.Read("routine.json"), HevyJsonContext.Default.Routine);
+    var routine = JsonSerializer.Deserialize(Fixture.Read("routine.json"), HevyJsonContext.Default.RoutineResponse);
 
     (routine!.Id).Should().Be("routine-1");
     (routine.FolderId).Should().Be(42);
@@ -36,7 +36,7 @@ public sealed class ResponseDeserializationTests
     var json = Fixture.Read("exercise-template.json")
         .Replace("\"chest\"", "\"serratus_anterior\"", StringComparison.Ordinal)
         .Replace("\"triceps\"", "\"teres_major\"", StringComparison.Ordinal);
-    var template = JsonSerializer.Deserialize(json, HevyJsonContext.Default.ExerciseTemplate);
+    var template = JsonSerializer.Deserialize(json, HevyJsonContext.Default.ExerciseTemplateResponse);
 
     (template!.Id).Should().Be("D04AC939");
     (template.PrimaryMuscleGroup).Should().Be("serratus_anterior");
@@ -46,7 +46,7 @@ public sealed class ResponseDeserializationTests
   [Fact]
   public void Exercise_history_deserializes_set_metrics()
   {
-    var entry = JsonSerializer.Deserialize(Fixture.Read("exercise-history.json"), HevyJsonContext.Default.ExerciseHistoryEntry);
+    var entry = JsonSerializer.Deserialize(Fixture.Read("exercise-history.json"), HevyJsonContext.Default.ExerciseHistoryEntryResponse);
 
     (entry!.WorkoutId).Should().Be("workout-1");
     (entry.Reps).Should().Be(10);
@@ -56,7 +56,7 @@ public sealed class ResponseDeserializationTests
   [Fact]
   public void Body_measurement_deserializes_date_and_metrics()
   {
-    var measurement = JsonSerializer.Deserialize(Fixture.Read("body-measurement.json"), HevyJsonContext.Default.BodyMeasurement);
+    var measurement = JsonSerializer.Deserialize(Fixture.Read("body-measurement.json"), HevyJsonContext.Default.BodyMeasurementResponse);
 
     (measurement!.Date).Should().Be(new DateOnly(2024, 8, 14));
     (measurement.WeightKg!.Value).Should().Be(80.5m);
@@ -75,7 +75,7 @@ public sealed class ResponseDeserializationTests
   [Fact]
   public void Routine_folder_deserializes_identity_and_order()
   {
-    var folder = JsonSerializer.Deserialize(Fixture.Read("routine-folder.json"), HevyJsonContext.Default.RoutineFolder);
+    var folder = JsonSerializer.Deserialize(Fixture.Read("routine-folder.json"), HevyJsonContext.Default.RoutineFolderResponse);
 
     (folder!.Id).Should().Be(42);
     (folder.Index).Should().Be(1);
@@ -85,10 +85,10 @@ public sealed class ResponseDeserializationTests
   [Fact]
   public void Workout_events_deserialize_updated_and_deleted_variants()
   {
-    var events = JsonSerializer.Deserialize(Fixture.Read("workout-events.json"), HevyJsonContext.Default.WorkoutEventsPage);
+    var events = JsonSerializer.Deserialize(Fixture.Read("workout-events.json"), HevyJsonContext.Default.WorkoutEventsPageResponse);
 
-    var updated = (events!.Events[0]).Should().BeOfType<UpdatedWorkoutEvent>().Which;
-    var deleted = (events.Events[1]).Should().BeOfType<DeletedWorkoutEvent>().Which;
+    var updated = (events!.Events[0]).Should().BeOfType<UpdatedWorkoutEventResponse>().Which;
+    var deleted = (events.Events[1]).Should().BeOfType<DeletedWorkoutEventResponse>().Which;
     (updated.Workout.Id).Should().Be("workout-1");
     (deleted.Id).Should().Be("workout-2");
   }

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 
 namespace Hevy.Mcp.Diagnostics;
@@ -9,11 +8,10 @@ internal static class DiagnosticToolDispatch
   internal static async Task<CallToolResult> InvokeAsync(
       Func<CancellationToken, Task<CallToolResult>> action,
       DiagnosticOperationCategory category,
-      RedactingLoggerProvider? diagnostics,
+      DiagnosticSink? diagnostics,
       CancellationToken cancellationToken,
       string operationName = "unknown")
   {
-    ArgumentNullException.ThrowIfNull(action);
 
     var started = Stopwatch.GetTimestamp();
     var correlationId = Guid.NewGuid();

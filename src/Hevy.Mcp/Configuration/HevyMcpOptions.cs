@@ -1,14 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Logging;
 
 namespace Hevy.Mcp.Configuration;
-
-public enum HevyMcpTransport
-{
-  Stdio,
-  Http,
-}
 
 public sealed class HevyMcpOptions
 {
@@ -35,7 +28,6 @@ public sealed class HevyMcpOptions
 
   internal static HevyMcpOptions FromEnvironment(Func<string, string?> getEnvironmentVariable)
   {
-    ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
 
     var apiKey = getEnvironmentVariable("HEVY_API_KEY");
     if (string.IsNullOrWhiteSpace(apiKey))

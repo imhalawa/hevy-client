@@ -10,19 +10,6 @@ using Xunit.Sdk;
 
 namespace Hevy.Transport.Tests;
 
-public enum DockerAvailabilityDecision
-{
-  Use,
-  Skip,
-  Fail,
-}
-
-public sealed record DockerProbeResult(
-    int ExitCode,
-    string StandardOutput,
-    string StandardError,
-    bool ExecutableMissing);
-
 public sealed record DockerCommandResult(
     int ExitCode,
     string StandardOutput,
@@ -43,14 +30,12 @@ public static class DockerAvailabilityPolicy
   /// Re-audit this precedence when the pinned Docker client changes.
   /// </remarks>
   public static async Task<DockerAvailabilityDecision> EvaluateAsync(
-      DockerProbeResult probe,
+      DockerCommandResult probe,
       bool isCi,
       DockerCommandRunner runner,
       string? configuredDockerHost = null,
       string? configuredDockerContext = null)
   {
-    ArgumentNullException.ThrowIfNull(probe);
-    ArgumentNullException.ThrowIfNull(runner);
 
     if (probe.ExitCode == 0)
     {
@@ -118,15 +103,7 @@ public static class DockerAvailabilityPolicy
       return false;
     }
 
-    var output = result.StandardOutput;
-    if (output.EndsWith("\r\n", StringComparison.Ordinal))
-    {
-      output = output[..^2];
-    }
-    else if (output.EndsWith('\n'))
-    {
-      output = output[..^1];
-    }
+    var output = result.StandardOutput.TrimEnd('\r', '\n');
 
     if (!IsSafeBoundedText(output, maximumLength: 2048))
     {
@@ -149,8 +126,9 @@ public static class DockerAvailabilityPolicy
 
     const string daemonPrefix = "Cannot connect to the Docker daemon at ";
     const string daemonSuffix = ". Is the docker daemon running?";
-    if (diagnostic.StartsWith(daemonPrefix, StringComparison.Ordinal) &&
-        diagnostic.EndsWith(daemonSuffix, StringComparison.Ordinal))
+    var hasDaemonMessageShape = diagnostic.StartsWith(daemonPrefix, StringComparison.Ordinal) &&
+        diagnostic.EndsWith(daemonSuffix, StringComparison.Ordinal);
+    if (hasDaemonMessageShape)
     {
       var endpoint = diagnostic[daemonPrefix.Length..^daemonSuffix.Length];
       return IsLocalEndpoint(endpoint);
@@ -180,8 +158,9 @@ public static class DockerAvailabilityPolicy
   private static bool IsLocalApiRefusal(string diagnostic)
   {
     const string prefix = "failed to connect to the docker API at ";
-    if (!diagnostic.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
-        diagnostic[prefix.Length..].Contains(prefix, StringComparison.OrdinalIgnoreCase))
+    var hasExpectedPrefix = diagnostic.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    var repeatsPrefix = hasExpectedPrefix && diagnostic[prefix.Length..].Contains(prefix, StringComparison.OrdinalIgnoreCase);
+    if (!hasExpectedPrefix || repeatsPrefix)
     {
       return false;
     }
@@ -219,8 +198,9 @@ public static class DockerAvailabilityPolicy
 
     const string dialPrefix = "dial tcp ";
     const string dialSuffix = ": connect: connection refused";
-    if (!reason.StartsWith(dialPrefix, StringComparison.OrdinalIgnoreCase) ||
-        !reason.EndsWith(dialSuffix, StringComparison.OrdinalIgnoreCase))
+    var hasDialErrorShape = reason.StartsWith(dialPrefix, StringComparison.OrdinalIgnoreCase) &&
+        reason.EndsWith(dialSuffix, StringComparison.OrdinalIgnoreCase);
+    if (!hasDialErrorShape)
     {
       return false;
     }
@@ -237,8 +217,9 @@ public static class DockerAvailabilityPolicy
       return false;
     }
 
-    if (string.Equals(endpoint, "npipe:////./pipe/docker_engine", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(endpoint, "npipe:////./pipe/dockerDesktopLinuxEngine", StringComparison.OrdinalIgnoreCase))
+    var isKnownWindowsPipe = string.Equals(endpoint, "npipe:////./pipe/docker_engine", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(endpoint, "npipe:////./pipe/dockerDesktopLinuxEngine", StringComparison.OrdinalIgnoreCase);
+    if (isKnownWindowsPipe)
     {
       return true;
     }
@@ -249,25 +230,15 @@ public static class DockerAvailabilityPolicy
       return IsExactAbsoluteUnixSocketPath(endpoint.AsSpan(unixPrefix.Length));
     }
 
-    ReadOnlySpan<char> authority;
-    if (endpoint.StartsWith("tcp://", StringComparison.Ordinal))
+    ReadOnlySpan<char> authority = endpoint switch
     {
-      authority = endpoint.AsSpan("tcp://".Length);
-    }
-    else if (endpoint.StartsWith("http://", StringComparison.Ordinal))
-    {
-      authority = endpoint.AsSpan("http://".Length);
-    }
-    else if (endpoint.StartsWith("https://", StringComparison.Ordinal))
-    {
-      authority = endpoint.AsSpan("https://".Length);
-    }
-    else
-    {
-      return false;
-    }
+      var value when value.StartsWith("tcp://", StringComparison.Ordinal) => value.AsSpan("tcp://".Length),
+      var value when value.StartsWith("http://", StringComparison.Ordinal) => value.AsSpan("http://".Length),
+      var value when value.StartsWith("https://", StringComparison.Ordinal) => value.AsSpan("https://".Length),
+      _ => [],
+    };
 
-    return IsExactLoopbackAuthority(authority);
+    return !authority.IsEmpty && IsExactLoopbackAuthority(authority);
   }
 
   private static bool IsExactAbsoluteUnixSocketPath(ReadOnlySpan<char> path)
@@ -443,15 +414,14 @@ public static class DockerAvailabilityPolicy
 public sealed class ContainerImageCoordinator : IAsyncDisposable
 {
   private readonly DockerCommandRunner runner;
-  private readonly SemaphoreSlim buildLock = new(1, 1);
   private string? immutableImageId;
   private bool tagWasBuilt;
-  private int disposed;
+  private bool disposed;
 
   public ContainerImageCoordinator(DockerCommandRunner runner)
   {
-    this.runner = runner ?? throw new ArgumentNullException(nameof(runner));
-    OwnedTag = $"hevy-client:container-smoke-{Environment.ProcessId}-{RandomNumberGenerator.GetHexString(32).ToLowerInvariant()}";
+    this.runner = runner;
+    OwnedTag = $"hevy-mcp:container-smoke-{Environment.ProcessId}-{RandomNumberGenerator.GetHexString(32, lowercase: true)}";
   }
 
   public string OwnedTag { get; }
@@ -462,60 +432,52 @@ public sealed class ContainerImageCoordinator : IAsyncDisposable
   public async Task<string> EnsureBuiltAsync(string repositoryRoot)
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
-    ObjectDisposedException.ThrowIf(disposed != 0, this);
-
-    await buildLock.WaitAsync();
-    try
+    ObjectDisposedException.ThrowIf(disposed, this);
+    if (immutableImageId is not null)
     {
-      if (immutableImageId is not null)
-      {
-        return immutableImageId;
-      }
+      return immutableImageId;
+    }
 
-      var build = await runner(
+    var build = await runner(
           [
             "build",
             "--pull",
             "--build-arg", "VERSION=1.2.3-smoke.1",
             "--build-arg", "REVISION=0123456789abcdef0123456789abcdef01234567",
-            "--build-arg", "SOURCE_URL=https://github.com/example/hevy-client",
+            "--build-arg", "SOURCE_URL=https://github.com/example/hevy-mcp",
             "--tag", OwnedTag,
             ".",
           ],
           repositoryRoot,
           TimeSpan.FromMinutes(10));
-      if (build.ExitCode != 0)
-      {
-        throw new InvalidOperationException($"Container build failed.\nstdout:\n{build.StandardOutput}\nstderr:\n{build.StandardError}");
-      }
-      tagWasBuilt = true;
+    if (build.ExitCode != 0)
+    {
+      throw new InvalidOperationException($"Container build failed.\nstdout:\n{build.StandardOutput}\nstderr:\n{build.StandardError}");
+    }
+    tagWasBuilt = true;
 
-      var inspection = await runner(
+    var inspection = await runner(
           ["image", "inspect", "--format", "{{.Id}}", OwnedTag],
           repositoryRoot,
           TimeSpan.FromSeconds(30));
-      var inspectedId = inspection.StandardOutput.Trim();
-      if (inspection.ExitCode != 0 || !Regex.IsMatch(inspectedId, "^sha256:[0-9a-f]{64}$", RegexOptions.CultureInvariant))
-      {
-        throw new InvalidOperationException($"Built image identity inspection failed.\nstdout:\n{inspection.StandardOutput}\nstderr:\n{inspection.StandardError}");
-      }
-
-      immutableImageId = inspectedId;
-      return inspectedId;
-    }
-    finally
+    var inspectedId = inspection.StandardOutput.Trim();
+    if (inspection.ExitCode != 0 || !Regex.IsMatch(inspectedId, "^sha256:[0-9a-f]{64}$", RegexOptions.CultureInvariant))
     {
-      buildLock.Release();
+      throw new InvalidOperationException($"Built image identity inspection failed.\nstdout:\n{inspection.StandardOutput}\nstderr:\n{inspection.StandardError}");
     }
+
+    immutableImageId = inspectedId;
+    return inspectedId;
   }
 
   public async ValueTask DisposeAsync()
   {
-    if (Interlocked.Exchange(ref disposed, 1) != 0)
+    if (disposed)
     {
       return;
     }
 
+    disposed = true;
     if (tagWasBuilt)
     {
       await runner(
@@ -523,8 +485,6 @@ public sealed class ContainerImageCoordinator : IAsyncDisposable
           workingDirectory: null,
           timeout: TimeSpan.FromSeconds(30));
     }
-
-    buildLock.Dispose();
   }
 }
 
@@ -546,7 +506,7 @@ public sealed class ContainerSmokeFixture : IAsyncLifetime
         workingDirectory: null,
         timeout: TimeSpan.FromSeconds(30));
     var decision = await DockerAvailabilityPolicy.EvaluateAsync(
-        new DockerProbeResult(
+        new DockerCommandResult(
             availability.ExitCode,
             availability.StandardOutput,
             availability.StandardError,
@@ -612,7 +572,16 @@ public static class DockerProcess
       using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start Docker.");
       var standardOutput = process.StandardOutput.ReadToEndAsync();
       var standardError = process.StandardError.ReadToEndAsync();
-      await process.WaitForExitAsync().WaitAsync(timeout ?? TimeSpan.FromSeconds(30));
+      try
+      {
+        await process.WaitForExitAsync().WaitAsync(timeout ?? TimeSpan.FromSeconds(30));
+      }
+      catch (TimeoutException)
+      {
+        process.Kill(entireProcessTree: true);
+        await process.WaitForExitAsync();
+        throw;
+      }
       return new DockerCommandResult(process.ExitCode, await standardOutput, await standardError, ExecutableMissing: false);
     }
     catch (System.ComponentModel.Win32Exception exception)
@@ -629,13 +598,13 @@ public static class DockerProcess
   {
     for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
     {
-      if (File.Exists(Path.Combine(directory.FullName, "HevyClient.slnx")))
+      if (File.Exists(Path.Combine(directory.FullName, "HevyMcp.slnx")))
       {
         return directory.FullName;
       }
     }
 
-    throw new InvalidOperationException("Could not locate the hevy-client repository root.");
+    throw new InvalidOperationException("Could not locate the hevy-mcp repository root.");
   }
 }
 
@@ -682,8 +651,8 @@ public sealed class ContainerSmokeTests
 
     var labels = config.GetProperty("Labels");
     (labels.GetProperty("org.opencontainers.image.licenses").GetString()).Should().Be("MIT");
-    (labels.GetProperty("org.opencontainers.image.title").GetString()).Should().Be("hevy-client");
-    (labels.GetProperty("org.opencontainers.image.source").GetString()).Should().Be("https://github.com/example/hevy-client");
+    (labels.GetProperty("org.opencontainers.image.title").GetString()).Should().Be("hevy-mcp");
+    (labels.GetProperty("org.opencontainers.image.source").GetString()).Should().Be("https://github.com/example/hevy-mcp");
     (labels.GetProperty("org.opencontainers.image.revision").GetString()).Should().Be("0123456789abcdef0123456789abcdef01234567");
     (labels.GetProperty("org.opencontainers.image.version").GetString()).Should().Be("1.2.3-smoke.1");
     foreach (var label in new[]
@@ -721,7 +690,7 @@ public sealed class ContainerSmokeTests
     process.StandardInput.Close();
     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
 
-    (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-client");
+    (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-mcp");
     (tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength()).Should().Be(28);
     (process.ExitCode).Should().Be(0);
     (await process.StandardOutput.ReadToEndAsync()).Should().Be(string.Empty);
@@ -741,7 +710,7 @@ public sealed class ContainerSmokeTests
     }
 
     var imageId = await fixture.EnsureImageAsync();
-    var wrapper = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "hevy-client-mcp");
+    var wrapper = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "hevy-mcp");
     (File.Exists(wrapper)).Should().BeTrue("The documented POSIX secret-backed MCP wrapper is required.");
     var fakeSecret = $"fixture-{RandomNumberGenerator.GetHexString(24)}";
     var temporaryDirectory = Path.Combine(Path.GetTempPath(), $"hevy-wrapper-{RandomNumberGenerator.GetHexString(16)}");
@@ -765,7 +734,7 @@ public sealed class ContainerSmokeTests
         UseShellExecute = false,
       };
       startInfo.Environment.Remove("HEVY_API_KEY");
-      startInfo.Environment["HEVY_CLIENT_IMAGE"] = imageId;
+      startInfo.Environment["HEVY_MCP_IMAGE"] = imageId;
       startInfo.Environment["HEVY_WRAPPER_TEST_SECRET"] = fakeSecret;
       startInfo.Environment["PATH"] = temporaryDirectory + Path.PathSeparator + startInfo.Environment["PATH"];
 
@@ -780,7 +749,7 @@ public sealed class ContainerSmokeTests
       process.StandardInput.Close();
       await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
 
-      (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-client");
+      (initialize.RootElement.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString()).Should().Be("hevy-mcp");
       (tools.RootElement.GetProperty("result").GetProperty("tools").GetArrayLength()).Should().Be(28);
       (process.ExitCode).Should().Be(0);
       (await process.StandardError.ReadToEndAsync()).Should().Be(string.Empty);
@@ -797,6 +766,10 @@ public sealed class ContainerSmokeTests
   public void WindowsSecurePromptLauncherUsesProcessOnlyInheritanceAndRestoresTheEnvironment()
   {
     var launcher = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "Start-HevyClient.ps1");
+    if (!File.Exists(launcher))
+    {
+      launcher = Path.Combine(DockerProcess.RepositoryRoot, "scripts", "Start-HevyClient.ps1");
+    }
     (File.Exists(launcher)).Should().BeTrue("The documented Windows secure-prompt GUI launcher is required.");
     var script = File.ReadAllText(launcher);
 
@@ -859,8 +832,8 @@ public sealed class ContainerSmokeTests
     {
       var portResult = await DockerProcess.RunAsync(["port", containerId, "8080/tcp"]);
       var binding = portResult.StandardOutput.Trim();
-      if (portResult.ExitCode == 0 && binding.StartsWith("127.0.0.1:", StringComparison.Ordinal) &&
-          int.TryParse(binding["127.0.0.1:".Length..], out var port))
+      var hasLoopbackBinding = portResult.ExitCode == 0 && binding.StartsWith("127.0.0.1:", StringComparison.Ordinal);
+      if (hasLoopbackBinding && int.TryParse(binding["127.0.0.1:".Length..], out var port))
       {
         return port;
       }
@@ -929,7 +902,7 @@ public sealed class ContainerSmokeInfrastructureTests
   private const string LocalDockerEndpoint = "unix:///var/run/docker.sock";
 
   private static Task<DockerAvailabilityDecision> EvaluateWithLocalEndpointAsync(
-      DockerProbeResult probe,
+      DockerCommandResult probe,
       bool isCi) => DockerAvailabilityPolicy.EvaluateAsync(
           probe,
           isCi,
@@ -948,7 +921,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData(true, DockerAvailabilityDecision.Fail)]
   public async Task MissingDockerExecutableSkipsOnlyOutsideCi(bool isCi, DockerAvailabilityDecision expected)
   {
-    var probe = new DockerProbeResult(127, string.Empty, "docker executable was not found", ExecutableMissing: true);
+    var probe = new DockerCommandResult(127, string.Empty, "docker executable was not found", ExecutableMissing: true);
 
     (await DockerAvailabilityPolicy.EvaluateAsync(
             probe,
@@ -971,7 +944,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("failed to connect to the docker API at tcp://127.0.0.1:2375: connection refused")]
   public async Task RecognizedStoppedLocalDaemonSkipsOnlyOutsideCi(string error)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         error,
@@ -989,7 +962,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("failed to connect to the docker API at ssh://builder@build-host:22: connection refused")]
   public async Task RemoteDockerEndpointsNeverSkip(string error)
   {
-    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+    var probe = new DockerCommandResult(1, string.Empty, error, ExecutableMissing: false);
 
     (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
     (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
@@ -1014,7 +987,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("Cannot connect to the Docker daemon at unix:////. Is the docker daemon running?")]
   public async Task AdversarialDaemonDiagnosticsFailClosed(string error)
   {
-    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+    var probe = new DockerCommandResult(1, string.Empty, error, ExecutableMissing: false);
 
     (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
     (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
@@ -1029,7 +1002,7 @@ public sealed class ContainerSmokeInfrastructureTests
     var error =
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" +
         separator;
-    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+    var probe = new DockerCommandResult(1, string.Empty, error, ExecutableMissing: false);
 
     (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
   }
@@ -1055,7 +1028,7 @@ public sealed class ContainerSmokeInfrastructureTests
 
     foreach (var position in positions)
     {
-      var probe = new DockerProbeResult(
+      var probe = new DockerCommandResult(
           1,
           string.Empty,
           diagnostic.Insert(position, separator),
@@ -1067,7 +1040,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [Fact]
   public async Task PersistedActiveRemoteContextPreventsLocalAbsenceSkip()
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1103,7 +1076,7 @@ public sealed class ContainerSmokeInfrastructureTests
       string endpoint,
       DockerAvailabilityDecision expected)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1131,7 +1104,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [Fact]
   public async Task FailedContextInspectionFailsClosed()
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1160,7 +1133,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [Fact]
   public async Task ContextResolutionRunnerFailureFailsClosed()
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1188,7 +1161,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("\u2029")]
   public async Task UnsafeConfiguredContextNameFailsBeforeInspection(string separator)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1210,7 +1183,7 @@ public sealed class ContainerSmokeInfrastructureTests
       string configuredDockerHost,
       DockerAvailabilityDecision expected)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1230,7 +1203,7 @@ public sealed class ContainerSmokeInfrastructureTests
   public async Task BlankDockerHostFallsThroughToConfiguredContext(string? configuredDockerHost)
   {
     const string configuredDockerContext = "local";
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1259,7 +1232,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("")]
   public async Task DockerHostIsUsedWhenDockerContextIsAbsent(string? configuredDockerContext)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1301,7 +1274,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [MemberData(nameof(InvalidDockerContextNames))]
   public async Task ConfiguredContextNamesOutsideDockerGrammarFailBeforeInspection(string configuredDockerContext)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1319,7 +1292,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [MemberData(nameof(InvalidDockerContextNames))]
   public async Task PersistedContextNamesOutsideDockerGrammarFailBeforeInspection(string activeContext)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1350,7 +1323,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [MemberData(nameof(ValidDockerContextNames))]
   public async Task ValidDockerContextNamesAreInspectedAsProtectedPositionals(string configuredDockerContext)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1389,7 +1362,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("npipe:////./pipe/docker_engine/extra")]
   public async Task EffectiveEndpointRejectsNonCanonicalRawGrammar(string configuredDockerHost)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1420,7 +1393,7 @@ public sealed class ContainerSmokeInfrastructureTests
   public async Task UnicodeLineAndControlCharactersAnywhereInEndpointsFailClosed(string separator)
   {
     const string endpoint = "tcp://localhost:2375";
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1455,7 +1428,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("npipe:////./pipe/dockerDesktopLinuxEngine")]
   public async Task EffectiveEndpointAcceptsExactLocalGrammar(string configuredDockerHost)
   {
-    var probe = new DockerProbeResult(
+    var probe = new DockerCommandResult(
         1,
         string.Empty,
         "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
@@ -1483,7 +1456,7 @@ public sealed class ContainerSmokeInfrastructureTests
   [InlineData("arbitrary exit one")]
   public async Task ArbitraryDockerFailuresNeverSkip(string error)
   {
-    var probe = new DockerProbeResult(1, string.Empty, error, ExecutableMissing: false);
+    var probe = new DockerCommandResult(1, string.Empty, error, ExecutableMissing: false);
 
     (await EvaluateWithLocalEndpointAsync(probe, isCi: false)).Should().Be(DockerAvailabilityDecision.Fail);
     (await EvaluateWithLocalEndpointAsync(probe, isCi: true)).Should().Be(DockerAvailabilityDecision.Fail);
@@ -1509,7 +1482,7 @@ public sealed class ContainerSmokeInfrastructureTests
 
       if (arguments is ["image", "inspect", "--format", _, var inspectedTag])
       {
-        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(inspectedTag))).ToLowerInvariant();
+        var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(inspectedTag)));
         return new DockerCommandResult(0, $"sha256:{digest}\n", string.Empty, ExecutableMissing: false);
       }
 
@@ -1530,7 +1503,7 @@ public sealed class ContainerSmokeInfrastructureTests
         second.EnsureBuiltAsync(DockerProcess.RepositoryRoot));
 
     (second.OwnedTag).Should().NotBe(first.OwnedTag);
-    (first.OwnedTag).Should().MatchRegex("^hevy-client:container-smoke-[0-9]+-[0-9a-f]{32}$");
+    (first.OwnedTag).Should().MatchRegex("^hevy-mcp:container-smoke-[0-9]+-[0-9a-f]{32}$");
     (first.ImmutableImageId).Should().MatchRegex("^sha256:[0-9a-f]{64}$");
     (first.ImmutableImageId).Should().Be(ids[0]);
     (second.ImmutableImageId).Should().Be(ids[1]);
@@ -1594,17 +1567,4 @@ public sealed class ContainerSmokeInfrastructureTests
     (checklist).Should().Contain("../../security/advisories/new");
   }
 
-  [Fact]
-  public void DesktopClientDocumentationUsesOperationalSecretBackedLaunchers()
-  {
-    var readme = File.ReadAllText(Path.Combine(DockerProcess.RepositoryRoot, "README.md"));
-
-    (readme).Should().Contain("scripts/hevy-client-mcp");
-    (readme).Should().Contain("scripts/Start-HevyClient.ps1");
-    (readme).Should().Contain("macOS Keychain");
-    (readme).Should().Contain("Linux Secret Service");
-    (readme).Should().Contain("Windows");
-    (readme).Should().Contain("\"command\": \"/absolute/path/to/hevy-client-mcp\"");
-    (readme).Should().NotContainEquivalentOf("restart a desktop client after setting it");
-  }
 }

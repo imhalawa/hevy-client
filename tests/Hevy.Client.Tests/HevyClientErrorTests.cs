@@ -1,6 +1,7 @@
 using System.Net;
-using Hevy.Client;
-using Hevy.Client.Errors;
+using System.Text;
+using Hevy.Client.Http;
+using Hevy.Core.Exceptions;
 using TestSupport;
 using Xunit;
 
@@ -138,6 +139,21 @@ public sealed class HevyClientErrorTests
   {
     var response = "{\"data\":{\"id\":\"user-1\",\"name\":\"User\",\"url\":\"https://example.invalid\"},\"extra\":\"" + new string('x', 4_194_304) + "\"}";
     var handler = new RecordingHttpMessageHandler((_, _) => RecordingHttpMessageHandler.Json(HttpStatusCode.OK, response));
+    var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
+
+    var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;
+
+    (exception.Code).Should().Be("unexpected_response");
+  }
+
+  [Fact]
+  public async Task Oversized_response_without_a_content_length_is_rejected_at_the_byte_ceiling()
+  {
+    var payload = Encoding.UTF8.GetBytes(new string('x', HevyResponse.MaximumResponseBytes + 1));
+    var handler = new RecordingHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+    {
+      Content = new StreamContent(new MemoryStream(payload)),
+    });
     var client = new HevyClient(new HttpClient(handler), new HevyClientOptions("api-key-secret"));
 
     var exception = (await FluentActions.Awaiting(() => client.GetUserInfoAsync(CancellationToken.None)).Should().ThrowExactlyAsync<HevyException>()).Which;

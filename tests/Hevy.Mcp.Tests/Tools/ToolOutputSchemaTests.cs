@@ -1,9 +1,5 @@
 using System.Reflection;
 using System.Text.Json;
-using Hevy.Client;
-using Hevy.Client.Models;
-using Hevy.Mcp.Caching;
-using Hevy.Mcp.Composite;
 using Hevy.Mcp.Diagnostics;
 using Hevy.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,11 +18,8 @@ public sealed class ToolOutputSchemaTests
     var client = CompleteClient();
     var services = new ServiceCollection()
         .AddSingleton<IHevyClient>(client)
-        .AddMemoryCache(memory => memory.SizeLimit = 2)
         .AddSingleton(TimeProvider.System)
-        .AddSingleton<HevyCache>()
-        .AddSingleton<SearchService>()
-        .AddSingleton<TrainingAnalysisService>()
+        .AddSingleton<TrainingAnalysisUseCase>()
         .AddSingleton(new DiagnosticSnapshot("test-version", "test-runtime", "stdio", false, false, "ready"))
         .BuildServiceProvider();
     var since = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
@@ -38,37 +31,37 @@ public sealed class ToolOutputSchemaTests
       (typeof(WorkoutReadTools), nameof(WorkoutReadTools.GetWorkoutCount), await WorkoutReadTools.GetWorkoutCount(services, default)),
       (typeof(WorkoutReadTools), nameof(WorkoutReadTools.GetWorkoutEvents), await WorkoutReadTools.GetWorkoutEvents(services, 1, 10, since, "full", default)),
       (typeof(WorkoutReadTools), nameof(WorkoutReadTools.GetWorkout), await WorkoutReadTools.GetWorkout(services, "workout-1", default)),
-      (typeof(WorkoutWriteTools), nameof(WorkoutWriteTools.CreateWorkout), await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.CreateWorkoutRequest(), true, default)),
-      (typeof(WorkoutWriteTools), nameof(WorkoutWriteTools.UpdateWorkout), await WorkoutWriteTools.UpdateWorkout(services, "workout-1", FixtureFactory.UpdateWorkoutRequest(), null, true, true, default)),
+      (typeof(WorkoutWriteTools), nameof(WorkoutWriteTools.CreateWorkout), await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.Create<CreateWorkoutCommand>(), true, default)),
+      (typeof(WorkoutWriteTools), nameof(WorkoutWriteTools.UpdateWorkout), await WorkoutWriteTools.UpdateWorkout(services, "workout-1", FixtureFactory.Create<UpdateWorkoutCommand>(), null, true, true, default)),
       (typeof(RoutineReadTools), nameof(RoutineReadTools.GetRoutines), await RoutineReadTools.GetRoutines(services, 1, 10, "full", default)),
       (typeof(RoutineReadTools), nameof(RoutineReadTools.GetRoutine), await RoutineReadTools.GetRoutine(services, "routine-1", default)),
       (typeof(RoutineReadTools), nameof(RoutineReadTools.GetRoutineFolders), await RoutineReadTools.GetRoutineFolders(services, 1, 10, "full", default)),
       (typeof(RoutineReadTools), nameof(RoutineReadTools.GetRoutineFolder), await RoutineReadTools.GetRoutineFolder(services, 1, default)),
-      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.CreateRoutine), await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), true, default)),
-      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.UpdateRoutine), await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.UpdateRoutineRequest(), null, true, true, default)),
-      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.CreateRoutineFolder), await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.CreateRoutineFolderRequest(), true, default)),
+      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.CreateRoutine), await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineCommand>(), true, default)),
+      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.UpdateRoutine), await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.Create<UpdateRoutineCommand>(), null, true, true, default)),
+      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.CreateRoutineFolder), await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.Create<CreateRoutineFolderCommand>(), true, default)),
       (typeof(ExerciseReadTools), nameof(ExerciseReadTools.GetExerciseTemplates), await ExerciseReadTools.GetExerciseTemplates(services, 1, 10, "full", default)),
       (typeof(ExerciseReadTools), nameof(ExerciseReadTools.GetExerciseTemplate), await ExerciseReadTools.GetExerciseTemplate(services, "template-1", default)),
       (typeof(ExerciseReadTools), nameof(ExerciseReadTools.GetExerciseHistory), await ExerciseReadTools.GetExerciseHistory(services, "template-1", 1, 10, start, end, "full", default)),
-      (typeof(ExerciseWriteTools), nameof(ExerciseWriteTools.CreateExerciseTemplate), await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), true, default)),
+      (typeof(ExerciseWriteTools), nameof(ExerciseWriteTools.CreateExerciseTemplate), await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateCommand>(), true, default)),
       (typeof(MeasurementReadTools), nameof(MeasurementReadTools.GetBodyMeasurements), await MeasurementReadTools.GetBodyMeasurements(services, 1, 10, "full", default)),
       (typeof(MeasurementReadTools), nameof(MeasurementReadTools.GetBodyMeasurement), await MeasurementReadTools.GetBodyMeasurement(services, end, default)),
-      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.CreateBodyMeasurement), await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.CreateBodyMeasurementRequest(), true, default)),
-      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.UpdateBodyMeasurement), await MeasurementWriteTools.UpdateBodyMeasurement(services, end, FixtureFactory.UpdateBodyMeasurementRequest(), null, true, true, default)),
+      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.CreateBodyMeasurement), await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.Create<CreateBodyMeasurementCommand>(), true, default)),
+      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.UpdateBodyMeasurement), await MeasurementWriteTools.UpdateBodyMeasurement(services, end, FixtureFactory.Create<UpdateBodyMeasurementCommand>(), null, true, true, default)),
       (typeof(UserTools), nameof(UserTools.GetUserInfo), await UserTools.GetUserInfo(services, default)),
       (typeof(WorkoutReadTools), nameof(WorkoutReadTools.GetWorkouts), await WorkoutReadTools.GetWorkouts(services, 1, 10, "compact", default)),
       (typeof(WorkoutReadTools), nameof(WorkoutReadTools.GetWorkoutEvents), await WorkoutReadTools.GetWorkoutEvents(services, 1, 10, since, "compact", default)),
       (typeof(RoutineReadTools), nameof(RoutineReadTools.GetRoutines), await RoutineReadTools.GetRoutines(services, 1, 10, "compact", default)),
       (typeof(ExerciseReadTools), nameof(ExerciseReadTools.GetExerciseHistory), await ExerciseReadTools.GetExerciseHistory(services, "template-1", 1, 10, start, end, "compact", default)),
-      (typeof(WorkoutWriteTools), nameof(WorkoutWriteTools.CreateWorkout), await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.CreateWorkoutRequest(), false, default)),
-      (typeof(WorkoutWriteTools), nameof(WorkoutWriteTools.UpdateWorkout), await WorkoutWriteTools.UpdateWorkout(services, "workout-1", FixtureFactory.UpdateWorkoutRequest(), null, true, false, default)),
-      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.CreateRoutine), await RoutineWriteTools.CreateRoutine(services, FixtureFactory.CreateRoutineRequest(), false, default)),
-      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.UpdateRoutine), await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.UpdateRoutineRequest(), null, true, false, default)),
-      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.CreateRoutineFolder), await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.CreateRoutineFolderRequest(), false, default)),
-      (typeof(ExerciseWriteTools), nameof(ExerciseWriteTools.CreateExerciseTemplate), await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.CreateExerciseTemplateRequest(), false, default)),
-      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.CreateBodyMeasurement), await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.CreateBodyMeasurementRequest(), false, default)),
-      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.UpdateBodyMeasurement), await MeasurementWriteTools.UpdateBodyMeasurement(services, end, FixtureFactory.UpdateBodyMeasurementRequest(), null, true, false, default)),
-      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.UpdateBodyMeasurement), await MeasurementWriteTools.UpdateBodyMeasurement(services, end, FixtureFactory.UpdateBodyMeasurementRequest(), since, false, false, default)),
+      (typeof(WorkoutWriteTools), nameof(WorkoutWriteTools.CreateWorkout), await WorkoutWriteTools.CreateWorkout(services, FixtureFactory.Create<CreateWorkoutCommand>(), false, default)),
+      (typeof(WorkoutWriteTools), nameof(WorkoutWriteTools.UpdateWorkout), await WorkoutWriteTools.UpdateWorkout(services, "workout-1", FixtureFactory.Create<UpdateWorkoutCommand>(), null, true, false, default)),
+      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.CreateRoutine), await RoutineWriteTools.CreateRoutine(services, FixtureFactory.Create<CreateRoutineCommand>(), false, default)),
+      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.UpdateRoutine), await RoutineWriteTools.UpdateRoutine(services, "routine-1", FixtureFactory.Create<UpdateRoutineCommand>(), null, true, false, default)),
+      (typeof(RoutineWriteTools), nameof(RoutineWriteTools.CreateRoutineFolder), await RoutineWriteTools.CreateRoutineFolder(services, FixtureFactory.Create<CreateRoutineFolderCommand>(), false, default)),
+      (typeof(ExerciseWriteTools), nameof(ExerciseWriteTools.CreateExerciseTemplate), await ExerciseWriteTools.CreateExerciseTemplate(services, FixtureFactory.Create<CreateExerciseTemplateCommand>(), false, default)),
+      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.CreateBodyMeasurement), await MeasurementWriteTools.CreateBodyMeasurement(services, FixtureFactory.Create<CreateBodyMeasurementCommand>(), false, default)),
+      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.UpdateBodyMeasurement), await MeasurementWriteTools.UpdateBodyMeasurement(services, end, FixtureFactory.Create<UpdateBodyMeasurementCommand>(), null, true, false, default)),
+      (typeof(MeasurementWriteTools), nameof(MeasurementWriteTools.UpdateBodyMeasurement), await MeasurementWriteTools.UpdateBodyMeasurement(services, end, FixtureFactory.Create<UpdateBodyMeasurementCommand>(), since, false, false, default)),
       (typeof(CompositeTools), nameof(CompositeTools.SearchRoutines), await CompositeTools.SearchRoutines(services, "leg", 100, null, default)),
       (typeof(CompositeTools), nameof(CompositeTools.SearchExerciseTemplates), await CompositeTools.SearchExerciseTemplates(services, "squat", "barbell", "quadriceps", 100, null, default)),
       (typeof(CompositeTools), nameof(CompositeTools.GetWorkoutEvidence), await CompositeTools.GetWorkoutEvidence(services, 4, DateTimeOffset.Parse("2026-07-27T00:00:00Z"), 100, null, default)),
@@ -97,7 +90,7 @@ public sealed class ToolOutputSchemaTests
       Routines = new(1, 1, [routine]),
       RoutineFolders = new(1, 1, [new RoutineFolder(1, 0, "Legs", workout.UpdatedAt, workout.CreatedAt)]),
       ExerciseTemplates = new(1, 1, [new ExerciseTemplate("template-1", "Squat", "weight_reps", "quadriceps", ["glutes"], EquipmentCategory.Barbell, false)]),
-      ExerciseHistory = new(1, 1, [new ExerciseHistoryEntry("workout-1", "Leg Day", workout.StartTime, workout.EndTime, "template-1", 100, 5, null, null, 8, null, "normal")]),
+      ExerciseHistory = [new ExerciseHistoryEntry("workout-1", "Leg Day", workout.StartTime, workout.EndTime, "template-1", 100, 5, null, null, 8, null, "normal")],
       BodyMeasurements = new(1, 1, [FakeHevyClient.SampleMeasurement()]),
     };
     return client;
@@ -145,8 +138,11 @@ public sealed class ToolOutputSchemaTests
           AssertMatches(propertySchema, property.Value, $"{path}.{property.Name}");
         }
       }
+
+      return;
     }
-    else if (instance.ValueKind == JsonValueKind.Array && schema.TryGetProperty("items", out var items))
+
+    if (instance.ValueKind == JsonValueKind.Array && schema.TryGetProperty("items", out var items))
     {
       var index = 0;
       foreach (var item in instance.EnumerateArray()) AssertMatches(items, item, $"{path}[{index++}]");

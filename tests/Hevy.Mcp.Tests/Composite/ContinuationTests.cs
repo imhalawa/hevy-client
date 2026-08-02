@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using Hevy.Mcp.Composite;
 using Xunit;
 
 namespace Hevy.Mcp.Tests.Composite;

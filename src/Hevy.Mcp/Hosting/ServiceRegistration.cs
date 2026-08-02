@@ -1,11 +1,8 @@
 using Hevy.Client;
 using Hevy.Mcp.Configuration;
-using Hevy.Mcp.Caching;
-using Hevy.Mcp.Composite;
 using Hevy.Mcp.Diagnostics;
 using Hevy.Mcp.Prompts;
 using Hevy.Mcp.Tools;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.Reflection;
@@ -17,25 +14,19 @@ internal static class ServiceRegistration
   internal static IMcpServerBuilder AddHevyMcpServer(
       this IServiceCollection services,
       HevyMcpOptions options,
-      RedactingLoggerProvider? diagnostics = null)
+      DiagnosticSink? diagnostics = null)
   {
-    ArgumentNullException.ThrowIfNull(services);
-    ArgumentNullException.ThrowIfNull(options);
 
     services.AddSingleton(options);
     services.AddSingleton(DiagnosticSnapshot.Create(options));
     services.AddSingleton(new HevyClientOptions(options.ApiKey));
-    services.AddSingleton<IHevyClient>(serviceProvider =>
-        new HevyClient(serviceProvider.GetRequiredService<HevyClientOptions>()));
-    services.AddMemoryCache(memory => memory.SizeLimit = 2);
+    services.AddSingleton<IHevyClient, HevyClient>();
     services.AddSingleton(TimeProvider.System);
-    services.AddSingleton<HevyCache>();
-    services.AddSingleton<SearchService>();
-    services.AddSingleton<TrainingAnalysisService>();
+    services.AddSingleton<TrainingAnalysisUseCase>();
 
     var builder = services.AddMcpServer(serverOptions => serverOptions.ServerInfo = new Implementation
     {
-      Name = "hevy-client",
+      Name = "hevy-mcp",
       Version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0",
     });
 
@@ -114,7 +105,7 @@ internal static class ServiceRegistration
           }
           catch (Exception exception)
           {
-            return InvocationFailure(exception);
+            return ToolExceptionFilter.FromException(exception);
           }
         },
         category,
@@ -122,14 +113,6 @@ internal static class ServiceRegistration
         cancellationToken,
         name!);
     });
-  }
-
-  internal static CallToolResult InvocationFailure(Exception exception)
-  {
-    ArgumentNullException.ThrowIfNull(exception);
-    return exception is System.Text.Json.JsonException
-        ? ToolExceptionFilter.Validation("Tool arguments did not match the advertised input schema.")
-        : ToolExceptionFilter.Unexpected();
   }
 
   private static DiagnosticOperationCategory Category(string? toolName) => toolName switch

@@ -27,11 +27,17 @@ fi
 cd "$repository_root"
 
 credential_values=$(mktemp)
-trap 'rm -f "$credential_values"' EXIT HUP INT TERM
+credential_file_list=$(mktemp)
+trap 'rm -f "$credential_values" "$credential_file_list"' EXIT HUP INT TERM
 credential_scan_status=0
 credential_scanner=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/find-credential-values.awk
-git ls-files -z --cached --others --exclude-standard |
-  xargs -0 awk -f "$credential_scanner" > "$credential_values" || credential_scan_status=$?
+git ls-files -z --cached --others --exclude-standard > "$credential_file_list"
+tr '\0' '\n' < "$credential_file_list" |
+while IFS= read -r repository_file; do
+  if [ -f "$repository_file" ]; then
+    awk -f "$credential_scanner" -- "$repository_file" >> "$credential_values" || credential_scan_status=$?
+  fi
+done
 
 if [ "$credential_scan_status" -ne 0 ]; then
   report "Repository-wide credential scan could not complete."
@@ -64,7 +70,7 @@ if grep -Erho "https?://[^\"'[:space:])>]+" src --include='*.cs' --exclude-dir=b
 fi
 
 if grep -Eirl \
-  'TODO|FIXME|TBD|HACK|NotImplementedException|PLACEHOLDER' \
+  '(^|[^[:alnum:]_])(TODO|FIXME|TBD|HACK|NotImplementedException|PLACEHOLDER)([^[:alnum:]_]|$)' \
   src scripts Dockerfile .github/workflows README.md SECURITY.md CONTRIBUTING.md \
   --exclude='audit-repository.sh' --exclude-dir=bin --exclude-dir=obj 2>/dev/null | grep -q .; then
   report "Deferred placeholder marker found in release content."

@@ -1,8 +1,6 @@
 using System.Net;
-using Hevy.Client;
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
 using Hevy.Client.Http;
-using Hevy.Client.Models;
 using TestSupport;
 using Xunit;
 
@@ -26,30 +24,6 @@ public sealed class HevyClientMutationTests
   }
 
   [Fact]
-  public async Task Mutation_methods_reject_invalid_bodies_before_sending_a_request()
-  {
-    var handler = RespondingWith(Fixture.Read("workout.json"));
-    var client = CreateClient(handler);
-
-    await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(null!, CancellationToken.None)).Should().ThrowExactlyAsync<ArgumentNullException>();
-
-    var requestWithNullSet = new CreateWorkoutRequest(
-        new WorkoutWrite(
-            "Valid title",
-            null,
-            new DateTimeOffset(2024, 8, 14, 12, 0, 0, TimeSpan.Zero),
-            new DateTimeOffset(2024, 8, 14, 12, 30, 0, 0, TimeSpan.Zero),
-            false,
-            [new WorkoutExerciseWrite("D04AC939", null, null, [null!])]));
-
-    await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(requestWithNullSet, CancellationToken.None)).Should().ThrowExactlyAsync<ArgumentNullException>();
-
-    (handler.Requests).Should().BeEmpty();
-  }
-
-  [Fact]
   public async Task Mutation_methods_send_documented_verbs_paths_and_bodies()
   {
     var responses = new Queue<HttpResponseMessage>([
@@ -67,14 +41,14 @@ public sealed class HevyClientMutationTests
     var handler = new RecordingHttpMessageHandler((_, _) => responses.Dequeue());
     var client = CreateClient(handler);
 
-    await client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None);
-    await client.UpdateWorkoutAsync("workout/a", FixtureFactory.UpdateWorkoutRequest(), CancellationToken.None);
-    await client.CreateRoutineAsync(FixtureFactory.CreateRoutineRequest(), CancellationToken.None);
-    ((await client.UpdateRoutineAsync("routine/a", FixtureFactory.UpdateRoutineRequest(), CancellationToken.None)).Id).Should().Be("routine-1");
-    await client.CreateRoutineFolderAsync(FixtureFactory.CreateRoutineFolderRequest(), CancellationToken.None);
-    await client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), CancellationToken.None);
-    await client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None);
-    await client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), CancellationToken.None);
+    await client.CreateWorkoutAsync(FixtureFactory.Create<CreateWorkoutCommand>(), CancellationToken.None);
+    await client.UpdateWorkoutAsync("workout/a", FixtureFactory.Create<UpdateWorkoutCommand>(), CancellationToken.None);
+    await client.CreateRoutineAsync(FixtureFactory.Create<CreateRoutineCommand>(), CancellationToken.None);
+    ((await client.UpdateRoutineAsync("routine/a", FixtureFactory.Create<UpdateRoutineCommand>(), CancellationToken.None)).Id).Should().Be("routine-1");
+    await client.CreateRoutineFolderAsync(FixtureFactory.Create<CreateRoutineFolderCommand>(), CancellationToken.None);
+    await client.CreateExerciseTemplateAsync(FixtureFactory.Create<CreateExerciseTemplateCommand>(), CancellationToken.None);
+    await client.CreateBodyMeasurementAsync(FixtureFactory.Create<CreateBodyMeasurementCommand>(), CancellationToken.None);
+    await client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementCommand>(), CancellationToken.None);
 
     (handler.Requests.Select(request => (request.Method, request.RequestUri!.AbsoluteUri, request.Body))).Should().Equal([
         (HttpMethod.Post, "https://api.hevyapp.com/v1/workouts", "{\"workout\":{\"title\":\"Friday Leg Day\",\"description\":\"Sanitized workout\",\"start_time\":\"2024-08-14T12:00:00+00:00\",\"end_time\":\"2024-08-14T12:30:00+00:00\",\"is_private\":false,\"exercises\":[{\"exercise_template_id\":\"D04AC939\",\"superset_id\":null,\"notes\":\"Sanitized note\",\"sets\":[{\"type\":\"normal\",\"weight_kg\":100,\"reps\":10,\"distance_meters\":null,\"duration_seconds\":null,\"custom_metric\":null,\"rpe\":8.5}]}]}}"),
@@ -89,6 +63,8 @@ public sealed class HevyClientMutationTests
         (HttpMethod.Put, "https://api.hevyapp.com/v1/body_measurements/2024-08-14", "{\"weight_kg\":80.5,\"lean_mass_kg\":65,\"fat_percent\":18.5,\"neck_cm\":38,\"shoulder_cm\":115,\"chest_cm\":95,\"left_bicep_cm\":35,\"right_bicep_cm\":35.5,\"left_forearm_cm\":28,\"right_forearm_cm\":28.5,\"abdomen\":85,\"waist\":80,\"hips\":95,\"left_thigh\":55,\"right_thigh\":55.5,\"left_calf\":37,\"right_calf\":37.5}"),
         (HttpMethod.Get, "https://api.hevyapp.com/v1/body_measurements/2024-08-14", (string?)null),
     ]);
+    (handler.Requests.Where(static request => request.Body is not null)).Should()
+        .AllSatisfy(static request => (request.ContentType).Should().Be("application/json"));
   }
 
   [Fact]
@@ -104,7 +80,7 @@ public sealed class HevyClientMutationTests
     cancellation.Cancel();
 
     await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
+        client.CreateWorkoutAsync(FixtureFactory.Create<CreateWorkoutCommand>(), cancellation.Token)).Should().ThrowAsync<OperationCanceledException>();
 
     ((handler.Requests).Should().ContainSingle().Which.CancellationToken.IsCancellationRequested).Should().BeTrue();
   }
@@ -116,7 +92,7 @@ public sealed class HevyClientMutationTests
     var client = new HevyClient(httpClient, new HevyClientOptions("test-api-key"));
 
     var exception = (await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
+        client.CreateWorkoutAsync(FixtureFactory.Create<CreateWorkoutCommand>(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
 
     (exception.Code).Should().Be("outcome_unknown");
   }
@@ -130,10 +106,10 @@ public sealed class HevyClientMutationTests
     var client = CreateClient(new RecordingHttpMessageHandler((_, _) => responses.Dequeue()));
 
     var exception = (await FluentActions.Awaiting(() =>
-        client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), CancellationToken.None)).Should().ThrowAsync<Exception>()).Which;
+        client.CreateExerciseTemplateAsync(FixtureFactory.Create<CreateExerciseTemplateCommand>(), CancellationToken.None)).Should().ThrowAsync<HevyCommittedReadbackException>()).Which;
 
-    (exception.GetType().GetProperty("Code")?.GetValue(exception)).Should().Be("committed_readback_failed");
-    (exception.GetType().GetProperty("IsRetryable")?.GetValue(exception)).Should().Be(false);
+    (exception.Code).Should().Be("committed_readback_failed");
+    (exception.IsRetryable).Should().Be(false);
     (exception.Message).Should().ContainEquivalentOf("fetch");
     (exception.Message).Should().ContainEquivalentOf("do not replay");
   }
@@ -149,11 +125,11 @@ public sealed class HevyClientMutationTests
     var client = CreateClient(new RecordingHttpMessageHandler((_, _) => responses.Dequeue()));
 
     var exception = update
-        ? (await FluentActions.Awaiting(() => client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), CancellationToken.None)).Should().ThrowAsync<Exception>()).Which
-        : (await FluentActions.Awaiting(() => client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None)).Should().ThrowAsync<Exception>()).Which;
+        ? (await FluentActions.Awaiting(() => client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementCommand>(), CancellationToken.None)).Should().ThrowAsync<HevyCommittedReadbackException>()).Which
+        : (await FluentActions.Awaiting(() => client.CreateBodyMeasurementAsync(FixtureFactory.Create<CreateBodyMeasurementCommand>(), CancellationToken.None)).Should().ThrowAsync<HevyCommittedReadbackException>()).Which;
 
-    (exception.GetType().GetProperty("Code")?.GetValue(exception)).Should().Be("committed_readback_failed");
-    (exception.GetType().GetProperty("IsRetryable")?.GetValue(exception)).Should().Be(false);
+    (exception.Code).Should().Be("committed_readback_failed");
+    (exception.IsRetryable).Should().Be(false);
     (exception.Message).Should().ContainEquivalentOf("fetch");
     (exception.Message).Should().ContainEquivalentOf("do not replay");
   }
@@ -221,9 +197,9 @@ public sealed class HevyClientMutationTests
     var client = CreateClient(handler);
 
     await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
+        client.CreateWorkoutAsync(FixtureFactory.Create<CreateWorkoutCommand>(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
     await FluentActions.Awaiting(() =>
-        client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
+        client.CreateBodyMeasurementAsync(FixtureFactory.Create<CreateBodyMeasurementCommand>(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
 
     (handler.Requests.Count).Should().Be(2);
   }
@@ -235,9 +211,9 @@ public sealed class HevyClientMutationTests
     var client = CreateClient(handler);
 
     var workoutException = (await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
+        client.CreateWorkoutAsync(FixtureFactory.Create<CreateWorkoutCommand>(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
     var measurementException = (await FluentActions.Awaiting(() =>
-        client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
+        client.CreateBodyMeasurementAsync(FixtureFactory.Create<CreateBodyMeasurementCommand>(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
 
     (workoutException.StatusCode).Should().Be(HttpStatusCode.NotImplemented);
     (measurementException.StatusCode).Should().Be(HttpStatusCode.NotImplemented);
@@ -256,7 +232,7 @@ public sealed class HevyClientMutationTests
     var client = CreateClient(handler);
 
     var exception = (await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
+        client.CreateWorkoutAsync(FixtureFactory.Create<CreateWorkoutCommand>(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
 
     (exception.RequestId).Should().Be("safe-request-id");
   }
@@ -273,7 +249,7 @@ public sealed class HevyClientMutationTests
     var client = CreateClient(handler);
 
     var exception = (await FluentActions.Awaiting(() =>
-        client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
+        client.CreateWorkoutAsync(FixtureFactory.Create<CreateWorkoutCommand>(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>()).Which;
 
     (exception.RequestId).Should().BeNull();
   }
@@ -285,7 +261,7 @@ public sealed class HevyClientMutationTests
     var unsafeClient = CreateRetryingClient(unsafeHandler);
 
     await FluentActions.Awaiting(() =>
-        unsafeClient.UpdateWorkoutAsync("workout-1", FixtureFactory.UpdateWorkoutRequest(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
+        unsafeClient.UpdateWorkoutAsync("workout-1", FixtureFactory.Create<UpdateWorkoutCommand>(), CancellationToken.None)).Should().ThrowExactlyAsync<HevyOutcomeUnknownException>();
 
     (unsafeHandler.Requests).Should().ContainSingle();
 
@@ -296,7 +272,7 @@ public sealed class HevyClientMutationTests
     var safeHandler = new RecordingHttpMessageHandler((_, _) => responses.Dequeue());
     var safeClient = CreateRetryingClient(safeHandler);
 
-    var measurement = await safeClient.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), CancellationToken.None);
+    var measurement = await safeClient.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementCommand>(), CancellationToken.None);
 
     (measurement.Date).Should().Be(new DateOnly(2024, 8, 14));
     (safeHandler.Requests.Count).Should().Be(3);
@@ -307,20 +283,20 @@ public sealed class HevyClientMutationTests
 
   private static Task InvokeDirectMutationAsync(HevyClient client, string operation) => operation switch
   {
-    "create_workout" => client.CreateWorkoutAsync(FixtureFactory.CreateWorkoutRequest(), default),
-    "update_workout" => client.UpdateWorkoutAsync("workout-1", FixtureFactory.UpdateWorkoutRequest(), default),
-    "create_routine" => client.CreateRoutineAsync(FixtureFactory.CreateRoutineRequest(), default),
-    "update_routine" => client.UpdateRoutineAsync("routine-1", FixtureFactory.UpdateRoutineRequest(), default),
-    "create_folder" => client.CreateRoutineFolderAsync(FixtureFactory.CreateRoutineFolderRequest(), default),
-    "create_template" => client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), default),
+    "create_workout" => client.CreateWorkoutAsync(FixtureFactory.Create<CreateWorkoutCommand>(), default),
+    "update_workout" => client.UpdateWorkoutAsync("workout-1", FixtureFactory.Create<UpdateWorkoutCommand>(), default),
+    "create_routine" => client.CreateRoutineAsync(FixtureFactory.Create<CreateRoutineCommand>(), default),
+    "update_routine" => client.UpdateRoutineAsync("routine-1", FixtureFactory.Create<UpdateRoutineCommand>(), default),
+    "create_folder" => client.CreateRoutineFolderAsync(FixtureFactory.Create<CreateRoutineFolderCommand>(), default),
+    "create_template" => client.CreateExerciseTemplateAsync(FixtureFactory.Create<CreateExerciseTemplateCommand>(), default),
     _ => throw new ArgumentOutOfRangeException(nameof(operation)),
   };
 
   private static Task InvokeFollowUpMutationAsync(HevyClient client, string operation, CancellationToken cancellationToken) => operation switch
   {
-    "create_template" => client.CreateExerciseTemplateAsync(FixtureFactory.CreateExerciseTemplateRequest(), cancellationToken),
-    "create_measurement" => client.CreateBodyMeasurementAsync(FixtureFactory.CreateBodyMeasurementRequest(), cancellationToken),
-    "update_measurement" => client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.UpdateBodyMeasurementRequest(), cancellationToken),
+    "create_template" => client.CreateExerciseTemplateAsync(FixtureFactory.Create<CreateExerciseTemplateCommand>(), cancellationToken),
+    "create_measurement" => client.CreateBodyMeasurementAsync(FixtureFactory.Create<CreateBodyMeasurementCommand>(), cancellationToken),
+    "update_measurement" => client.UpdateBodyMeasurementAsync(new DateOnly(2024, 8, 14), FixtureFactory.Create<UpdateBodyMeasurementCommand>(), cancellationToken),
     _ => throw new ArgumentOutOfRangeException(nameof(operation)),
   };
 

@@ -18,7 +18,10 @@ internal static class ToolSchemas
     {
       if (schemaObject["properties"] is JsonObject properties)
       {
-        if (properties["type"] is JsonValue typeSchema && typeSchema.TryGetValue<bool>(out var unconstrained) && unconstrained)
+        var hasUnconstrainedType = properties["type"] is JsonValue typeSchema &&
+            typeSchema.TryGetValue<bool>(out var unconstrained) &&
+            unconstrained;
+        if (hasUnconstrainedType)
         {
           properties["type"] = new JsonObject
           {
@@ -37,17 +40,14 @@ internal static class ToolSchemas
         }
       }
 
-      foreach (var child in schemaObject.Select(static pair => pair.Value).Where(static child => child is not null).ToArray())
-      {
-        NormalizeNode(child!);
-      }
     }
-    else if (node is JsonArray array)
+
+    var children = node switch
     {
-      foreach (var child in array.Where(static child => child is not null).ToArray())
-      {
-        NormalizeNode(child!);
-      }
-    }
+      JsonObject jsonObject => jsonObject.Select(static pair => pair.Value),
+      JsonArray jsonArray => jsonArray,
+      _ => [],
+    };
+    foreach (var child in children.Where(static child => child is not null)) NormalizeNode(child!);
   }
 }

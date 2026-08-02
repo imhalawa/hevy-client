@@ -14,14 +14,12 @@ public sealed class Program
     try
     {
       var options = HevyMcpOptions.FromEnvironment();
-      if (options.Transport is HevyMcpTransport.Stdio)
+      await (options.Transport switch
       {
-        await StdioHost.RunAsync(args, options, CancellationToken.None);
-      }
-      else
-      {
-        await HttpHost.RunAsync(args, options, CancellationToken.None);
-      }
+        HevyMcpTransport.Stdio => StdioHost.RunAsync(args, options, CancellationToken.None),
+        HevyMcpTransport.Http => HttpHost.RunAsync(args, options, CancellationToken.None),
+        _ => throw new InvalidOperationException("The MCP transport is unsupported."),
+      });
 
       return 0;
     }

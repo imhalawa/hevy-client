@@ -5,7 +5,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Using Include="Hevy.Client.Models" />
     <ProjectReference Include="../../src/Hevy.Mcp/Hevy.Mcp.csproj" />
+    <PackageReference Include="AutoFixture" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="FluentAssertions.Analyzers">
       <PrivateAssets>all</PrivateAssets>
@@ -23,5 +25,6 @@
   <ItemGroup>
     <Compile Include="../TestSupport/FakeHevyClient.cs" Link="TestSupport/FakeHevyClient.cs" />
     <Compile Include="../TestSupport/FixtureFactory.cs" Link="TestSupport/FixtureFactory.cs" />
+    <Compile Include="../TestSupport/McpStdioProcess.cs" Link="TestSupport/McpStdioProcess.cs" />
   </ItemGroup>
 </Project>

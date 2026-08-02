@@ -1,5 +1,7 @@
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
 using ModelContextProtocol.Protocol;
+using System.Reflection;
+using System.Text.Json;
 
 namespace Hevy.Mcp.Tools;
 
@@ -11,55 +13,25 @@ internal static class ToolExceptionFilter
     {
       return await action();
     }
-    catch (OperationCanceledException exception) when (exception.CancellationToken.IsCancellationRequested)
+    catch (Exception exception)
     {
-      throw;
-    }
-    catch (OperationCanceledException)
-    {
-      return ToolResults.Error(new ToolError(
-          "timeout",
-          "The Hevy API request timed out.",
-          true,
-          NewCorrelationId()));
-    }
-    catch (HevyException exception)
-    {
-      return ToolResults.Error(new ToolError(
-          exception.Code,
-          exception.Message,
-          exception.IsRetryable,
-          NewCorrelationId(),
-          exception.StatusCode is null ? null : (int)exception.StatusCode.Value,
-          exception.RequestId));
-    }
-    catch (HevyCommittedReadbackException exception)
-    {
-      return ToolResults.Error(new ToolError(
-          exception.Code,
-          exception.Message,
-          exception.IsRetryable,
-          NewCorrelationId()));
-    }
-    catch (HevyOutcomeUnknownException exception)
-    {
-      return ToolResults.Error(new ToolError(
-          exception.Code,
-          exception.Message,
-          false,
-          NewCorrelationId(),
-          exception.StatusCode is null ? null : (int)exception.StatusCode.Value,
-          exception.RequestId));
-    }
-    catch (ArgumentException exception)
-    {
-      return Validation(exception.Message);
-    }
-    catch (Exception)
-    {
-      return Unexpected();
+      return FromException(exception);
     }
   }
+
+  internal static CallToolResult FromException(Exception exception) => exception switch
+  {
+    TargetInvocationException { InnerException: { } inner } => FromException(inner),
+    JsonException => Validation("Tool arguments did not match the advertised input schema."),
+    OperationCanceledException cancellation when cancellation.CancellationToken.IsCancellationRequested => throw cancellation,
+    OperationCanceledException => ToolResults.Error(new ToolError("timeout", "The Hevy API request timed out.", true, NewCorrelationId())),
+    HevyException hevy => ToolResults.Error(new ToolError(hevy.Code, hevy.Message, hevy.IsRetryable, NewCorrelationId(), hevy.StatusCode is null ? null : (int)hevy.StatusCode.Value, hevy.RequestId)),
+    HevyCommittedReadbackException committed => ToolResults.Error(new ToolError(committed.Code, committed.Message, committed.IsRetryable, NewCorrelationId())),
+    HevyOutcomeUnknownException unknown => ToolResults.Error(new ToolError(unknown.Code, unknown.Message, false, NewCorrelationId(), unknown.StatusCode is null ? null : (int)unknown.StatusCode.Value, unknown.RequestId)),
+    HevyConflictException conflict => Conflict(conflict.Message),
+    ArgumentException argument => Validation(argument.Message),
+    _ => Unexpected(),
+  };
 
   internal static CallToolResult Validation(string message) => ToolResults.Error(new ToolError(
       "validation_error", message, false, NewCorrelationId()));

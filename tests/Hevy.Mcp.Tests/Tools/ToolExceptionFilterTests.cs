@@ -1,5 +1,6 @@
 using Hevy.Mcp.Tools;
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
+using System.Text.Json;
 using Xunit;
 
 namespace Hevy.Mcp.Tests.Tools;
@@ -38,5 +39,29 @@ public sealed class ToolExceptionFilterTests
     var error = result.Structured().GetProperty("error");
     (error.GetProperty("code").GetString()).Should().Be("outcome_unknown");
     (error.GetProperty("hevy_request_id").GetString()).Should().Be("safe-request-id");
+  }
+
+  [Fact]
+  public void Json_argument_binding_fault_returns_a_safe_validation_error()
+  {
+    var result = ToolExceptionFilter.FromException(new JsonException("invalid untrusted argument"));
+
+    var error = result.Structured().GetProperty("error");
+    (error.GetProperty("code").GetString()).Should().Be("validation_error");
+    (error.GetProperty("message").GetString()).Should().NotContain("invalid untrusted argument");
+  }
+
+  [Theory]
+  [InlineData(typeof(InvalidOperationException))]
+  [InlineData(typeof(NotSupportedException))]
+  public void Internal_fault_returns_a_safe_unexpected_error(Type exceptionType)
+  {
+    var exception = (Exception)Activator.CreateInstance(exceptionType, "internal detail")!;
+
+    var error = ToolExceptionFilter.FromException(exception).Structured().GetProperty("error");
+
+    (error.GetProperty("code").GetString()).Should().Be("unexpected_error");
+    (error.GetProperty("message").GetString()).Should().Be("The tool could not complete the request.");
+    (error.GetProperty("message").GetString()).Should().NotContain(exception.Message);
   }
 }

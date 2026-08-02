@@ -1,9 +1,7 @@
 using System.Net;
 using System.Text;
-using Hevy.Client;
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
 using Hevy.Client.Http;
-using Hevy.Client.Models;
 using TestSupport;
 using Xunit;
 
@@ -39,7 +37,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var result = await client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, limit),
+        new ExerciseHistoryQuery(0, limit),
         default);
 
     (result.Items.Count).Should().Be(limit);
@@ -60,11 +58,11 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var first = await client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 100),
+        new ExerciseHistoryQuery(0, 100),
         default);
     var second = await client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(100, 100),
+        new ExerciseHistoryQuery(100, 100),
         default);
 
     (first.Items[0].WorkoutId).Should().Be("workout-0001");
@@ -74,7 +72,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
       (result.Items.Count).Should().Be(100);
       (result.Truncated).Should().BeTrue();
       (result.TruncationReason).Should().BeNull();
-      (result.ScannedItemCount).Should().BeInRange(1, ExerciseHistoryWindowRequest.MaximumScannedItems);
+      (result.ScannedItemCount).Should().BeInRange(1, ExerciseHistoryQuery.MaximumScannedItems);
     });
     (handler.Requests.Count).Should().Be(2);
   }
@@ -88,7 +86,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var result = await client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(
+        new ExerciseHistoryQuery(
             0,
             100,
             EligibleStartTime: DateTimeOffset.Parse("2026-07-01T00:00:00Z"),
@@ -110,7 +108,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var result = await client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 10),
+        new ExerciseHistoryQuery(0, 10),
         default);
 
     (result.Truncated).Should().BeTrue();
@@ -130,7 +128,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var read = client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 10),
+        new ExerciseHistoryQuery(0, 10),
         cancellation.Token);
     await stream.Blocked;
     cancellation.Cancel();
@@ -147,7 +145,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(1_000, 1),
+        new ExerciseHistoryQuery(1_000, 1),
         default)).Should().ThrowExactlyAsync<ArgumentOutOfRangeException>();
 
     (handler.Requests).Should().BeEmpty();
@@ -161,7 +159,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var exception = (await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 10),
+        new ExerciseHistoryQuery(0, 10),
         default)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
     (exception.Code).Should().Be("unexpected_response");
@@ -180,7 +178,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var exception = (await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 10),
+        new ExerciseHistoryQuery(0, 10),
         default)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
     (exception.Code).Should().Be("unexpected_response");
@@ -197,7 +195,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var result = await client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 10),
+        new ExerciseHistoryQuery(0, 10),
         default);
 
     ((result.Items).Should().ContainSingle().Which.WorkoutId).Should().Be("workout-0001");
@@ -215,7 +213,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var result = await client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 10),
+        new ExerciseHistoryQuery(0, 10),
         default);
 
     ((result.Items).Should().ContainSingle().Which.WorkoutId).Should().Be("workout-0001");
@@ -231,7 +229,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var exception = (await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 10),
+        new ExerciseHistoryQuery(0, 10),
         default)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
     (exception.Code).Should().Be("unexpected_response");
@@ -247,7 +245,7 @@ public sealed class HevyClientExerciseHistoryStreamingTests
 
     var exception = (await FluentActions.Awaiting(() => client.GetExerciseHistoryWindowAsync(
         "template-1",
-        new ExerciseHistoryWindowRequest(0, 10),
+        new ExerciseHistoryQuery(0, 10),
         default)).Should().ThrowExactlyAsync<HevyException>()).Which;
 
     (exception.Code).Should().Be("unexpected_response");

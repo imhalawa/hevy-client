@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using Hevy.Mcp.Configuration;
-using Microsoft.Extensions.Logging;
 
 namespace Hevy.Mcp.Diagnostics;
 
@@ -12,16 +11,12 @@ internal sealed record DiagnosticSnapshot(
     bool DiagnosticsEnabled,
     string Health)
 {
-  internal static DiagnosticSnapshot Create(HevyMcpOptions options)
-  {
-    ArgumentNullException.ThrowIfNull(options);
-
-    return new DiagnosticSnapshot(
+  internal static DiagnosticSnapshot Create(HevyMcpOptions options) =>
+      new(
         typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0",
         RuntimeInformation.FrameworkDescription,
         options.Transport is HevyMcpTransport.Stdio ? "stdio" : "http",
         options.ReadOnly,
         options.LogLevel is not LogLevel.None,
         "ready");
-  }
 }

@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping improve `hevy-client`. Contributions must preserve its clean-room, local-first security model.
+Thank you for helping improve `hevy-mcp`. Contributions must preserve its clean-room, local-first security model.
 
 ## Clean-room rule
 
@@ -24,7 +24,7 @@ The normal suite uses fake transports and needs no Hevy account. Live tests are 
 Docker changes also require:
 
 ```sh
-docker build --pull --tag hevy-client:contributor .
+docker build --pull --tag hevy-mcp:contributor .
 dotnet test tests/Hevy.Transport.Tests/Hevy.Transport.Tests.csproj \
   --configuration Release \
   --filter FullyQualifiedName~ContainerSmokeTests

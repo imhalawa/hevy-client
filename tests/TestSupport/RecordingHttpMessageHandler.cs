@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 
 namespace TestSupport;
 
@@ -9,7 +8,6 @@ public sealed class RecordingHttpMessageHandler : HttpMessageHandler
 
   public RecordingHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> responseFactory)
   {
-    ArgumentNullException.ThrowIfNull(responseFactory);
     this.responseFactory = responseFactory;
   }
 
@@ -17,13 +15,13 @@ public sealed class RecordingHttpMessageHandler : HttpMessageHandler
 
   protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
   {
-    ArgumentNullException.ThrowIfNull(request);
 
     var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
     Requests.Add(new RecordedHttpRequest(
         request.Method,
         request.RequestUri,
         request.Headers.ToDictionary(header => header.Key, header => header.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
+        request.Content?.Headers.ContentType?.MediaType,
         body,
         cancellationToken));
 
@@ -40,5 +38,6 @@ public sealed record RecordedHttpRequest(
     HttpMethod Method,
     Uri? RequestUri,
     IReadOnlyDictionary<string, string[]> Headers,
+    string? ContentType,
     string? Body,
     CancellationToken CancellationToken);

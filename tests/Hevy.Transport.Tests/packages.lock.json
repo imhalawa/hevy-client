@@ -238,6 +238,12 @@
         }
       },
       "hevy.client": {
+        "type": "Project",
+        "dependencies": {
+          "Hevy.Core": "[1.0.0, )"
+        }
+      },
+      "hevy.core": {
         "type": "Project"
       },
       "hevy.mcp": {

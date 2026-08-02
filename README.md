@@ -1,214 +1,93 @@
-# hevy-client
+# hevy-mcp
 
-`hevy-client` is a clean-room, local-first MCP server for the official [Hevy API](https://api.hevyapp.com/docs/). It gives AI agents complete typed access to the checked-in API snapshot plus bounded search and deterministic training-analysis tools. It contains no model, telemetry, credential store, or hosted service.
+`hevy-mcp` is a local MCP server for the [Hevy API](https://api.hevyapp.com/docs/), a workout-tracking API. It lets an AI client read and manage your Hevy data without sending it through a hosted intermediary.
 
-The default setup is one short-lived Docker container per MCP client over stdio. Nothing listens on a network port. An optional authenticated Streamable HTTP mode is available for a deliberately self-hosted, single-tenant deployment.
+## What it enables
 
-## What it exposes
-
-- All 22 operations in the pinned Hevy OpenAPI snapshot as low-level tools: 14 reads and 8 writes.
+- Typed access to all 22 operations in the pinned Hevy API snapshot: 14 reads and 8 writes.
 - Routine and exercise-template search.
-- Bounded workout evidence, training summaries, and exercise-history summaries.
-- Two prompts for evidence-cited training analysis and routine-to-completed-workout preparation.
-- An allowlist-only `get_diagnostics` tool.
+- Bounded workout evidence, exercise-history summaries, and deterministic training analysis.
+- MCP prompts for evidence-cited training analysis and routine-to-workout preparation.
 
-Calculations are deterministic and include supporting identifiers and timestamps. The connected agent may interpret the evidence, but this server does not generate coaching or make model calls.
+It does not run a model, provide coaching, store fitness data, or send telemetry.
 
-## Prerequisites
+## Quick start
 
-- Docker with Linux-container support.
-- A Hevy API key. `HEVY_API_KEY` is the only accepted credential source.
-- An MCP client that supports stdio, such as Codex, Claude Desktop, Cursor, VS Code, or Gemini CLI.
+You need Docker with Linux-container support, a Hevy API key, and an MCP client. The image contains no API key. `-e HEVY_API_KEY` passes your key to the container only when it starts.
 
-Build the local image from a reviewed checkout:
+Pull release 0.1.0:
 
 ```sh
-docker build --pull --tag hevy-client:local .
+docker pull ghcr.io/imhalawa/hevy-mcp:0.1.0
 ```
 
-For a terminal client launched from the same private Bash session, this avoids placing the value in shell history:
+The version tag is convenient; use the digest in [release verification](docs/release-verification.md) only when immutable pinning matters.
+
+In a private Bash session, enter the key without putting it in shell history:
 
 ```sh
 read -r -s -p "Hevy API key: " HEVY_API_KEY && export HEVY_API_KEY && printf '\n'
 ```
 
-Do not put the key in a Dockerfile, image, MCP JSON/TOML, command argument, URL, source file, or committed `.env` file. Every Docker example uses `-e HEVY_API_KEY` without a value so Docker copies the existing host variable into the container. Shell exports apply only to programs started from that shell; they are not a reliable way to provision an already-running graphical application.
-
-## Recommended local stdio setup
-
-The common command is:
+Run the server:
 
 ```sh
-docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY hevy-client:local
+docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  -e HEVY_API_KEY \
+  ghcr.io/imhalawa/hevy-mcp:0.1.0
 ```
 
-`-i` is required because MCP uses stdin. There is intentionally no `-p` option. stdout is reserved for MCP; diagnostics, when enabled, use stderr.
+The server will wait without output. That is expected: MCP uses JSON-RPC over standard input and output. Stdio mode publishes no network port.
 
-The configurations below all run that same command. JSON snippets are complete documents; merge the shown server entry if the file already contains other settings.
+### Windows PowerShell
 
-## Desktop clients without persisted API keys
-
-Graphical clients need a launcher that obtains the key before the client or MCP process starts. This repository includes two launchers, and their container seams are tested with generated fake credentials and a real MCP handshake. The tests also check that the fake value is not written to launcher or temporary files.
-
-### macOS Keychain
-
-Copy `scripts/hevy-client-mcp` to a stable, user-owned absolute path such as `~/.local/bin/hevy-client-mcp`, then make it executable. In **Keychain Access**, create a **Generic Password** whose service/name is `hevy-client-api-key`, whose account is your current macOS username, and whose password is the Hevy API key. This avoids putting the key in a command argument or shell history.
-
-The launcher retrieves the value from macOS Keychain for each MCP startup and passes only the environment-variable name to Docker. Point the desktop client's MCP `command` directly at the launcher's absolute path.
-
-### Linux Secret Service
-
-Install a Secret Service provider and the `secret-tool` client, then copy `scripts/hevy-client-mcp` to a stable, user-owned absolute path such as `~/.local/bin/hevy-client-mcp` and make it executable. Store the key without placing it in an argument or shell history:
-
-```bash
-read -r -s -p "Hevy API key: " hevy_key && printf '%s' "$hevy_key" | secret-tool store --label='hevy-client Hevy API key' service hevy-client credential api-key
-unset hevy_key
-printf '\n'
-```
-
-The graphical session's keyring must be unlocked. The launcher retrieves `service=hevy-client, credential=api-key` for each MCP startup, keeps it in process memory, and replaces itself with Docker. Point the desktop client's MCP `command` at the launcher's absolute path.
-
-The launcher uses `hevy-client:local` by default. Set `HEVY_CLIENT_IMAGE` in the launcher's environment only when selecting a different reviewed image; it is not a credential.
-
-### Windows secure-prompt launcher
-
-Windows users can start a desktop client through `scripts/Start-HevyClient.ps1`. It securely prompts for the key, keeps the plaintext only in process memory and the launched process environment, and restores the previous environment after that client exits. The key is not stored in the MCP configuration or command history.
-
-First review the script and, if Windows marked the downloaded file as blocked, run `Unblock-File .\scripts\Start-HevyClient.ps1`. Then start the client from a trusted PowerShell session, supplying its actual installed executable path:
+With Docker Desktop running, this prompts for the key, starts the same hardened container, and removes the host environment variable afterward:
 
 ```powershell
-powershell -NoProfile -File .\scripts\Start-HevyClient.ps1 -ClientPath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe"
+docker pull ghcr.io/imhalawa/hevy-mcp:0.1.0
+
+$secureKey = Read-Host -Prompt 'Hevy API key' -AsSecureString
+$keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+
+try {
+  $env:HEVY_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPointer)
+
+  docker run --rm -i --read-only `
+    --tmpfs /tmp:rw,noexec,nosuid,size=16m `
+    -e HEVY_API_KEY `
+    ghcr.io/imhalawa/hevy-mcp:0.1.0
+}
+finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPointer)
+  Remove-Item Env:HEVY_API_KEY -ErrorAction SilentlyContinue
+}
 ```
 
-Fully exit every existing instance of the graphical client first; a single-instance application that reconnects to an older process will not receive the new environment. Use the installed executable path for Claude Desktop, Cursor, Codex, or another supported client in place of the VS Code example. Configure that client to run the common `docker run ... -e HEVY_API_KEY hevy-client:local` stdio command shown above. Because the launcher starts the process that hosts MCP, Docker inherits the prompted value without storing it.
+## Connect an MCP client
 
-### Codex
-
-When Codex CLI is launched from the same terminal in which `HEVY_API_KEY` was exported, it can add the server without recording the key:
+For Codex CLI, run this from the shell that has `HEVY_API_KEY` set:
 
 ```sh
-codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY hevy-client:local
-codex mcp get hevy
+codex mcp add hevy -- docker run --rm -i --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e HEVY_API_KEY ghcr.io/imhalawa/hevy-mcp:0.1.0
 ```
 
-On macOS or Linux, graphical Codex clients can instead point their shared `~/.codex/config.toml` entry at the secret-backed launcher:
+Other stdio MCP clients use the same Docker command. The client process must have `HEVY_API_KEY` in its environment when it starts Docker.
 
-```toml
-[mcp_servers.hevy]
-command = "/absolute/path/to/hevy-client-mcp"
-```
+## Safe operation
 
-On Windows, retain the Docker MCP command and start the graphical client through `scripts/Start-HevyClient.ps1`. See the official [Codex MCP documentation](https://developers.openai.com/codex/mcp).
+- Never put a key in source code, an image layer, a command argument, a URL, or a committed environment file.
+- Set `HEVY_READ_ONLY=true` to hide every mutation tool.
+- Mutation tools accept `dry_run: true` to validate a request without contacting Hevy.
+- This server is single-tenant. It has no OAuth server, multi-user storage, or public hosted service.
 
-### Claude Desktop
+## Optional HTTP mode
 
-On macOS or Linux, open Claude Desktop's developer settings and point its MCP configuration at the installed secret-backed launcher:
-
-```json
-{
-  "mcpServers": {
-    "hevy": {
-      "command": "/absolute/path/to/hevy-client-mcp"
-    }
-  }
-}
-```
-
-Start Claude Desktop normally after saving. On Windows, keep the Docker command and start Claude Desktop through the PowerShell launcher. Claude Code can use the same launcher entry in `.mcp.json`; a terminal session with an exported key can instead use `claude mcp add --transport stdio hevy -- docker run ...`. See Anthropic's [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) and [Claude Code MCP reference](https://code.claude.com/docs/en/mcp).
-
-### Cursor
-
-On macOS or Linux, add this to the user MCP settings or `.cursor/mcp.json`, then enable the server in Cursor settings:
-
-```json
-{
-  "mcpServers": {
-    "hevy": {
-      "command": "/absolute/path/to/hevy-client-mcp"
-    }
-  }
-}
-```
-
-On Windows, keep the Docker command and start Cursor through the PowerShell launcher. See the official [Cursor MCP documentation](https://cursor.com/docs/context/mcp).
-
-### Visual Studio Code
-
-On macOS or Linux, use the `MCP: Open User Configuration` command, or create `.vscode/mcp.json` for a trusted workspace:
-
-```json
-{
-  "servers": {
-    "hevy": {
-      "type": "stdio",
-      "command": "/absolute/path/to/hevy-client-mcp"
-    }
-  }
-}
-```
-
-Start it from the MCP server view and approve only the tools you intend to use. On Windows, keep the Docker command and start VS Code through the PowerShell launcher. See the official [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
-
-### Gemini CLI
-
-On macOS or Linux, add this entry to the user `~/.gemini/settings.json` or project `.gemini/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "hevy": {
-      "command": "/absolute/path/to/hevy-client-mcp",
-      "trust": false
-    }
-  }
-}
-```
-
-Keep `trust` false so Gemini asks before tool calls. Check discovery with `/mcp`. A terminal-only Gemini CLI can retain the direct Docker command when it inherits an exported key. On Windows, start Gemini's graphical host through the PowerShell launcher. See the official [Gemini CLI MCP documentation](https://geminicli.com/docs/tools/mcp-server/).
-
-### Other stdio clients
-
-Terminal clients that inherit an exported key can configure executable `docker` with these arguments, in this exact order:
-
-```text
-run
---rm
--i
---read-only
---tmpfs
-/tmp:rw,noexec,nosuid,size=16m
--e
-HEVY_API_KEY
-hevy-client:local
-```
-
-The client must send newline-delimited MCP JSON-RPC on stdin and keep stdin attached for the life of the server. On macOS or Linux, a graphical client should use `/absolute/path/to/hevy-client-mcp` as its command instead. On Windows, use the same Docker arguments but start the client through `scripts/Start-HevyClient.ps1`.
-
-## Writes, read-only mode, and dry runs
-
-Writes are enabled by default. MCP clients should present their normal approval UI for mutation tools.
-
-To omit every mutation tool at discovery time, add these two Docker arguments before the image name:
-
-```text
--e
-HEVY_READ_ONLY=true
-```
-
-Every mutation accepts `dry_run: true`. A dry run validates and returns the normalized outbound payload and warnings without contacting Hevy. Replacement tools normally require the current object's `updated_at` as `expected_updated_at`; `force: true` explicitly bypasses that guard.
-
-Hevy body measurements do not expose `updated_at`. `update_body_measurement` therefore cannot promise optimistic concurrency and requires `force: true` before an actual request is sent. Read the current measurement immediately before deciding to replace it. No delete tools exist because the official API snapshot exposes no delete operations.
-
-## Optional authenticated HTTP self-hosting
-
-HTTP mode is for one Hevy account per container. It is not a multi-user credential service. Use a separate high-entropy `MCP_AUTH_TOKEN`, keep the backend loopback-only, and terminate TLS at a reverse proxy.
-
-Generate or retrieve the bearer token through a secret manager and export it without printing it. Token syntax is RFC token68; a base64 value is accepted. It must differ from `HEVY_API_KEY`.
+HTTP mode is for one Hevy account behind your own TLS reverse proxy. It requires a distinct `MCP_AUTH_TOKEN`; keep the container loopback-bound and do not expose it as a shared public service.
 
 ```sh
 MCP_AUTH_TOKEN="$(openssl rand -base64 32 | tr -d '\n')" && export MCP_AUTH_TOKEN
 
-docker run --rm --name hevy-client-http \
+docker run --rm --name hevy-mcp-http \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   -e HEVY_API_KEY \
@@ -217,122 +96,30 @@ docker run --rm --name hevy-client-http \
   -e ASPNETCORE_URLS=http://0.0.0.0:8080 \
   -e AllowedHosts=hevy.example.net \
   -p 127.0.0.1:8080:8080 \
-  hevy-client:local
+  ghcr.io/imhalawa/hevy-mcp:0.1.0
 ```
 
-A minimal Caddy site on the same host is:
+Terminate TLS at the proxy, preserve the original `Host`, and configure `AllowedHosts` with explicit public authorities. The MCP endpoint is `https://hevy.example.net/mcp`; clients authenticate with `Authorization: Bearer <MCP_AUTH_TOKEN>`. `/healthz` is unauthenticated and only confirms that the process is running.
 
-```caddyfile
-hevy.example.net {
-  reverse_proxy 127.0.0.1:8080
-}
-```
+## Configuration
 
-Caddy obtains and terminates TLS. The proxy must preserve the original `Host`. Configure `AllowedHosts` as an explicit semicolon-separated list of trusted public authorities; wildcards are rejected. If a client supplies `Origin`, the server accepts it only when its authority exactly matches `Host`; plain-HTTP origins are accepted only for loopback. Do not publish port 8080 on `0.0.0.0`, bypass TLS, or expose this single-tenant service as a shared public endpoint.
-
-The MCP URL is `https://hevy.example.net/mcp`. Clients must send `Authorization: Bearer` using the separate token. `/healthz` is unauthenticated and returns only an empty `200`; do not treat it as proof that Hevy credentials work.
-
-Codex can source the HTTP token from the environment:
-
-```sh
-codex mcp add hevy-http --url https://hevy.example.net/mcp --bearer-token-env-var MCP_AUTH_TOKEN
-```
-
-To rotate the bearer token, update the secret in every authorized client, stop the container, and recreate it with the new value. The old token stops working when the old process exits. Rotate the Hevy key separately if it may have been exposed.
-
-## Configuration reference
-
-| Variable | Required | Default | Accepted values and behavior |
+| Variable | Required | Default | Behavior |
 |---|---:|---|---|
-| `HEVY_API_KEY` | Always | None | Nonblank Hevy API key. Never accepted as a tool input or command-line option. |
-| `HEVY_MCP_TRANSPORT` | No | `stdio` | Exactly `stdio` or `http`. |
-| `MCP_AUTH_TOKEN` | HTTP only | None | Nonblank token68 bearer token, distinct from the Hevy key. Ignored in stdio mode. |
-| `HEVY_READ_ONLY` | No | `false` | Exactly `true` or `false`; `true` omits all mutation tools. |
-| `HEVY_LOG_LEVEL` | No | `None` | Exactly `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, or `None`. |
-| `AllowedHosts` | HTTP only | `localhost;127.0.0.1;[::1]` | Explicit semicolon-separated trusted hosts. Wildcards and `+` are rejected. |
-| `ASPNETCORE_URLS` | HTTP only | Image port 8080 | ASP.NET listen URL. Keep the Docker publication loopback-only behind TLS. |
+| `HEVY_API_KEY` | Always | None | Nonblank Hevy API key. |
+| `HEVY_MCP_TRANSPORT` | No | `stdio` | `stdio` or `http`. |
+| `MCP_AUTH_TOKEN` | HTTP only | None | Nonblank token68 bearer token, distinct from the Hevy key. |
+| `HEVY_READ_ONLY` | No | `false` | `true` hides mutation tools; otherwise `false`. |
+| `HEVY_LOG_LEVEL` | No | `None` | `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`, or `None`. |
+| `AllowedHosts` | HTTP only | `localhost;127.0.0.1;[::1]` | Explicit semicolon-separated trusted hosts; wildcards are rejected. |
+| `ASPNETCORE_URLS` | HTTP only | Image port 8080 | ASP.NET listen URL; publish only to loopback behind TLS. |
 
-Unknown, blank, or differently cased custom values fail startup. HTTP startup also fails if its two tokens are equal.
+Unknown or malformed values fail startup. HTTP mode also fails if its bearer token equals the Hevy API key.
 
-## Privacy and diagnostics
+## Project
 
-There is no telemetry, crash upload, update checker, analytics endpoint, or persistent fitness-data cache. Runtime traffic goes only to the fixed `https://api.hevyapp.com` origin. Process-local routine and exercise-template caches expire after 15 minutes and disappear on restart; cache keys never contain credentials.
-
-Diagnostics are off by default. When `HEVY_LOG_LEVEL` is enabled, allowlisted JSON records go to stderr and contain only server/runtime data, operation name and category, bucketed duration, status, safe upstream request identifiers, local correlation identifiers, and exception category. They never contain headers, URLs with queries, request or response bodies, workout text, activity timestamps, or measurements. Sink failures cannot change a tool result.
-
-Call `get_diagnostics` for a safe snapshot containing only server version, runtime version, transport, read-only state, diagnostics state, and health. Users choose whether to copy that output into an issue; the server uploads nothing.
-
-## Bounds and current limitations
-
-- Low-level Hevy pages preserve explicit page semantics. Exercise-template pages accept the official maximum of 100 items; the other paged operations accept at most 10.
-- Composite calls default to 100 returned items and cap each invocation at 1,000 scanned or returned items. A resumable partial result includes the exact continuation inputs.
-- Training windows default to 4 UTC weeks and cap at 52 weeks. Partial chunks label whether metrics cover the complete period or only that chunk.
-- Routine and exercise-template searches page through catalogs in bounded calls, including catalogs larger than 1,000 items. Page caches remain process-local, size-bounded, and expire after 15 minutes.
-- Hevy's exercise-history endpoint is unpaginated. The response is streamed with independent 1,000-item and 16 MiB ceilings. Reaching either ceiling returns a terminal truncation reason because rereading a deeper offset would violate the same safety bound.
-- Every other JSON response is read through a 4 MiB ceiling. Required operation fields, page identity/count, and returned page cardinality are validated while unknown additive fields remain compatible.
-- Body-measurement replacement is force-only because the upstream response has no `updated_at` field.
-- This is single-tenant and has no OAuth server, browser credential capture, tunnels, multi-user storage, embedded LLM, subjective coaching, MCP bulk resources, or invented delete operations.
-
-## Version and image pinning
-
-Release users should prefer the exact image digest from the release. A semantic-version tag is a reviewed convenience reference, but GHCR does not enforce immutable tags; only the digest is content-addressed. For v0.1.0, replace `hevy-client:local` in client configurations with `ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841`.
-
-Both Docker base images are pinned by multi-architecture manifest digest. To update them deliberately:
-
-```sh
-docker buildx imagetools inspect mcr.microsoft.com/dotnet/sdk:10.0-noble
-docker buildx imagetools inspect mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled
-```
-
-Review Microsoft's [.NET container image documentation](https://learn.microsoft.com/dotnet/core/docker/container-images), replace both digests in `Dockerfile`, rebuild with `--pull`, and run the full test and container-smoke suites. A digest update is a reviewed dependency change, not an automatic runtime action.
-
-Local builds label version, revision, and source as development values. Public distributors must set `VERSION`, `REVISION`, and `SOURCE_URL` build arguments to the immutable release version, full source commit, and canonical repository URL; these values are metadata and must never contain secrets.
-
-## Verified releases
-
-The release workflow accepts only an exact `vX.Y.Z` Git tag. Lightweight and annotated tags are both supported, but the checked-out commit, workflow source SHA, tag target, .NET assembly version, OCI revision, and OCI version must all agree. It publishes one `X.Y.Z` GHCR tag for `linux/amd64` and `linux/arm64`; it never publishes `latest`, major-only, or minor-only tags.
-
-The canonical repository and private security intake are configured for `imhalawa/hevy-client`. The release workflow still fails closed if those controls or their verification variables drift. Before a first tag in another repository:
-
-1. Complete every blocking item in [the public distribution checklist](docs/release-checklist.md).
-2. Create a protected GitHub Actions environment named `release`, require approval, and make this workflow its only package writer.
-3. Set `HEVY_CANONICAL_REPOSITORY` to the exact repository name as a repository or `release`-environment variable.
-4. Set `HEVY_PRIVATE_ADVISORY_VERIFIED=true` only after private vulnerability reporting is enabled and its link has been tested.
-
-The workflow itself has only `contents:read`, `packages:write`, `id-token:write`, and `attestations:write`. Before registry authentication it independently repeats every non-live build, test, audit, and real-container gate, including two registry-free no-cache multi-architecture exports whose index and platform digests must match exactly. CI runs the same reproducibility gate. The release then performs the GHCR Registry v2 Bearer challenge and scoped token exchange and stages the multi-architecture result under its digest only. Before any SBOM, provenance, or signature operation, the raw staged index must contain exactly two total descriptors (`linux/amd64` and `linux/arm64`), its content digest must equal both the build action result and the reproducibility gate, and both platform digests must equal the gate outputs. Only then does the workflow verify exact OCI labels and exercise the staged amd64 assembly over MCP. The staged index excludes invocation-specific inline attestations and uses the source commit timestamp for reproducible image metadata. Exact-checksum-pinned Syft generates separate SPDX 2.3 documents for both platform digests; GitHub provenance and SBOM attestations are then created and verified, and the manifest digest is keylessly signed and verified with Cosign.
-
-The final step repeats the authenticated tag lookup immediately before promotion. A tag already resolving to the verified digest is an idempotent success; a different digest fails. When the tag is absent, the Buildx tag creation is the workflow's last fallible command. The repository-wide concurrency group and protected `release` environment serialize this workflow, and maintainers must prevent every other workflow or credential from writing this package. This is race mitigation, not registry-enforced immutability: GHCR documents no atomic create-only or immutable-tag operation, so an independent package writer could still race or later move the tag. Consumers should pin the full digest shown above.
-
-The idempotent branch covers another writer selecting the same staged digest during the final race window and a rerun of the same source, version, and pinned toolchain. The separate provenance and SBOM attestations cannot perturb the staged image digest. If final promotion reports a transport failure, authenticate the tag lookup before deciding what to do: the original verified digest is already complete, a tag resolving to that digest is success, and an absent tag permits the serialized workflow to retry promotion. Only a genuinely different or unverifiable digest enters manual recovery and blocks release until its source, signature, and attestations have been investigated.
-
-The workflow deliberately cannot create or modify a GitHub Release because it has read-only repository-content permission. Its SBOMs remain workflow artifacts for 90 days. A maintainer downloads them, attaches them to a draft GitHub Release, repeats the documented digest verification, and only then publishes that GitHub Release immutably.
-
-Verify v0.1.0 by digest rather than trusting its convenience tag:
-
-```sh
-cosign verify ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841 \
-  --certificate-identity https://github.com/imhalawa/hevy-client/.github/workflows/release.yml@refs/tags/v0.1.0 \
-  --certificate-github-workflow-sha 9ec3223c6bfe72d57435a50c8d0f19eb92d0624e \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-
-gh attestation verify oci://ghcr.io/imhalawa/hevy-client@sha256:f29625b6c0090af492e5115d186cb61583b5f903d79a5d6a73452e7c53188841 \
-  --repo imhalawa/hevy-client \
-  --signer-workflow imhalawa/hevy-client/.github/workflows/release.yml \
-  --source-digest 9ec3223c6bfe72d57435a50c8d0f19eb92d0624e \
-  --source-ref refs/tags/v0.1.0 \
-  --bundle-from-oci
-```
-
-Every external GitHub Action is pinned by its complete commit SHA. Human-readable versions and reviewed source links live in [`.github/actions-lock.json`](.github/actions-lock.json); an action update must change the workflow pin and that lock document together. The actionlint, Syft, and Buildx binary checksums, the Buildx source commit, and the binfmt/BuildKit manifest digests are recorded separately in [`.github/tools-lock.json`](.github/tools-lock.json). The workflow installs Buildx in Docker's standard per-user CLI plugin directory before `setup-buildx-action`, preserving the default credential location used by Docker and the attestation actions. The pinned action receives no `version` input, so its audited v4.2.0 control flow uses the available local plugin instead of its release downloader. A following exact version-and-source-commit check fails closed before any build. Dependabot groups weekly minor and patch NuGet, Docker, and Actions updates. Major updates remain separate and require explicit maintainer review; MCP 2.x is ignored until a deliberate SDK migration updates the central stable `1.4.1` pin and contract tests.
-
-## Development
-
-The repository targets .NET 10 and uses locked NuGet restores:
-
-```sh
-dotnet restore --locked-mode
-dotnet build --configuration Release --no-restore
-dotnet test --configuration Release --no-build
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for clean-room and test requirements, [SECURITY.md](SECURITY.md) for private vulnerability reporting, and [LICENSE](LICENSE) for the MIT license.
+- [Architecture](docs/architecture.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Release verification](docs/release-verification.md)
+- [Release checklist](docs/release-checklist.md)
+- [MIT License](LICENSE)

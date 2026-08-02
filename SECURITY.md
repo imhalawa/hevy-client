@@ -10,13 +10,13 @@ Private vulnerability reporting must be enabled before public distribution. It i
 
 Use the repository-relative [private vulnerability report](../../security/advisories/new) to open a GitHub Security Advisory. Include the affected version or image digest, impact, minimal reproduction, and any suggested mitigation. Do not include a real Hevy API key, MCP bearer token, workout payload, activity timestamp, or body measurement.
 
-The canonical repository is [`imhalawa/hevy-client`](https://github.com/imhalawa/hevy-client), where private vulnerability reporting is enabled. Do not open a public issue for a suspected vulnerability and do not publish a working exploit before a fix is available. Maintainers will acknowledge private reports, assess scope, coordinate remediation, and credit the reporter when desired; response times are best effort for this volunteer project.
+The canonical repository is [`imhalawa/hevy-mcp`](https://github.com/imhalawa/hevy-mcp), where private vulnerability reporting is enabled. Do not open a public issue for a suspected vulnerability and do not publish a working exploit before a fix is available. Maintainers will acknowledge private reports, assess scope, coordinate remediation, and credit the reporter when desired; response times are best effort for this volunteer project.
 
 Public issues are only for ordinary non-sensitive bugs. Attach only the allowlisted output of `get_diagnostics` or already-redacted stderr records.
 
 ## Threat model
 
-`hevy-client` assumes the machine account running Docker, the Docker daemon administrator, and the configured MCP client are trusted with access to the selected Hevy account. A local administrator or a client allowed to invoke write tools can act with those privileges. The image cannot protect a secret from a compromised host or Docker daemon.
+`hevy-mcp` assumes the machine account running Docker, the Docker daemon administrator, and the configured MCP client are trusted with access to the selected Hevy account. A local administrator or a client allowed to invoke write tools can act with those privileges. The image cannot protect a secret from a compromised host or Docker daemon.
 
 Security boundaries provided by the project include:
 

@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text.Json.Nodes;
-using Hevy.Client.Errors;
+using Hevy.Core.Exceptions;
 using TestSupport;
 using Xunit;
 

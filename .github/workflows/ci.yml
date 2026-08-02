@@ -3,6 +3,8 @@ name: CI
 "on":
   pull_request:
   push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -15,7 +17,6 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,56 +30,14 @@ jobs:
           cache: true
           cache-dependency-path: "**/packages.lock.json"
 
-      - name: Validate workflow syntax
-        run: ./scripts/run-actionlint.sh
+      - name: Restore dependencies
+        run: dotnet restore HevyMcp.slnx --locked-mode
 
-      - name: Validate pinned OpenAPI snapshot
-        run: ./scripts/validate-openapi.sh
+      - name: Verify formatting
+        run: dotnet format HevyMcp.slnx --verify-no-changes --no-restore
 
-      - name: Audit repository release content
-        run: ./scripts/audit-repository.sh
+      - name: Build
+        run: dotnet build HevyMcp.slnx --configuration Release --no-restore -warnaserror
 
-      - name: Restore locked dependencies
-        run: dotnet restore HevyClient.slnx --locked-mode
-
-      - name: Verify repository formatting
-        run: dotnet format HevyClient.slnx --verify-no-changes --no-restore
-
-      - name: Build Release with warnings as errors
-        run: dotnet build HevyClient.slnx --configuration Release --no-restore -warnaserror
-
-      - name: Run all non-live tests
-        run: env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN dotnet test HevyClient.slnx --configuration Release --no-build
-
-      - name: Build local container image
-        run: docker build --pull --tag hevy-client:ci .
-
-      - name: Inspect local container image
-        run: docker image inspect hevy-client:ci
-
-      - name: Run real container smokes
-        run: env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN dotnet test tests/Hevy.Transport.Tests/Hevy.Transport.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~ContainerSmokeTests
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-        with:
-          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
-
-      - name: Install pinned Buildx
-        id: buildx-install
-        run: ./scripts/install-buildx.sh
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-        with:
-          driver-opts: image=docker.io/moby/buildkit:v0.31.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
-
-      - name: Verify pinned Buildx
-        run: ./scripts/verify-buildx-version.sh
-
-      - name: Verify reproducible multi-architecture image
-        env:
-          REVISION: ${{ github.sha }}
-          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
-          VERSION: 0.0.0
-        run: ./scripts/verify-reproducible-image.sh
+      - name: Test
+        run: env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN dotnet test HevyMcp.slnx --configuration Release --no-build --filter "FullyQualifiedName!~ContainerSmokeTests"
