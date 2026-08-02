@@ -15,7 +15,7 @@ internal sealed class HevyRetryHandler : DelegatingHandler
   private readonly TimeProvider timeProvider;
 
   public HevyRetryHandler()
-      : this(Task.Delay, () => Random.Shared.NextDouble(), TimeProvider.System)
+      : this(Task.Delay, Random.Shared.NextDouble, TimeProvider.System)
   {
   }
 

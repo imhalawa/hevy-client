@@ -135,7 +135,7 @@ public sealed class HevyClient : IHevyClient
           request.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
           apiKey,
           cancellationToken);
-      HevyResponse.EnsureSuccess(response);
+      if (!response.IsSuccessStatusCode) throw HevyResponse.CreateException(response);
       await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
       return await ExerciseHistoryStreamReader.ReadAsync(
           stream,
@@ -305,7 +305,7 @@ public sealed class HevyClient : IHevyClient
     {
       using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
       ThrowIfMutationOutcomeUnknown(response);
-      HevyResponse.EnsureSuccess(response);
+      if (!response.IsSuccessStatusCode) throw HevyResponse.CreateException(response);
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Hevy.Core.Exceptions;
@@ -10,17 +11,9 @@ internal static class HevyResponse
 {
   internal const int MaximumResponseBytes = 4 * 1024 * 1024;
 
-  public static void EnsureSuccess(HttpResponseMessage response)
-  {
-    if (!response.IsSuccessStatusCode)
-    {
-      throw CreateException(response);
-    }
-  }
-
   public static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<T> jsonTypeInfo, CancellationToken cancellationToken)
   {
-    EnsureSuccess(response);
+    if (!response.IsSuccessStatusCode) throw CreateException(response);
 
     try
     {
@@ -29,20 +22,8 @@ internal static class HevyResponse
         throw UnexpectedResponse(response.StatusCode);
       }
 
-      await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-      using var payload = new MemoryStream();
-      var buffer = new byte[81_920];
-      while (true)
-      {
-        var remaining = MaximumResponseBytes + 1L - payload.Length;
-        if (remaining <= 0) throw UnexpectedResponse(response.StatusCode);
-        var read = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), cancellationToken);
-        if (read == 0) break;
-        payload.Write(buffer, 0, read);
-      }
-
-      if (payload.Length > MaximumResponseBytes) throw UnexpectedResponse(response.StatusCode);
-      var value = JsonSerializer.Deserialize(payload.GetBuffer().AsSpan(0, checked((int)payload.Length)), jsonTypeInfo)
+      await response.Content.LoadIntoBufferAsync(MaximumResponseBytes, cancellationToken);
+      var value = await response.Content.ReadFromJsonAsync(jsonTypeInfo, cancellationToken)
           ?? throw UnexpectedResponse(response.StatusCode);
       if (value is IHevyResponse contract) contract.Validate();
       return value;
@@ -55,12 +36,16 @@ internal static class HevyResponse
     {
       throw UnexpectedResponse(response.StatusCode);
     }
+    catch (HttpRequestException exception) when (exception.HttpRequestError is HttpRequestError.ConfigurationLimitExceeded)
+    {
+      throw UnexpectedResponse(response.StatusCode);
+    }
   }
 
   public static HevyException UnexpectedResponse(HttpStatusCode statusCode) =>
       new("unexpected_response", "The Hevy API returned an invalid response.", false, statusCode);
 
-  private static HevyException CreateException(HttpResponseMessage response)
+  internal static HevyException CreateException(HttpResponseMessage response)
   {
     var statusCode = response.StatusCode;
     var requestId = SafeRequestId(response);
