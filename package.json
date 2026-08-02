@@ -1,6 +1,6 @@
 {
   "name": "@imhalawa/hevy-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Set up the Docker-backed Hevy MCP server for supported AI clients.",
   "license": "MIT",
   "type": "module",
