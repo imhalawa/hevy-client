@@ -142,9 +142,11 @@ public sealed class DeliveryContractTests
     (runs).Should().Contain((static run => run.Contains("cosign sign --yes", StringComparison.Ordinal)));
     (runs).Should().Contain((static run =>
         run.Contains("cosign verify", StringComparison.Ordinal) &&
+        run.Contains(".github/workflows/release-publish.yml@refs/tags/", StringComparison.Ordinal) &&
         run.Contains("--certificate-github-workflow-sha \"$REVISION\"", StringComparison.Ordinal)));
     (runs).Should().Contain((static run =>
         run.Contains("gh attestation verify", StringComparison.Ordinal) &&
+        run.Contains(".github/workflows/release-publish.yml", StringComparison.Ordinal) &&
         run.Contains("--bundle-from-oci", StringComparison.Ordinal) &&
         run.Contains("--predicate-type \"$SPDX_PREDICATE_TYPE\"", StringComparison.Ordinal)));
     (runs).Should().Contain((static run => run.Contains("docker buildx imagetools inspect", StringComparison.Ordinal)));

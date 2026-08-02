@@ -212,7 +212,7 @@ jobs:
         run: |
           set -euo pipefail
           cosign sign --yes "$IMAGE@$IMAGE_DIGEST"
-          certificate_identity="$SOURCE_URL/.github/workflows/release.yml@refs/tags/v$RELEASE_VERSION"
+          certificate_identity="$SOURCE_URL/.github/workflows/release-publish.yml@refs/tags/v$RELEASE_VERSION"
           cosign verify "$IMAGE@$IMAGE_DIGEST" \
             --certificate-identity "$certificate_identity" \
             --certificate-github-workflow-sha "$REVISION" \
@@ -230,7 +230,7 @@ jobs:
           SPDX_PREDICATE_TYPE: ${{ steps.sbom.outputs.predicate_type }}
         run: |
           set -euo pipefail
-          signer_workflow="$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          signer_workflow="$GITHUB_REPOSITORY/.github/workflows/release-publish.yml"
           gh attestation verify "oci://$IMAGE@$IMAGE_DIGEST" \
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$signer_workflow" \
