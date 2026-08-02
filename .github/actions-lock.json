@@ -37,16 +37,6 @@
       "commit": "abd2ef45e78c5afb21d64d4ca52ee8550d9572c7",
       "source": "https://github.com/docker/login-action/tree/v4.5.1"
     },
-    "docker/setup-buildx-action": {
-      "version": "v4.2.0",
-      "commit": "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
-      "source": "https://github.com/docker/setup-buildx-action/tree/v4.2.0"
-    },
-    "docker/setup-qemu-action": {
-      "version": "v4.2.0",
-      "commit": "96fe6ef7f33517b61c61be40b68a1882f3264fb8",
-      "source": "https://github.com/docker/setup-qemu-action/tree/v4.2.0"
-    },
     "sigstore/cosign-installer": {
       "version": "v4.1.2",
       "commit": "6f9f17788090df1f26f669e9d70d6ae9567deba6",

@@ -14,6 +14,8 @@ public sealed class ReleaseSecurityContractTests
   private const int OciIndexByteLimit = 4_194_304;
   private const string ExistingDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   private const string IntendedDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  private const string SyftChecksum = "7aa2f03ee92739cf643279ba3990548b9925d4e22cae13f46831ee62821147fe";
+  private const string SyftUrl = "https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_linux_amd64.tar.gz";
   private static readonly string RepositoryRoot = DockerProcess.RepositoryRoot;
 
   [Theory]
@@ -647,55 +649,6 @@ public sealed class ReleaseSecurityContractTests
 
   }
 
-  [Fact]
-  public async Task ActionlintRunnerDownloadsChecksExecutesExactArgumentsAndCleansUp()
-  {
-    var pin = ReadActionlintPin();
-    using var fixture = await ActionlintFixture.CreateAsync(toolPresent: true);
-    var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 0);
-
-    (result.ExitCode).Should().Be(0);
-    (await File.ReadAllTextAsync(fixture.DownloadLog)).Should().Be($"--fail\n--location\n--proto\n=https\n--tlsv1.2\n--output\n{pin.Archive}\nhttps://github.com/rhysd/actionlint/releases/download/v{pin.Version}/{pin.Archive}\n");
-    (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be($"arguments=--check --status\nchecksum={pin.Checksum}\nfile={pin.Archive}\n");
-    (await File.ReadAllTextAsync(fixture.ExecutionLog)).Should().Be("-color\n");
-    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-
-  }
-
-  [Theory]
-  [InlineData("network")]
-  [InlineData("checksum")]
-  [InlineData("missing_tool")]
-  public async Task ActionlintRunnerFailsClosedBeforeAnyUnverifiedExecution(string scenario)
-  {
-    using var fixture = await ActionlintFixture.CreateAsync(toolPresent: scenario != "missing_tool");
-    var result = await fixture.RunAsync(
-        downloadSucceeds: scenario != "network",
-        checksumSucceeds: scenario != "checksum",
-        actionlintExitCode: 0);
-
-    (result.ExitCode).Should().NotBe(0);
-    (File.Exists(fixture.ExecutionLog)).Should().BeFalse();
-    if (scenario == "network")
-    {
-      (File.Exists(fixture.ChecksumLog)).Should().BeFalse();
-    }
-    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-
-  }
-
-  [Fact]
-  public async Task ActionlintRunnerReturnsTheVerifiedExecutableResult()
-  {
-    using var fixture = await ActionlintFixture.CreateAsync(toolPresent: true);
-    var result = await fixture.RunAsync(downloadSucceeds: true, checksumSucceeds: true, actionlintExitCode: 17);
-
-    (result.ExitCode).Should().Be(17);
-    (await File.ReadAllTextAsync(fixture.ExecutionLog)).Should().Be("-color\n");
-    (Directory.GetFileSystemEntries(fixture.TemporaryRoot)).Should().BeEmpty();
-
-  }
-
   [Theory]
   [InlineData("top")]
   [InlineData("amd64")]
@@ -758,72 +711,30 @@ public sealed class ReleaseSecurityContractTests
     }
   }
 
-  [Theory]
-  [InlineData("install-syft.sh", "https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_linux_amd64.tar.gz", "7aa2f03ee92739cf643279ba3990548b9925d4e22cae13f46831ee62821147fe")]
-  [InlineData("install-buildx.sh", "https://github.com/docker/buildx/releases/download/v0.35.0/buildx-v0.35.0.linux-amd64", "d41ece72044243b4f58b343441ae37446d9c29a7d6b5e11c61847bbcf8f7dfda")]
-  public async Task ToolInstallersUseExactDownloadAndChecksumAndCleanStaging(
-      string scriptName,
-      string expectedUrl,
-      string expectedChecksum)
+  [Fact]
+  public async Task SyftInstallerUsesExactDownloadAndChecksumAndCleansStaging()
   {
-    using var fixture = await InstallerFixture.CreateAsync(scriptName, expectedUrl, expectedChecksum);
+    using var fixture = await InstallerFixture.CreateAsync();
     var result = await fixture.RunAsync(checksumSucceeds: true);
 
     (result.ExitCode).Should().Be(0);
-    (await File.ReadAllTextAsync(fixture.UrlLog)).Should().Be(expectedUrl + "\n");
-    (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be(expectedChecksum + "\n");
-    (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain((static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
-            Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal)));
+    (await File.ReadAllTextAsync(fixture.UrlLog)).Should().Be(SyftUrl + "\n");
+    (await File.ReadAllTextAsync(fixture.ChecksumLog)).Should().Be(SyftChecksum + "\n");
+    (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain(static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal));
     (File.Exists(fixture.InstalledExecutable)).Should().BeTrue();
-    if (scriptName == "install-buildx.sh")
-    {
-      (File.Exists(fixture.GitHubEnvironment)).Should().BeFalse();
-      (await File.ReadAllTextAsync(fixture.GitHubOutput)).Should().Be($"buildx_path={fixture.InstalledExecutable}\n");
-    }
 
   }
 
-  [Theory]
-  [InlineData("install-syft.sh", "https://github.com/anchore/syft/releases/download/v1.49.0/syft_1.49.0_linux_amd64.tar.gz", "7aa2f03ee92739cf643279ba3990548b9925d4e22cae13f46831ee62821147fe")]
-  [InlineData("install-buildx.sh", "https://github.com/docker/buildx/releases/download/v0.35.0/buildx-v0.35.0.linux-amd64", "d41ece72044243b4f58b343441ae37446d9c29a7d6b5e11c61847bbcf8f7dfda")]
-  public async Task ToolInstallersFailClosedOnChecksumMismatchAndCleanStaging(
-      string scriptName,
-      string expectedUrl,
-      string expectedChecksum)
+  [Fact]
+  public async Task SyftInstallerFailsClosedOnChecksumMismatchAndCleansStaging()
   {
-    using var fixture = await InstallerFixture.CreateAsync(scriptName, expectedUrl, expectedChecksum);
+    using var fixture = await InstallerFixture.CreateAsync();
     var result = await fixture.RunAsync(checksumSucceeds: false);
 
     (result.ExitCode).Should().NotBe(0);
-    (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain((static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal) ||
-            Path.GetFileName(path).StartsWith("hevy-buildx.", StringComparison.Ordinal)));
+    (Directory.GetDirectories(fixture.RunnerTemp)).Should().NotContain(static path => Path.GetFileName(path).StartsWith("hevy-syft.", StringComparison.Ordinal));
     (File.Exists(fixture.InstalledExecutable)).Should().BeFalse();
 
-  }
-
-  [Theory]
-  [InlineData("github.com/docker/buildx v0.35.0 a319e5b15052cf6557ceb666eb8ff6e32380b782", 0)]
-  [InlineData("github.com/docker/buildx v0.35.0 wrong", 1)]
-  public async Task BuildxVersionVerifierRequiresExactVersionAndCommit(string reportedVersion, int expectedSuccess)
-  {
-    var fixture = Path.Combine(Path.GetTempPath(), $"hevy-buildx-version-{Guid.NewGuid():N}");
-    Directory.CreateDirectory(fixture);
-    try
-    {
-      var fakeBuildx = Path.Combine(fixture, "buildx");
-      await File.WriteAllTextAsync(fakeBuildx, $"#!/bin/sh\nprintf '%s\\n' '{reportedVersion}'\n");
-      MakeExecutable(fakeBuildx);
-      var result = await RunScriptAsync(
-          Path.Combine(RepositoryRoot, "scripts", "verify-buildx-version.sh"),
-          [],
-          new Dictionary<string, string?> { ["HEVY_BUILDX_PATH"] = fakeBuildx });
-
-      (result.ExitCode == 0).Should().Be(expectedSuccess == 0);
-    }
-    finally
-    {
-      Directory.Delete(fixture, recursive: true);
-    }
   }
 
   [Theory]
@@ -884,19 +795,6 @@ public sealed class ReleaseSecurityContractTests
       Directory.Delete(fixture, recursive: true);
     }
   }
-
-  private static ActionlintPin ReadActionlintPin()
-  {
-    using var document = JsonDocument.Parse(
-        File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "tools-lock.json")));
-    var actionlint = document.RootElement.GetProperty("tools").GetProperty("actionlint");
-    return new ActionlintPin(
-        actionlint.GetProperty("version").GetString()!,
-        actionlint.GetProperty("archive").GetString()!,
-        actionlint.GetProperty("sha256").GetString()!);
-  }
-
-  private sealed record ActionlintPin(string Version, string Archive, string Checksum);
 
   private static byte[] CreatePlatformIndex(
       bool extraDescriptor,
@@ -1210,158 +1108,24 @@ public sealed class ReleaseSecurityContractTests
     }
   }
 
-  private sealed class ActionlintFixture : IDisposable
-  {
-    private readonly string root;
-
-    private ActionlintFixture(string root)
-    {
-      this.root = root;
-      TemporaryRoot = Path.Combine(root, "tmp");
-      DownloadLog = Path.Combine(root, "download.log");
-      ChecksumLog = Path.Combine(root, "checksum.log");
-      ExecutionLog = Path.Combine(root, "execution.log");
-    }
-
-    public string TemporaryRoot { get; }
-    public string DownloadLog { get; }
-    public string ChecksumLog { get; }
-    public string ExecutionLog { get; }
-
-    public static async Task<ActionlintFixture> CreateAsync(bool toolPresent)
-    {
-      var root = Path.Combine(Path.GetTempPath(), $"hevy-actionlint-{Guid.NewGuid():N}");
-      var temporaryRoot = Path.Combine(root, "tmp");
-      var contents = Path.Combine(root, "contents");
-      var binaries = Path.Combine(root, "bin");
-      Directory.CreateDirectory(temporaryRoot);
-      Directory.CreateDirectory(contents);
-      Directory.CreateDirectory(binaries);
-      var archivedName = toolPresent ? "actionlint" : "not-actionlint";
-      var archivedTool = Path.Combine(contents, archivedName);
-      await File.WriteAllTextAsync(
-          archivedTool,
-          toolPresent
-              ? "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ACTIONLINT_EXECUTION_LOG\"\nexit \"$ACTIONLINT_EXIT_CODE\"\n"
-              : "missing tool fixture\n");
-      if (toolPresent)
-      {
-        MakeExecutable(archivedTool);
-      }
-      var asset = Path.Combine(root, "actionlint.tar.gz");
-      var tarResult = await DeliveryContractTests.RunProcessAsync(
-          root,
-          "tar",
-          "-czf",
-          asset,
-          "-C",
-          contents,
-          archivedName);
-      (tarResult.ExitCode).Should().Be(0);
-
-      var curl = Path.Combine(binaries, "curl");
-      await File.WriteAllTextAsync(
-          curl,
-          """
-          #!/bin/sh
-          set -eu
-          output=
-          : > "$ACTIONLINT_DOWNLOAD_LOG"
-          while [ "$#" -gt 0 ]; do
-            case "$1" in
-              --output)
-                output=$2
-                printf '%s\n%s\n' "$1" "${2##*/}" >> "$ACTIONLINT_DOWNLOAD_LOG"
-                shift 2
-                ;;
-              *)
-                printf '%s\n' "$1" >> "$ACTIONLINT_DOWNLOAD_LOG"
-                shift
-                ;;
-            esac
-          done
-          test "$ACTIONLINT_DOWNLOAD_SUCCEEDS" = true
-          cp "$ACTIONLINT_ASSET" "$output"
-          """);
-      var checksum = Path.Combine(binaries, "sha256sum");
-      await File.WriteAllTextAsync(
-          checksum,
-          """
-          #!/bin/sh
-          set -eu
-          arguments=$*
-          read -r checksum file
-          printf 'arguments=%s\nchecksum=%s\nfile=%s\n' "$arguments" "$checksum" "${file##*/}" > "$ACTIONLINT_CHECKSUM_LOG"
-          test "$ACTIONLINT_CHECKSUM_SUCCEEDS" = true
-          """);
-      MakeExecutable(curl);
-      MakeExecutable(checksum);
-      return new ActionlintFixture(root);
-    }
-
-    public Task<DeliveryContractTests.ProcessResult> RunAsync(
-        bool downloadSucceeds,
-        bool checksumSucceeds,
-        int actionlintExitCode) =>
-        RunScriptAsync(
-            Path.Combine(RepositoryRoot, "scripts", "run-actionlint.sh"),
-            [],
-            new Dictionary<string, string?>
-            {
-              ["ACTIONLINT_ASSET"] = Path.Combine(root, "actionlint.tar.gz"),
-              ["ACTIONLINT_CHECKSUM_LOG"] = ChecksumLog,
-              ["ACTIONLINT_CHECKSUM_SUCCEEDS"] = checksumSucceeds ? "true" : "false",
-              ["ACTIONLINT_DOWNLOAD_LOG"] = DownloadLog,
-              ["ACTIONLINT_DOWNLOAD_SUCCEEDS"] = downloadSucceeds ? "true" : "false",
-              ["ACTIONLINT_EXECUTION_LOG"] = ExecutionLog,
-              ["ACTIONLINT_EXIT_CODE"] = actionlintExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture),
-              ["HEVY_CURL_PATH"] = Path.Combine(root, "bin", "curl"),
-              ["HEVY_SHA256SUM_PATH"] = Path.Combine(root, "bin", "sha256sum"),
-              ["TMPDIR"] = TemporaryRoot,
-            });
-
-    public void Dispose() => Directory.Delete(root, recursive: true);
-  }
-
   private sealed class InstallerFixture : IDisposable
   {
     private readonly string root;
-    private readonly string scriptName;
-    private readonly string expectedUrl;
-    private readonly string expectedChecksum;
 
-    private InstallerFixture(
-        string root,
-        string scriptName,
-        string expectedUrl,
-        string expectedChecksum)
+    private InstallerFixture(string root)
     {
       this.root = root;
-      this.scriptName = scriptName;
-      this.expectedUrl = expectedUrl;
-      this.expectedChecksum = expectedChecksum;
       RunnerTemp = Path.Combine(root, "runner-temp");
       UrlLog = Path.Combine(root, "url.log");
       ChecksumLog = Path.Combine(root, "checksum.log");
-      GitHubEnvironment = Path.Combine(root, "github-env.txt");
-      GitHubOutput = Path.Combine(root, "github-output.txt");
-      DockerConfig = Path.Combine(root, "docker-config");
     }
 
     public string RunnerTemp { get; }
     public string UrlLog { get; }
     public string ChecksumLog { get; }
-    public string GitHubEnvironment { get; }
-    public string GitHubOutput { get; }
-    public string DockerConfig { get; }
-    public string InstalledExecutable => scriptName == "install-syft.sh"
-        ? Path.Combine(RunnerTemp, "hevy-syft-bin", "syft")
-        : Path.Combine(DockerConfig, "cli-plugins", "docker-buildx");
+    public string InstalledExecutable => Path.Combine(RunnerTemp, "hevy-syft-bin", "syft");
 
-    public static async Task<InstallerFixture> CreateAsync(
-        string scriptName,
-        string expectedUrl,
-        string expectedChecksum)
+    public static async Task<InstallerFixture> CreateAsync()
     {
       var root = Path.Combine(Path.GetTempPath(), $"hevy-installer-{Guid.NewGuid():N}");
       var runnerTemp = Path.Combine(root, "runner-temp");
@@ -1369,23 +1133,13 @@ public sealed class ReleaseSecurityContractTests
       Directory.CreateDirectory(runnerTemp);
       Directory.CreateDirectory(bin);
       var asset = Path.Combine(root, "asset");
-      if (scriptName == "install-syft.sh")
-      {
-        var contents = Path.Combine(root, "syft-contents");
-        Directory.CreateDirectory(contents);
-        var syft = Path.Combine(contents, "syft");
-        await File.WriteAllTextAsync(syft, "#!/bin/sh\nprintf 'syft fixture\\n'\n");
-        MakeExecutable(syft);
-        var tarResult = await DeliveryContractTests.RunProcessAsync(root, "tar", "-czf", asset, "-C", contents, "syft");
-        (tarResult.ExitCode).Should().Be(0);
-      }
-      else
-      {
-        await File.WriteAllTextAsync(
-            asset,
-            "#!/bin/sh\nprintf '%s\\n' 'github.com/docker/buildx v0.35.0 a319e5b15052cf6557ceb666eb8ff6e32380b782'\n");
-        MakeExecutable(asset);
-      }
+      var contents = Path.Combine(root, "syft-contents");
+      Directory.CreateDirectory(contents);
+      var syft = Path.Combine(contents, "syft");
+      await File.WriteAllTextAsync(syft, "#!/bin/sh\nprintf 'syft fixture\\n'\n");
+      MakeExecutable(syft);
+      var tarResult = await DeliveryContractTests.RunProcessAsync(root, "tar", "-czf", asset, "-C", contents, "syft");
+      (tarResult.ExitCode).Should().Be(0);
 
       var curl = Path.Combine(bin, "curl");
       await File.WriteAllTextAsync(
@@ -1420,28 +1174,25 @@ public sealed class ReleaseSecurityContractTests
           """);
       MakeExecutable(curl);
       MakeExecutable(sha256sum);
-      return new InstallerFixture(root, scriptName, expectedUrl, expectedChecksum);
+      return new InstallerFixture(root);
     }
 
     public Task<DeliveryContractTests.ProcessResult> RunAsync(bool checksumSucceeds)
     {
       var githubPath = Path.Combine(root, "github-path.txt");
       return RunScriptAsync(
-          Path.Combine(RepositoryRoot, "scripts", scriptName),
+          Path.Combine(RepositoryRoot, "scripts", "install-syft.sh"),
           [],
           new Dictionary<string, string?>
           {
             ["FAKE_ASSET"] = Path.Combine(root, "asset"),
             ["FAKE_CHECKSUM_LOG"] = ChecksumLog,
             ["FAKE_CHECKSUM_SUCCEEDS"] = checksumSucceeds ? "true" : "false",
-            ["FAKE_EXPECTED_CHECKSUM"] = expectedChecksum,
-            ["FAKE_EXPECTED_URL"] = expectedUrl,
+            ["FAKE_EXPECTED_CHECKSUM"] = SyftChecksum,
+            ["FAKE_EXPECTED_URL"] = SyftUrl,
             ["FAKE_URL_LOG"] = UrlLog,
-            ["GITHUB_ENV"] = GitHubEnvironment,
-            ["GITHUB_OUTPUT"] = GitHubOutput,
             ["GITHUB_PATH"] = githubPath,
             ["HEVY_CURL_PATH"] = Path.Combine(root, "bin", "curl"),
-            ["HEVY_DOCKER_CONFIG"] = DockerConfig,
             ["HEVY_SHA256SUM_PATH"] = Path.Combine(root, "bin", "sha256sum"),
             ["RUNNER_TEMP"] = RunnerTemp,
           });

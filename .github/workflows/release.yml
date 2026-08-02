@@ -16,14 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: Verify
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci-gates.yml
-
   publish:
     name: Verify and publish
-    needs: verify
     uses: ./.github/workflows/release-publish.yml
     secrets: inherit

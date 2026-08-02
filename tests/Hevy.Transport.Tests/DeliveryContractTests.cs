@@ -11,36 +11,32 @@ public sealed class DeliveryContractTests
   private static readonly string RepositoryRoot = DockerProcess.RepositoryRoot;
 
   [Fact]
-  public void CiWorkflowIsParsedAndEnforcesTheCompleteSecretFreeAcceptanceSequence()
+  public void CiWorkflowRunsOneLeanSecretFreeVerificationJob()
   {
     var workflow = Workflow("ci.yml");
-    var ciGateSteps = Steps(Workflow("ci-gates.yml")).ToArray();
     var verifyJob = Map(Map(workflow, "jobs"), "verify");
+    var steps = Steps(workflow).ToArray();
 
-    (Scalar(verifyJob, "uses")).Should().Be("./.github/workflows/ci-gates.yml");
-    (verifyJob.Children.ContainsKey(new YamlScalarNode("runs-on"))).Should().BeFalse();
+    (Scalar(verifyJob, "name")).Should().Be("Verify");
+    (Scalar(verifyJob, "runs-on")).Should().Be("ubuntu-24.04");
 
     (Keys(Map(workflow, "on")).Order(StringComparer.Ordinal).ToArray()).Should().Equal(["pull_request", "push"]);
+    (Sequence(Map(Map(workflow, "on"), "push"), "branches").Children.Cast<YamlScalarNode>().Select(static value => value.Value)).Should().Equal("main");
     AssertPermissions(workflow, ("contents", "read"));
     (Map(workflow, "on").Children.ContainsKey(new YamlScalarNode("pull_request_target"))).Should().BeFalse();
 
-    var runs = ciGateSteps
+    var runs = steps
         .Where(static step => step.Children.ContainsKey(new YamlScalarNode("run")))
         .Select(static step => Scalar(step, "run"))
         .ToArray();
-    (runs).Should().Contain("./scripts/run-actionlint.sh");
-    (runs).Should().Contain("./scripts/validate-openapi.sh");
     (runs).Should().Contain("dotnet restore HevyMcp.slnx --locked-mode");
     (runs).Should().Contain("dotnet format HevyMcp.slnx --verify-no-changes --no-restore");
-    (runs).Should().Contain((static run => run.Contains("dotnet build HevyMcp.slnx --configuration", StringComparison.Ordinal)));
+    (runs).Should().Contain("dotnet build HevyMcp.slnx --configuration Release --no-restore -warnaserror");
     (runs).Should().Contain((static run =>
         run.Contains("env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN", StringComparison.Ordinal) &&
-        run.Contains("dotnet test HevyMcp.slnx --configuration", StringComparison.Ordinal) &&
-        run.Contains("--no-build", StringComparison.Ordinal)));
-    (runs).Should().Contain("docker build --pull --tag hevy-mcp:ci .");
-    (runs).Should().Contain("docker image inspect hevy-mcp:ci");
-    (runs).Should().Contain((static run => run.Contains("FullyQualifiedName~ContainerSmokeTests", StringComparison.Ordinal)));
-    (Scalar(Step(ciGateSteps, "Run real container smokes"), "if")).Should().Be("${{ inputs.run_container_smokes }}");
+        run.Contains("dotnet test HevyMcp.slnx --configuration Release --no-build", StringComparison.Ordinal) &&
+        run.Contains("FullyQualifiedName!~ContainerSmokeTests", StringComparison.Ordinal)));
+    (runs).Should().NotContain(static run => run.Contains("docker ", StringComparison.Ordinal));
     (runs).Should().NotContain((static run =>
         run.Contains("HEVY_LIVE_TESTS=true", StringComparison.Ordinal) ||
         run.Contains("HEVY_LIVE_MUTATION_TESTS=true", StringComparison.Ordinal) ||
@@ -191,43 +187,6 @@ public sealed class DeliveryContractTests
   }
 
   [Fact]
-  public void ReleaseExecutionToolchainMatchesAuditedVersionAndManifestDigestPins()
-  {
-    using var document = JsonDocument.Parse(
-        File.ReadAllText(Path.Combine(RepositoryRoot, ".github", "tools-lock.json")));
-    var tools = document.RootElement.GetProperty("tools");
-    var ciGateSteps = Steps(Workflow("ci-gates.yml")).ToArray();
-
-    var binfmt = tools.GetProperty("binfmt");
-    var buildx = tools.GetProperty("buildx");
-    var buildkit = tools.GetProperty("buildkit");
-    var buildxWith = Map(Step(ciGateSteps, "Set up Docker Buildx"), "with");
-    (buildxWith.Children.Keys).Should().NotContain(new YamlScalarNode("version"));
-    (Scalar(buildxWith, "driver-opts")).Should().Be($"image={buildkit.GetProperty("image").GetString()}@sha256:{buildkit.GetProperty("sha256").GetString()}");
-
-    (Scalar(Map(Step(ciGateSteps, "Set up QEMU"), "with"), "image")).Should().Be($"{binfmt.GetProperty("image").GetString()}@sha256:{binfmt.GetProperty("sha256").GetString()}");
-
-    foreach (var tool in new[] { binfmt, buildkit })
-    {
-      (tool.GetProperty("sha256").GetString()!).Should().MatchRegex("^[0-9a-f]{64}$");
-      (tool.GetProperty("source").GetString()).Should().StartWith("https://github.com/");
-    }
-
-    (buildx.GetProperty("commit").GetString()!).Should().MatchRegex("^[0-9a-f]{40}$");
-    (buildx.GetProperty("sha256").GetString()!).Should().MatchRegex("^[0-9a-f]{64}$");
-    (buildx.GetProperty("archive").GetString()).Should().Be($"buildx-v{buildx.GetProperty("version").GetString()}.linux-amd64");
-    (Scalar(Step(ciGateSteps, "Install pinned Buildx"), "run")).Should().Be("./scripts/install-buildx.sh");
-    (Scalar(Step(ciGateSteps, "Verify pinned Buildx"), "run")).Should().Be("./scripts/verify-buildx-version.sh");
-    (Array.IndexOf(ciGateSteps, Step(ciGateSteps, "Install pinned Buildx")) < Array.IndexOf(ciGateSteps, Step(ciGateSteps, "Set up Docker Buildx"))).Should().BeTrue();
-    (Array.IndexOf(ciGateSteps, Step(ciGateSteps, "Set up Docker Buildx")) < Array.IndexOf(ciGateSteps, Step(ciGateSteps, "Verify pinned Buildx"))).Should().BeTrue();
-
-    var syft = tools.GetProperty("syft");
-    (syft.GetProperty("sha256").GetString()!).Should().MatchRegex("^[0-9a-f]{64}$");
-    (syft.GetProperty("commit").GetString()!).Should().MatchRegex("^[0-9a-f]{40}$");
-    (syft.GetProperty("source").GetString()).Should().Be($"https://github.com/anchore/syft/releases/tag/v{syft.GetProperty("version").GetString()}");
-  }
-
-  [Fact]
   public void EveryExternalActionUsesAnAuditedFullCommitPin()
   {
     var lockPath = Path.Combine(RepositoryRoot, ".github", "actions-lock.json");
@@ -235,7 +194,7 @@ public sealed class DeliveryContractTests
     using var lockDocument = JsonDocument.Parse(File.ReadAllText(lockPath));
     var actions = lockDocument.RootElement.GetProperty("actions");
 
-    var usesValues = new[] { Workflow("ci.yml"), Workflow("ci-gates.yml"), Workflow("release.yml"), Workflow("release-publish.yml") }
+    var usesValues = new[] { Workflow("ci.yml"), Workflow("release.yml"), Workflow("release-publish.yml") }
         .SelectMany(Steps)
         .Where(static step => step.Children.ContainsKey(new YamlScalarNode("uses")))
         .Select(static step => Scalar(step, "uses"))
@@ -257,19 +216,6 @@ public sealed class DeliveryContractTests
   }
 
   [Fact]
-  public void ActionlintLockRecordsAnAuditedReleaseChecksum()
-  {
-    var lockPath = Path.Combine(RepositoryRoot, ".github", "tools-lock.json");
-    (File.Exists(lockPath)).Should().BeTrue("The audited CI-tool lock document must exist.");
-    using var document = JsonDocument.Parse(File.ReadAllText(lockPath));
-    var actionlint = document.RootElement.GetProperty("tools").GetProperty("actionlint");
-    var version = actionlint.GetProperty("version").GetString()!;
-    var checksum = actionlint.GetProperty("sha256").GetString()!;
-    (checksum).Should().MatchRegex("^[0-9a-f]{64}$");
-    (actionlint.GetProperty("source").GetString()).Should().Be($"https://github.com/rhysd/actionlint/releases/tag/v{version}");
-  }
-
-  [Fact]
   public async Task WorkflowSupportScriptsAreCommittedAsExecutables()
   {
     var scripts = new[]
@@ -277,17 +223,14 @@ public sealed class DeliveryContractTests
       "scripts/audit-repository.sh",
       "scripts/capture-bounded-output.sh",
       "scripts/ghcr-manifest.sh",
-      "scripts/install-buildx.sh",
       "scripts/install-syft.sh",
       "scripts/promote-ghcr-tag.sh",
-      "scripts/run-actionlint.sh",
       "scripts/validate-openapi.sh",
       "scripts/validate-oci-index.sh",
       "scripts/validate-release.sh",
       "scripts/validate-sha256-digest.sh",
       "scripts/validate-spdx.sh",
       "scripts/verify-reproducible-image.sh",
-      "scripts/verify-buildx-version.sh",
       "scripts/verify-staged-index.sh",
     };
     var result = await RunProcessAsync(

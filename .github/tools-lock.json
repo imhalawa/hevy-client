@@ -2,36 +2,6 @@
   "schema_version": 1,
   "reviewed_at": "2026-07-26",
   "tools": {
-    "actionlint": {
-      "version": "1.7.12",
-      "commit": "914e7df21a07ef503a81201c76d2b11c789d3fca",
-      "archive": "actionlint_1.7.12_linux_amd64.tar.gz",
-      "sha256": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
-      "source": "https://github.com/rhysd/actionlint/releases/tag/v1.7.12",
-      "checksums": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt"
-    },
-    "binfmt": {
-      "version": "qemu-v10.2.3-68",
-      "commit": "e29e7d72c9672c8c8bf846655ab149b50e1a62bd",
-      "image": "docker.io/tonistiigi/binfmt:qemu-v10.2.3-68",
-      "sha256": "400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0",
-      "source": "https://github.com/tonistiigi/binfmt/releases/tag/deploy/v10.2.3-68"
-    },
-    "buildx": {
-      "version": "0.35.0",
-      "commit": "a319e5b15052cf6557ceb666eb8ff6e32380b782",
-      "archive": "buildx-v0.35.0.linux-amd64",
-      "sha256": "d41ece72044243b4f58b343441ae37446d9c29a7d6b5e11c61847bbcf8f7dfda",
-      "source": "https://github.com/docker/buildx/releases/tag/v0.35.0",
-      "checksums": "https://github.com/docker/buildx/releases/download/v0.35.0/checksums.txt"
-    },
-    "buildkit": {
-      "version": "0.31.2",
-      "commit": "e42e1bfd389af7203238cce77b1f7dad447285e9",
-      "image": "docker.io/moby/buildkit:v0.31.2",
-      "sha256": "2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec",
-      "source": "https://github.com/moby/buildkit/releases/tag/v0.31.2"
-    },
     "syft": {
       "version": "1.49.0",
       "commit": "29fd7d0dec81cf03e0a1194a1985c7c893bb2396",

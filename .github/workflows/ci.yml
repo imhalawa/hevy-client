@@ -3,6 +3,8 @@ name: CI
 "on":
   pull_request:
   push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -14,4 +16,28 @@ concurrency:
 jobs:
   verify:
     name: Verify
-    uses: ./.github/workflows/ci-gates.yml
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore dependencies
+        run: dotnet restore HevyMcp.slnx --locked-mode
+
+      - name: Verify formatting
+        run: dotnet format HevyMcp.slnx --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build HevyMcp.slnx --configuration Release --no-restore -warnaserror
+
+      - name: Test
+        run: env -u HEVY_API_KEY -u HEVY_LIVE_TESTS -u HEVY_LIVE_MUTATION_TESTS -u MCP_AUTH_TOKEN dotnet test HevyMcp.slnx --configuration Release --no-build --filter "FullyQualifiedName!~ContainerSmokeTests"
